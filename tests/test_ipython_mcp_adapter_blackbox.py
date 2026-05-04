@@ -595,11 +595,15 @@ async def test_api_001_and_002_tool_surface_is_exact_and_has_no_truncation_param
     names = {tool.name for tool in tools}
     run_python = next(tool for tool in tools if tool.name == "run_python")
     wait_python = next(tool for tool in tools if tool.name == "wait_python")
+    python_execution_status = next(tool for tool in tools if tool.name == "python_execution_status")
     read_python_output = next(tool for tool in tools if tool.name == "read_python_output")
     search_python_output = next(tool for tool in tools if tool.name == "search_python_output")
     run_properties = run_python.inputSchema["properties"]
     read_properties = read_python_output.inputSchema["properties"]
     search_properties = search_python_output.inputSchema["properties"]
+    execution_status_description = python_execution_status.description or ""
+    read_description = read_python_output.description or ""
+    search_description = search_python_output.description or ""
 
     assert names == EXPECTED_TOOLS
     assert "start_python" not in names
@@ -616,6 +620,24 @@ async def test_api_001_and_002_tool_surface_is_exact_and_has_no_truncation_param
         assert "read_python_output" in description
         assert "search_python_output" in description
         assert "python_execution_status" in description
+    for description in (execution_status_description, read_description, search_description):
+        assert "python-output:<execution_id>" in description
+        assert "/stdout" in description
+        assert "/stderr" in description
+        assert "/result" in description
+        assert "/traceback" in description
+    assert "stream" in read_description
+    assert "line_range" in read_description
+    assert ":10" in read_description
+    assert "-10:" in read_description
+    assert "max_chars" in read_description
+    assert "query_mode" in search_description
+    assert "literal" in search_description
+    assert "regex" in search_description
+    assert "auto" in search_description
+    assert "context_before" in search_description
+    assert "context_after" in search_description
+    assert "ignore_case" in search_description
     assert "stream" in read_properties
     assert "stream" in search_properties
 

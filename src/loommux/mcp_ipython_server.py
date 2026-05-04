@@ -10,15 +10,6 @@ from fastmcp.tools import ToolResult
 from loommux.adapter import IPythonMCPAdapter
 from loommux.presentation import format_tool_result_text
 
-RUN_PYTHON_DESCRIPTION = (
-    "向当前 IPython kernel 提交 Python 代码；已结束且 combined output 不超过 300 行时直接展示可见输出，running 或大输出时返回 output_log combined handle "
-    "`python-output:<execution_id>`；分流日志由该 handle 加 `/stdout`、`/stderr`、`/result`、`/traceback` 派生；读取日志用 `read_python_output`，搜索日志用 `search_python_output`，查状态用 `python_execution_status`。"
-)
-WAIT_PYTHON_DESCRIPTION = (
-    "等待某个 execution 完成；已结束且 combined output 不超过 300 行时直接展示可见输出，running 或大输出时返回 output_log combined handle "
-    "`python-output:<execution_id>`；分流日志由该 handle 加 `/stdout`、`/stderr`、`/result`、`/traceback` 派生；读取日志用 `read_python_output`，搜索日志用 `search_python_output`，查状态用 `python_execution_status`。"
-)
-
 
 def _tool_result(tool_name: str, raw_status: dict[str, Any]) -> dict[str, Any]:
     return cast(dict[str, Any], ToolResult(content=format_tool_result_text(tool_name, raw_status), structured_content=raw_status))
@@ -51,9 +42,16 @@ def create_mcp() -> FastMCP:
         """
         return _tool_result("set_workspace", adapter.set_workspace(path))
 
-    @mcp.tool(description=RUN_PYTHON_DESCRIPTION)
+    @mcp.tool
     def run_python(code: str, timeout_seconds: float = 30) -> dict[str, Any]:
         """向当前 IPython kernel 提交 Python 代码，并等待至完成或超时。
+
+        已结束且 combined output 不超过 300 行时直接展示可见输出；
+        running 或大输出时返回 output_log combined handle
+        `python-output:<execution_id>`。分流日志由该 handle 加
+        `/stdout`、`/stderr`、`/result`、`/traceback` 派生；读取日志使用
+        `read_python_output`，搜索日志使用 `search_python_output`，查看
+        execution 结构化状态使用 `python_execution_status`。
 
         Args:
             code: 要提交给当前 IPython kernel 的 Python 源代码。
@@ -89,6 +87,10 @@ def create_mcp() -> FastMCP:
     def python_execution_status(execution_id: str | None = None) -> dict[str, Any]:
         """返回某个 execution 的结构化状态，不返回完整日志正文。
 
+        返回 canonical output log handle `python-output:<execution_id>`。
+        分流日志由该 handle 加 `/stdout`、`/stderr`、`/result`、
+        `/traceback` 派生。
+
         Args:
             execution_id: 要读取的 execution 标识。未提供时，工具优先读取
                 当前 execution；若当前 execution 不存在，则读取最近一次
@@ -104,6 +106,12 @@ def create_mcp() -> FastMCP:
     @mcp.tool
     def read_python_output(execution_id: str | None = None, output_log: str | None = None, stream: str = "combined", line_range: str | None = None, show_line_numbers: bool = False, max_chars: int | None = None) -> dict[str, Any]:
         """读取 execution output log 的文本行。
+
+        可用 execution_id 或 output_log 选择目标。`python-output:<execution_id>`
+        表示 combined log；后缀 `/stdout`、`/stderr`、`/result`、
+        `/traceback` 表示分流日志。stream 选择分流；line_range 使用
+        `start:stop`，`:10` 读取前 10 行，`-10:` 读取后 10 行；max_chars
+        只裁切单行。
 
         Args:
             execution_id: execution 标识。未提供 `output_log` 时，读取该
@@ -134,6 +142,12 @@ def create_mcp() -> FastMCP:
     def search_python_output(query: str, execution_id: str | None = None, output_log: str | None = None, stream: str = "combined", query_mode: str = "auto", context_before: int = 0, context_after: int = 0, ignore_case: bool = False, max_chars: int | None = None) -> dict[str, Any]:
         """搜索 execution output log。
 
+        可用 execution_id 或 output_log 选择目标。`python-output:<execution_id>`
+        表示 combined log；后缀 `/stdout`、`/stderr`、`/result`、
+        `/traceback` 表示分流日志。stream 选择分流；query_mode 支持
+        literal、regex、auto；context_before/context_after 返回上下文；
+        ignore_case 控制大小写。
+
         Args:
             query: 要搜索的字面量或正则模式。
             execution_id: execution 标识。未提供 `output_log` 时，搜索该
@@ -160,9 +174,16 @@ def create_mcp() -> FastMCP:
         """
         return _tool_result("search_python_output", adapter.search_python_output(query=query, execution_id=execution_id, output_log=output_log, stream=stream, query_mode=query_mode, context_before=context_before, context_after=context_after, ignore_case=ignore_case, max_chars=max_chars))
 
-    @mcp.tool(description=WAIT_PYTHON_DESCRIPTION)
+    @mcp.tool
     def wait_python(execution_id: str | None = None, timeout_seconds: float = 30) -> dict[str, Any]:
         """等待某个 execution 完成，或在达到超时后返回。
+
+        已结束且 combined output 不超过 300 行时直接展示可见输出；
+        running 或大输出时返回 output_log combined handle
+        `python-output:<execution_id>`。分流日志由该 handle 加
+        `/stdout`、`/stderr`、`/result`、`/traceback` 派生；读取日志使用
+        `read_python_output`，搜索日志使用 `search_python_output`，查看
+        execution 结构化状态使用 `python_execution_status`。
 
         Args:
             execution_id: 要等待的 execution 标识。未提供时，工具优先等待
