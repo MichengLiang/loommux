@@ -30,6 +30,8 @@ def format_tool_result_text(tool_name: str, status: Mapping[str, Any]) -> str:
 def _is_tool_failure(tool_name: str, status: Mapping[str, Any]) -> bool:
     if status.get("ok") is not False:
         return False
+    if tool_name == "python_execution_status" and status.get("execution_id") is not None:
+        return False
     return not (tool_name in {"run_python", "wait_python"} and status.get("status") == "error")
 
 
@@ -91,7 +93,9 @@ def _read_footer(output_log: str, text: str, returned_lines: int, total_lines: i
     omitted_before = _optional_int(status.get("omitted_before"))
     omitted_after = _optional_int(status.get("omitted_after"))
     first_line = text.splitlines()[0] if text else ""
-    if first_line.split(" | ", 1)[0].isdigit():
+    show_line_numbers = status.get("show_line_numbers")
+    has_line_numbers = show_line_numbers if isinstance(show_line_numbers, bool) else first_line.split(" | ", 1)[0].isdigit()
+    if has_line_numbers:
         start = omitted_before + 1
         stop = omitted_before + returned_lines
         return f"[{output_log} | lines {start}-{stop} of {total_lines}]"

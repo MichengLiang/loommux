@@ -11,6 +11,8 @@ def test_line_log_reports_invalid_read_parameters_and_empty_ranges() -> None:
     invalid_endpoint = log.read("x:2")
     invalid_max_chars = log.read(max_chars=0)
     empty = log.read("3:2")
+    unnumbered = log.read()
+    numbered = log.read(show_line_numbers=True)
 
     assert invalid_range["status"] == "invalid_line_range"
     assert invalid_endpoint["status"] == "invalid_line_range"
@@ -18,6 +20,8 @@ def test_line_log_reports_invalid_read_parameters_and_empty_ranges() -> None:
     assert empty["ok"] is True
     assert empty["returned_lines"] == 0
     assert empty["text"] == ""
+    assert unnumbered["show_line_numbers"] is False
+    assert numbered["show_line_numbers"] is True
 
 
 def test_line_log_search_handles_modes_context_and_errors() -> None:

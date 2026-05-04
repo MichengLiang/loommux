@@ -10,6 +10,15 @@ from fastmcp.tools import ToolResult
 from loommux.adapter import IPythonMCPAdapter
 from loommux.presentation import format_tool_result_text
 
+RUN_PYTHON_DESCRIPTION = (
+    "向当前 IPython kernel 提交 Python 代码；已结束且 combined output 不超过 300 行时直接展示可见输出，running 或大输出时返回 output_log combined handle "
+    "`python-output:<execution_id>`；分流日志由该 handle 加 `/stdout`、`/stderr`、`/result`、`/traceback` 派生；读取日志用 `read_python_output`，搜索日志用 `search_python_output`，查状态用 `python_execution_status`。"
+)
+WAIT_PYTHON_DESCRIPTION = (
+    "等待某个 execution 完成；已结束且 combined output 不超过 300 行时直接展示可见输出，running 或大输出时返回 output_log combined handle "
+    "`python-output:<execution_id>`；分流日志由该 handle 加 `/stdout`、`/stderr`、`/result`、`/traceback` 派生；读取日志用 `read_python_output`，搜索日志用 `search_python_output`。"
+)
+
 
 def _tool_result(tool_name: str, raw_status: dict[str, Any]) -> dict[str, Any]:
     return cast(dict[str, Any], ToolResult(content=format_tool_result_text(tool_name, raw_status), structured_content=raw_status))
@@ -42,7 +51,7 @@ def create_mcp() -> FastMCP:
         """
         return _tool_result("set_workspace", adapter.set_workspace(path))
 
-    @mcp.tool
+    @mcp.tool(description=RUN_PYTHON_DESCRIPTION)
     def run_python(code: str, timeout_seconds: float = 30) -> dict[str, Any]:
         """向当前 IPython kernel 提交 Python 代码，并等待至完成或超时。
 
@@ -151,7 +160,7 @@ def create_mcp() -> FastMCP:
         """
         return _tool_result("search_python_output", adapter.search_python_output(query=query, execution_id=execution_id, output_log=output_log, stream=stream, query_mode=query_mode, context_before=context_before, context_after=context_after, ignore_case=ignore_case, max_chars=max_chars))
 
-    @mcp.tool
+    @mcp.tool(description=WAIT_PYTHON_DESCRIPTION)
     def wait_python(execution_id: str | None = None, timeout_seconds: float = 30) -> dict[str, Any]:
         """等待某个 execution 完成，或在达到超时后返回。
 

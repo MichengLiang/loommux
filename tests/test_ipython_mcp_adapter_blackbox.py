@@ -130,6 +130,16 @@ async def test_run_python_error_content_includes_error_summary_and_traceback_log
     assert "error:" not in text
 
 
+async def test_python_execution_status_pretty_text_handles_real_error_execution(raw_call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
+    await raw_call("set_workspace", {"path": str(valid_workspace)})
+    result = await raw_call("run_python", {"code": "1 / 0"})
+    status = await raw_call("python_execution_status", {"execution_id": result.data["execution_id"]})
+
+    text = result_text(status)
+    assert text.startswith(f"execution {result.data['execution_id']}: error\nerror: ZeroDivisionError: division by zero\ntraceback: {result.data['output_log']}/traceback\nlog: {result.data['output_log']}")
+    assert "tool failed" not in text
+
+
 async def test_running_busy_and_execution_not_found_content_front_loads_state(raw_call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     not_found = await raw_call("read_python_output")
     assert result_text(not_found) == "execution_not_found: execution was not found"
@@ -455,6 +465,18 @@ async def test_ctrl_003_reset_kills_running_execution_and_new_kernel_can_run(cal
     assert (await call("run_python", {"code": "40 + 2"}))["result_text"] == "42"
 
 
+async def test_python_execution_status_pretty_text_handles_killed_execution(raw_call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
+    await raw_call("set_workspace", {"path": str(valid_workspace)})
+    running = await raw_call("run_python", {"code": "import time\ntime.sleep(10)", "timeout_seconds": 0.1})
+    await raw_call("reset_python")
+    old_status = await raw_call("python_execution_status", {"execution_id": running.data["execution_id"]})
+
+    text = result_text(old_status)
+    assert text.startswith(f"execution {running.data['execution_id']}: killed\nlog: {running.data['output_log']}")
+    assert "tool failed" not in text
+    assert (await raw_call("run_python", {"code": "40 + 2"})).data["result_text"] == "42"
+
+
 async def test_read_and_wait_default_to_current_or_last_execution(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     assert (await call("read_python_output"))["status"] == "execution_not_found"
     await call("set_workspace", {"path": str(valid_workspace)})
@@ -482,7 +504,7 @@ async def test_execution_status_returns_log_handles_without_full_log_body(call: 
 
 async def test_read_python_output_reads_line_ranges_and_stream_handles(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
-    result = await call("run_python", {"code": "for value in ['alpha', 'beta-match', 'gamma', 'delta']:\n    print(value)"})
+    result = await call("run_python", {"code": "import sys\nfor value in ['alpha', 'beta-match', 'gamma', 'delta']:\n    print(value)\nprint('stderr-payload', file=sys.stderr)"})
     output_log = result["output_log"]
 
     head = await call("read_python_output", {"output_log": output_log, "stream": "stdout", "line_range": ":2", "show_line_numbers": True})
@@ -490,6 +512,7 @@ async def test_read_python_output_reads_line_ranges_and_stream_handles(call: Cal
     single = await call("read_python_output", {"output_log": output_log, "stream": "stdout", "line_range": "2:2"})
     clipped = await call("read_python_output", {"output_log": output_log, "stream": "stdout", "line_range": "2:2", "max_chars": 4})
     suffixed = await call("read_python_output", {"output_log": f"{output_log}/stdout", "line_range": "1:1"})
+    stderr = await call("read_python_output", {"output_log": output_log, "stream": "stderr"})
     conflicting = await call("read_python_output", {"output_log": f"{output_log}/stderr", "stream": "stdout"})
 
     assert head["text"] == "1 | alpha\n2 | beta-match"
@@ -503,6 +526,9 @@ async def test_read_python_output_reads_line_ranges_and_stream_handles(call: Cal
     assert head["stream"] == "stdout"
     assert head["output_log"] == f"{output_log}/stdout"
     assert suffixed["text"] == "alpha"
+    assert stderr["stream"] == "stderr"
+    assert stderr["output_log"] == f"{output_log}/stderr"
+    assert stderr["text"] == "stderr-payload"
     assert conflicting["status"] == "invalid_output_log"
 
 
@@ -568,6 +594,7 @@ async def test_api_001_and_002_tool_surface_is_exact_and_has_no_truncation_param
     tools = await client.list_tools()
     names = {tool.name for tool in tools}
     run_python = next(tool for tool in tools if tool.name == "run_python")
+    wait_python = next(tool for tool in tools if tool.name == "wait_python")
     read_python_output = next(tool for tool in tools if tool.name == "read_python_output")
     search_python_output = next(tool for tool in tools if tool.name == "search_python_output")
     run_properties = run_python.inputSchema["properties"]
@@ -579,12 +606,18 @@ async def test_api_001_and_002_tool_surface_is_exact_and_has_no_truncation_param
     assert set(run_properties) == {"code", "timeout_seconds"}
     assert "max_output_chars" not in run_properties
     assert all("truncate" not in name.lower() for name in run_properties)
+    for tool in (run_python, wait_python):
+        description = tool.description or ""
+        assert "python-output:<execution_id>" in description
+        assert "/stdout" in description
+        assert "/stderr" in description
+        assert "/result" in description
+        assert "/traceback" in description
+        assert "read_python_output" in description
+        assert "search_python_output" in description
+    assert "python_execution_status" in (run_python.description or "")
     assert "stream" in read_properties
     assert "stream" in search_properties
-    server_source = Path("src/loommux/mcp_ipython_server.py").read_text()
-    assert "`output_log` 是 combined output log handle" in server_source
-    assert "`/stdout`、`/stderr`、`/result`、`/traceback`" in server_source
-    assert "显式传入冲突 stream 会返回" in server_source
 
 
 def test_api_003_stdio_client_example_does_not_import_server_module() -> None:

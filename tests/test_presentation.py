@@ -139,6 +139,61 @@ def test_read_and_search_success_surfaces_are_text_first_with_one_line_footer() 
     assert "状态：操作成功。" not in search_text
 
 
+def test_read_output_footer_uses_explicit_line_number_mode_not_payload_shape() -> None:
+    text = format_tool_result_text(
+        "read_python_output",
+        {
+            "ok": True,
+            "execution_id": "exec-000004",
+            "output_log": "python-output:exec-000004/stdout",
+            "stream": "stdout",
+            "line_range": None,
+            "show_line_numbers": False,
+            "total_lines": 1,
+            "returned_lines": 1,
+            "omitted_before": 0,
+            "omitted_after": 0,
+            "text": "123 | payload",
+        },
+    )
+
+    assert text == "123 | payload\n\n[python-output:exec-000004/stdout | 1 line of 1]"
+
+
+def test_execution_status_error_and_killed_results_are_not_tool_failures() -> None:
+    error_text = format_tool_result_text(
+        "python_execution_status",
+        {
+            "ok": False,
+            "execution_id": "exec-000005",
+            "status": "error",
+            "error": {"ename": "ZeroDivisionError", "evalue": "division by zero", "traceback_log": "python-output:exec-000005/traceback"},
+            "output_log": "python-output:exec-000005",
+            "submitted_at": 1777911000.0,
+            "completed_at": 1777911001.0,
+            "output_total_lines": 3,
+        },
+    )
+    killed_text = format_tool_result_text(
+        "python_execution_status",
+        {
+            "ok": False,
+            "execution_id": "exec-000006",
+            "status": "killed",
+            "error": None,
+            "output_log": "python-output:exec-000006",
+            "submitted_at": 1777911002.0,
+            "completed_at": 1777911003.0,
+            "output_total_lines": 0,
+        },
+    )
+
+    assert error_text.startswith("execution exec-000005: error\nerror: ZeroDivisionError: division by zero\ntraceback: python-output:exec-000005/traceback\nlog: python-output:exec-000005")
+    assert killed_text.startswith("execution exec-000006: killed\nlog: python-output:exec-000006")
+    assert "tool failed" not in error_text
+    assert "tool failed" not in killed_text
+
+
 def test_status_tools_keep_compact_status_oriented_text() -> None:
     status_text = format_tool_result_text(
         "python_status",

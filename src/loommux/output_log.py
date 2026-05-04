@@ -43,6 +43,7 @@ class LineLog:
         return {
             "ok": True,
             "line_range": line_range,
+            "show_line_numbers": show_line_numbers,
             "total_lines": len(lines),
             "returned_lines": len(selected),
             "omitted_before": max(range_result.start - 1, 0) if selected else len(lines),
