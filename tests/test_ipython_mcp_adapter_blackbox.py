@@ -16,7 +16,9 @@ EXPECTED_TOOLS = {
     "set_workspace",
     "run_python",
     "python_status",
+    "python_execution_status",
     "read_python_output",
+    "search_python_output",
     "wait_python",
     "interrupt_python",
     "reset_python",
@@ -293,12 +295,12 @@ async def test_set_workspace_to_missing_ipykernel_closes_existing_running_execut
     fake_python.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
 
     result = await call("set_workspace", {"path": str(missing_ipykernel)})
-    killed_output = await call("read_python_output", {"execution_id": running["execution_id"]})
+    killed_status = await call("python_execution_status", {"execution_id": running["execution_id"]})
     status = await call("python_status")
 
     assert result["ok"] is False
     assert result["status"] == "ipykernel_missing"
-    assert killed_output["status"] == "killed"
+    assert killed_status["status"] == "killed"
     assert status["kernel_started"] is False
     assert status["busy"] is False
     assert status["current_execution_id"] is None
@@ -371,7 +373,8 @@ async def test_exec_007_running_output_can_be_read(call: Callable[[str, dict[str
     running = await call("run_python", {"code": "import time\nfor i in range(3):\n    print(i, flush=True)\n    time.sleep(0.4)", "timeout_seconds": 0.2})
     snapshot = await call("read_python_output", {"execution_id": running["execution_id"]})
 
-    assert snapshot["status"] in {"running", "completed"}
+    assert snapshot["ok"] is True
+    assert snapshot["execution_id"] == running["execution_id"]
 
     completed = await call("wait_python", {"execution_id": running["execution_id"], "timeout_seconds": 5})
     assert completed["status"] == "completed"
@@ -424,11 +427,11 @@ async def test_ctrl_003_reset_kills_running_execution_and_new_kernel_can_run(cal
     await call("set_workspace", {"path": str(valid_workspace)})
     running = await call("run_python", {"code": "import time\ntime.sleep(10)", "timeout_seconds": 0.1})
     reset = await call("reset_python")
-    old_output = await call("read_python_output", {"execution_id": running["execution_id"]})
+    old_status = await call("python_execution_status", {"execution_id": running["execution_id"]})
 
     assert reset["ok"] is True
     assert reset["status"] == "restarted"
-    assert old_output["status"] == "killed"
+    assert old_status["status"] == "killed"
     assert (await call("python_status"))["busy"] is False
     assert (await call("run_python", {"code": "40 + 2"}))["result_text"] == "42"
 
@@ -441,6 +444,93 @@ async def test_read_and_wait_default_to_current_or_last_execution(call: Callable
     assert (await call("read_python_output"))["execution_id"] == result["execution_id"]
     assert (await call("wait_python", {"timeout_seconds": 1}))["execution_id"] == result["execution_id"]
     assert (await call("read_python_output", {"execution_id": "exec-missing"}))["status"] == "execution_not_found"
+
+
+async def test_execution_status_returns_log_handles_without_full_log_body(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
+    await call("set_workspace", {"path": str(valid_workspace)})
+    result = await call("run_python", {"code": "print('status-log-body')\n123"})
+    status = await call("python_execution_status", {"execution_id": result["execution_id"]})
+
+    assert status["ok"] is True
+    assert status["execution_id"] == result["execution_id"]
+    assert status["output_log"] == f"python-output:{result['execution_id']}"
+    assert status["logs"]["stdout"] == f"python-output:{result['execution_id']}/stdout"
+    assert "stdout" not in status
+    assert "stderr" not in status
+    assert "result_text" not in status
+
+
+async def test_read_python_output_reads_line_ranges_and_stream_handles(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
+    await call("set_workspace", {"path": str(valid_workspace)})
+    result = await call("run_python", {"code": "for value in ['alpha', 'beta-match', 'gamma', 'delta']:\n    print(value)"})
+    output_log = result["logs"]["stdout"]
+
+    head = await call("read_python_output", {"output_log": output_log, "line_range": ":2", "show_line_numbers": True})
+    tail = await call("read_python_output", {"output_log": output_log, "line_range": "-2:", "show_line_numbers": True})
+    single = await call("read_python_output", {"output_log": output_log, "line_range": "2:2"})
+    clipped = await call("read_python_output", {"output_log": output_log, "line_range": "2:2", "max_chars": 4})
+
+    assert head["text"] == "1 | alpha\n2 | beta-match"
+    assert tail["text"] == "3 | gamma\n4 | delta"
+    assert single["text"] == "beta-match"
+    assert clipped["text"] == "beta...[6 chars omitted]"
+    assert "status" not in head
+    assert "error" not in head
+    assert head["total_lines"] == 4
+    assert head["returned_lines"] == 2
+
+
+async def test_search_python_output_supports_literal_regex_and_context(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
+    await call("set_workspace", {"path": str(valid_workspace)})
+    result = await call("run_python", {"code": "for value in ['alpha', 'beta-match', 'gamma', 'delta-match']:\n    print(value)"})
+    output_log = result["logs"]["stdout"]
+
+    literal = await call("search_python_output", {"output_log": output_log, "query": "match", "query_mode": "literal", "context_before": 1})
+    regex = await call("search_python_output", {"output_log": output_log, "query": "^(alpha|gamma)$", "query_mode": "regex"})
+    none = await call("search_python_output", {"output_log": output_log, "query": "missing", "query_mode": "literal"})
+
+    assert literal["matched_lines"] == 2
+    assert "C 1 | alpha" in literal["text"]
+    assert "M 2 | beta-match" in literal["text"]
+    assert "M 4 | delta-match" in literal["text"]
+    assert regex["matched_lines"] == 2
+    assert "M 1 | alpha" in regex["text"]
+    assert "M 3 | gamma" in regex["text"]
+    assert none["ok"] is True
+    assert none["matched_lines"] == 0
+    assert none["text"] == ""
+
+
+async def test_run_python_omits_large_output_body_but_keeps_log_handle(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
+    await call("set_workspace", {"path": str(valid_workspace)})
+    result = await call("run_python", {"code": "for i in range(301):\n    print(f'line-{i:03d}')"})
+    tail = await call("read_python_output", {"output_log": result["logs"]["stdout"], "line_range": "-2:", "show_line_numbers": True})
+
+    assert result["status"] == "completed"
+    assert result["output_omitted"] is True
+    assert result["output_line_limit"] == 300
+    assert result["output_total_lines"] == 301
+    assert result["stdout"] == ""
+    assert result["stderr"] == ""
+    assert result["result_text"] == ""
+    assert result["output_log"] == f"python-output:{result['execution_id']}"
+    assert tail["text"] == "300 | line-299\n301 | line-300"
+
+
+async def test_run_python_timeout_omits_partial_body_but_keeps_log_handle(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
+    await call("set_workspace", {"path": str(valid_workspace)})
+    result = await call("run_python", {"code": "import time\nprint('partial-line', flush=True)\ntime.sleep(1)", "timeout_seconds": 0.1})
+    output = await call("read_python_output", {"output_log": result["logs"]["stdout"], "line_range": "1:1"})
+
+    assert result["status"] == "running"
+    assert result["output_omitted"] is True
+    assert result["output_omitted_reason"] == "running"
+    assert result["stdout"] == ""
+    assert result["stderr"] == ""
+    assert result["result_text"] == ""
+    assert output["text"] == "partial-line"
+
+    await call("wait_python", {"execution_id": result["execution_id"], "timeout_seconds": 5})
 
 
 async def test_api_001_and_002_tool_surface_is_exact_and_has_no_truncation_parameters(client: Client[Any]) -> None:

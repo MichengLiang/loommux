@@ -27,6 +27,7 @@ KERNEL_KEY_ORDER = (
 
 CONTENT_BLOCK_ORDER = (
     "result_text",
+    "text",
     "stdout",
     "stderr",
 )

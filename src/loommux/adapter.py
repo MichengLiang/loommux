@@ -8,6 +8,9 @@ from typing import Any
 
 from loommux.execution import Execution
 from loommux.kernel_session import KernelSession
+from loommux.output_log import parse_output_log_handle
+
+DEFAULT_OUTPUT_LINE_LIMIT = 300
 
 
 class IPythonMCPAdapter:
@@ -132,11 +135,56 @@ class IPythonMCPAdapter:
                 "last_execution_id": self.last_execution_id,
             }
 
-    def read_python_output(self, execution_id: str | None = None) -> dict[str, Any]:
+    def python_execution_status(self, execution_id: str | None = None) -> dict[str, Any]:
         execution = self._select_execution(execution_id)
         if execution is None:
             return {"ok": False, "status": "execution_not_found", "message": "execution was not found"}
-        return execution.snapshot()
+        return execution.status_snapshot()
+
+    def read_python_output(
+        self,
+        execution_id: str | None = None,
+        output_log: str | None = None,
+        line_range: str | None = None,
+        show_line_numbers: bool = False,
+        max_chars: int | None = None,
+    ) -> dict[str, Any]:
+        selected = self._select_output_log(execution_id, output_log)
+        if isinstance(selected, dict):
+            return selected
+        execution, stream = selected
+        line_log = execution.logs.get(stream)
+        if line_log is None:
+            return {"ok": False, "status": "invalid_output_log", "message": "output_log stream is not supported"}
+        result = line_log.read(line_range, show_line_numbers=show_line_numbers, max_chars=max_chars)
+        if result.get("ok") is False:
+            return result
+        result.update({"execution_id": execution.execution_id, "output_log": execution.logs.handle(stream), "stream": stream})
+        return result
+
+    def search_python_output(
+        self,
+        query: str,
+        execution_id: str | None = None,
+        output_log: str | None = None,
+        query_mode: str = "auto",
+        context_before: int = 0,
+        context_after: int = 0,
+        ignore_case: bool = False,
+        max_chars: int | None = None,
+    ) -> dict[str, Any]:
+        selected = self._select_output_log(execution_id, output_log)
+        if isinstance(selected, dict):
+            return selected
+        execution, stream = selected
+        line_log = execution.logs.get(stream)
+        if line_log is None:
+            return {"ok": False, "status": "invalid_output_log", "message": "output_log stream is not supported"}
+        result = line_log.search(query, query_mode=query_mode, context_before=context_before, context_after=context_after, ignore_case=ignore_case, max_chars=max_chars)
+        if result.get("ok") is False:
+            return result
+        result.update({"execution_id": execution.execution_id, "output_log": execution.logs.handle(stream), "stream": stream})
+        return result
 
     def wait_python(self, execution_id: str | None = None, timeout_seconds: float = 30) -> dict[str, Any]:
         timeout_error = self._validate_timeout(timeout_seconds)
@@ -147,7 +195,7 @@ class IPythonMCPAdapter:
             return {"ok": False, "status": "execution_not_found", "message": "execution was not found", "kernel": self._kernel_wait_status()}
         if execution.is_running:
             execution.done.wait(float(timeout_seconds))
-        snapshot = execution.snapshot()
+        snapshot = execution.snapshot(output_line_limit=DEFAULT_OUTPUT_LINE_LIMIT)
         snapshot["kernel"] = self._kernel_wait_status()
         return snapshot
 
@@ -209,8 +257,23 @@ class IPythonMCPAdapter:
                 return None
             return self.executions.get(selected_id)
 
+    def _select_output_log(self, execution_id: str | None, output_log: str | None) -> tuple[Execution, str] | dict[str, Any]:
+        if output_log is not None:
+            parsed = parse_output_log_handle(output_log)
+            if isinstance(parsed, dict):
+                return parsed
+            selected_execution_id, stream = parsed
+            execution = self._select_execution(selected_execution_id)
+            if execution is None:
+                return {"ok": False, "status": "execution_not_found", "message": "execution was not found"}
+            return execution, stream
+        execution = self._select_execution(execution_id)
+        if execution is None:
+            return {"ok": False, "status": "execution_not_found", "message": "execution was not found"}
+        return execution, "combined"
+
     def _execution_response(self, execution: Execution) -> dict[str, Any]:
-        snapshot = execution.snapshot()
+        snapshot = execution.snapshot(output_line_limit=DEFAULT_OUTPUT_LINE_LIMIT)
         snapshot["kernel"] = self.kernel.kernel_info() if self.kernel is not None else {"busy": False, "kernel_pid": None, "execution_count": 0}
         return snapshot
 
