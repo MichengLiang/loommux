@@ -53,6 +53,111 @@ def call(client: Client[Any]) -> Callable[[str, dict[str, Any] | None], Any]:
     return _call
 
 
+@pytest.fixture
+def raw_call(client: Client[Any]) -> Callable[[str, dict[str, Any] | None], Any]:
+    async def _call(name: str, arguments: dict[str, Any] | None = None) -> Any:
+        return await client.call_tool(name, arguments or {})
+
+    return _call
+
+
+def result_text(result: Any) -> str:
+    assert len(result.content) == 1
+    assert result.content[0].type == "text"
+    return result.content[0].text
+
+
+async def test_tool_result_preserves_structured_data_and_adds_pretty_status_content(raw_call: Callable[[str, dict[str, Any] | None], Any]) -> None:
+    result = await raw_call("python_status")
+
+    assert result.data == {
+        "ok": True,
+        "workspace": None,
+        "python": None,
+        "kernel_started": False,
+        "kernel_pid": None,
+        "busy": False,
+        "current_execution_id": None,
+        "execution_count": 0,
+        "last_execution_id": None,
+    }
+
+    text = result_text(result)
+    assert text.splitlines()[0] == "状态：workspace 未设置，kernel 未启动。"
+    assert "- ok: true" in text
+    assert "- kernel_started: false" in text
+    assert "- busy: false" in text
+    assert not text.lstrip().startswith("{")
+
+
+async def test_run_python_success_content_includes_all_nonempty_output_blocks(raw_call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
+    await raw_call("set_workspace", {"path": str(valid_workspace)})
+    result = await raw_call("run_python", {"code": "import sys\nprint('stdout-line')\nprint('stderr-line', file=sys.stderr)\n'RESULT-LINE'"})
+
+    assert result.data["status"] == "completed"
+    assert result.data["stdout"] == "stdout-line\n"
+    assert result.data["stderr"] == "stderr-line\n"
+    assert result.data["result_text"] == "'RESULT-LINE'"
+
+    text = result_text(result)
+    assert text.splitlines()[0] == f"完成：execution {result.data['execution_id']} 已完成。"
+    assert text.index("result_text:") < text.index("stdout:") < text.index("stderr:")
+    assert "'RESULT-LINE'" in text
+    assert "stdout-line\n" in text
+    assert "stderr-line\n" in text
+
+
+async def test_run_python_error_content_includes_error_fields_and_full_traceback(raw_call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
+    await raw_call("set_workspace", {"path": str(valid_workspace)})
+    result = await raw_call("run_python", {"code": "def explode():\n    return 1 / 0\nexplode()"})
+
+    assert result.data["status"] == "error"
+    traceback = result.data["error"]["traceback"]
+    assert traceback
+
+    text = result_text(result)
+    assert text.splitlines()[0] == f"错误：execution {result.data['execution_id']} 执行失败。"
+    assert "error:" in text
+    assert "- ename: ZeroDivisionError" in text
+    assert "- evalue: division by zero" in text
+    assert "traceback:" in text
+    for line in traceback:
+        assert line in text
+
+
+async def test_running_busy_and_execution_not_found_content_front_loads_state(raw_call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
+    not_found = await raw_call("read_python_output")
+    assert result_text(not_found).splitlines()[0] == "前置状态：未找到 execution。"
+
+    await raw_call("set_workspace", {"path": str(valid_workspace)})
+    running = await raw_call("run_python", {"code": "import time\nprint('partial', flush=True)\ntime.sleep(1)", "timeout_seconds": 0.1})
+    busy = await raw_call("run_python", {"code": "queued_value = 123"})
+
+    assert running.data["status"] == "running"
+    assert busy.data["status"] == "busy"
+    assert result_text(running).splitlines()[0] == f"运行中：execution {running.data['execution_id']} 仍在执行。"
+    assert result_text(busy).splitlines()[0] == f"前置状态：kernel 正在执行 {running.data['execution_id']}，未提交新代码。"
+
+    await raw_call("wait_python", {"execution_id": running.data["execution_id"], "timeout_seconds": 5})
+
+
+async def test_interrupt_and_reset_content_are_pretty_and_structured_data_is_unchanged(raw_call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
+    await raw_call("set_workspace", {"path": str(valid_workspace)})
+    running = await raw_call("run_python", {"code": "import time\nwhile True:\n    time.sleep(0.1)", "timeout_seconds": 0.1})
+    interrupted = await raw_call("interrupt_python")
+
+    assert interrupted.data["status"] == "interrupt_sent"
+    assert interrupted.data["execution_id"] == running.data["execution_id"]
+    assert result_text(interrupted).splitlines()[0] == f"中断：已向 execution {running.data['execution_id']} 发送 interrupt。"
+
+    await raw_call("wait_python", {"execution_id": running.data["execution_id"], "timeout_seconds": 5})
+    reset = await raw_call("reset_python")
+
+    assert reset.data["status"] == "restarted"
+    assert reset.data["busy"] is False
+    assert result_text(reset).splitlines()[0] == "重置：kernel 已重启。"
+
+
 async def test_ws_001_initial_status_has_no_workspace(call: Callable[[str, dict[str, Any] | None], Any]) -> None:
     status = await call("python_status")
 
