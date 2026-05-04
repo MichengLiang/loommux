@@ -16,7 +16,7 @@ RUN_PYTHON_DESCRIPTION = (
 )
 WAIT_PYTHON_DESCRIPTION = (
     "等待某个 execution 完成；已结束且 combined output 不超过 300 行时直接展示可见输出，running 或大输出时返回 output_log combined handle "
-    "`python-output:<execution_id>`；分流日志由该 handle 加 `/stdout`、`/stderr`、`/result`、`/traceback` 派生；读取日志用 `read_python_output`，搜索日志用 `search_python_output`。"
+    "`python-output:<execution_id>`；分流日志由该 handle 加 `/stdout`、`/stderr`、`/result`、`/traceback` 派生；读取日志用 `read_python_output`，搜索日志用 `search_python_output`，查状态用 `python_execution_status`。"
 )
 
 

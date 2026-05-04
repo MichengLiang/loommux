@@ -615,7 +615,7 @@ async def test_api_001_and_002_tool_surface_is_exact_and_has_no_truncation_param
         assert "/traceback" in description
         assert "read_python_output" in description
         assert "search_python_output" in description
-    assert "python_execution_status" in (run_python.description or "")
+        assert "python_execution_status" in description
     assert "stream" in read_properties
     assert "stream" in search_properties
 
