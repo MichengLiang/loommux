@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import math
 import os
+import re
 import subprocess
 import threading
 from pathlib import Path
@@ -11,7 +13,23 @@ from loommux.kernel_session import KernelSession
 from loommux.output_log import parse_output_log_handle
 
 DEFAULT_OUTPUT_LINE_LIMIT = 300
+DEFAULT_RUN_PYTHON_TIMEOUT_SECONDS = 10.0
 OUTPUT_STREAMS = {"combined", "stdout", "stderr", "result", "traceback"}
+RUN_PYTHON_TIMEOUT_DIRECTIVE_RE = re.compile(r"^# loommux: timeout_seconds=([1-9][0-9]*|[0-9]+\.[0-9]+)$")
+
+
+def parse_run_python_freeform_timeout(freeform: str) -> tuple[float, str]:
+    matches: list[float] = []
+    for line in freeform.splitlines():
+        match = RUN_PYTHON_TIMEOUT_DIRECTIVE_RE.fullmatch(line)
+        if match is None:
+            continue
+        value = float(match.group(1))
+        if math.isfinite(value) and value > 0:
+            matches.append(value)
+    if len(matches) == 1:
+        return matches[0], "directive"
+    return DEFAULT_RUN_PYTHON_TIMEOUT_SECONDS, "default"
 
 
 class IPythonMCPAdapter:
@@ -86,7 +104,13 @@ class IPythonMCPAdapter:
             self.current_execution_id = None
         old_kernel.shutdown()
 
-    def run_python(self, code: str, timeout_seconds: float = 30) -> dict[str, Any]:
+    def run_python(self, freeform: str) -> dict[str, Any]:
+        if not isinstance(freeform, str):
+            return {"ok": False, "status": "invalid_code", "message": "freeform must be a string"}
+        timeout_seconds, _timeout_source = parse_run_python_freeform_timeout(freeform)
+        return self._submit_python_cell(freeform, timeout_seconds)
+
+    def _submit_python_cell(self, code: str, timeout_seconds: float) -> dict[str, Any]:
         if not isinstance(code, str):
             return {"ok": False, "status": "invalid_code", "message": "code must be a string"}
         timeout_error = self._validate_timeout(timeout_seconds)
@@ -322,7 +346,7 @@ class IPythonMCPAdapter:
             timeout = float(timeout_seconds)
         except (TypeError, ValueError):
             return {"ok": False, "status": "invalid_timeout", "message": "timeout_seconds must be greater than 0"}
-        if timeout <= 0:
+        if not math.isfinite(timeout) or timeout <= 0:
             return {"ok": False, "status": "invalid_timeout", "message": "timeout_seconds must be greater than 0"}
         return None
 

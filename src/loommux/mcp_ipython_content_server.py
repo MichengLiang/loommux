@@ -43,35 +43,51 @@ def create_mcp() -> FastMCP:
         return _tool_result("set_workspace", adapter.set_workspace(path))
 
     @mcp.tool(output_schema=None)
-    def run_python(code: str, timeout_seconds: float = 30) -> ToolResult:
-        """向当前 IPython kernel 提交 Python 代码，并等待至完成或超时。
+    def run_python(freeform: str) -> ToolResult:
+        """向当前 IPython kernel 提交 Python cell，并等待至完成或达到等待上限。
 
-        已结束且 combined output 不超过 300 行时直接展示可见输出；
-        running 或大输出时返回 output_log combined handle
-        `python-output:<execution_id>`。分流日志由该 handle 加
-        `/stdout`、`/stderr`、`/result`、`/traceback` 派生；读取日志使用
-        `read_python_output`，搜索日志使用 `search_python_output`，查看
-        execution 结构化状态使用 `python_execution_status`。
+        输入
+        ----
 
-        Args:
-            code: 要提交给当前 IPython kernel 的 Python 源代码。
-            timeout_seconds: 本次工具调用最多等待的秒数。到达该时间后，
-                execution 继续在 kernel 中运行，工具返回 `status="running"`。
+        ``freeform`` 是原始 Python cell 源码文本。该文本原样提交给当前
+        持久 IPython kernel。模型不需要生成 JSON arguments，也不需要把
+        Python 源码转义成 JSON string。
 
-        Returns:
-            execution 结果。已结束且 combined output log 不超过 300 行时，返回
-            Python 可见输出：stdout 原文、`Out[n]: ...` 形式的 IPython result、
-            以及 Python traceback 文本。execution 仍在运行或 combined output log
-            超过 300 行时，返回不携带输出正文，只携带 `execution_id`、
-            `status`、`output_log`、`output_omitted_reason` 和已收集行数。
+        等待上限
+        --------
 
-            `output_log` 是 combined output log handle，格式为
-            `python-output:<execution_id>`。分流日志使用固定后缀：
-            `/stdout`、`/stderr`、`/result`、`/traceback`。读取日志使用
-            `read_python_output`；搜索日志使用 `search_python_output`；查看
-            execution 结构化状态使用 `python_execution_status`。
+        本次调用默认等待 10 秒。若本次调用需要等待更长时间，在 cell 中
+        放入且只放入一行完整匹配的注释::
+
+            # loommux: timeout_seconds=120
+
+        没有该注释、该注释无效或存在多条有效注释时，本次调用仍等待
+        10 秒。等待上限只控制本次工具调用等待多久；达到等待上限后
+        execution 继续在 kernel 中运行，不会被 interrupt 或 reset。
+
+        返回表面
+        --------
+
+        已结束且 combined output 不超过 300 行时直接展示可见输出。running
+        或大输出时返回 ``status="running"``、``execution_id`` 和
+        ``output_log``。``output_log`` 是 combined output log handle，
+        格式为 ``python-output:<execution_id>``。分流日志由该 handle 加
+        固定后缀 ``/stdout``、``/stderr``、``/result``、``/traceback`` 派生。
+
+        后续工具
+        --------
+
+        读取日志使用 ``read_python_output``。搜索日志使用
+        ``search_python_output``。等待运行中 execution 使用 ``wait_python``。
+        查看 execution 结构化状态使用 ``python_execution_status``。中断或
+        重启使用 ``interrupt_python`` 或 ``reset_python``。
+
+        :param freeform: 要提交给当前 IPython kernel 的 Python cell 源码文本。
+        :returns: execution 结果。小输出直接返回 Python 可见输出；running 或
+            大输出返回 ``execution_id``、``status``、``output_log``、
+            ``output_omitted_reason`` 和已收集行数。
         """
-        return _tool_result("run_python", adapter.run_python(code, timeout_seconds))
+        return _tool_result("run_python", adapter.run_python(freeform))
 
     @mcp.tool(output_schema=None)
     def python_status() -> ToolResult:

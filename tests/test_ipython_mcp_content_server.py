@@ -100,7 +100,7 @@ async def test_content_only_set_workspace_returns_only_presentation_text(content
 
 async def test_content_only_run_python_preserves_output_first_pretty_text(content_client: Client[Any], valid_workspace: Path) -> None:
     await content_client.call_tool("set_workspace", {"path": str(valid_workspace)})
-    result = await content_client.call_tool("run_python", {"code": "print('hello-content-only')\n42"})
+    result = await content_client.call_tool("run_python", {"freeform": "print('hello-content-only')\n42"})
     text = assert_content_only_result(result)
 
     assert text.startswith("hello-content-only\nOut[")
@@ -113,7 +113,7 @@ async def test_content_only_run_python_preserves_output_first_pretty_text(conten
 
 async def test_content_only_error_execution_has_traceback_text_but_no_structured_channels(content_client: Client[Any], valid_workspace: Path) -> None:
     await content_client.call_tool("set_workspace", {"path": str(valid_workspace)})
-    result = await content_client.call_tool("run_python", {"code": "1 / 0"})
+    result = await content_client.call_tool("run_python", {"freeform": "1 / 0"})
     text = assert_content_only_result(result)
 
     assert "ZeroDivisionError: division by zero" in text
@@ -123,7 +123,7 @@ async def test_content_only_error_execution_has_traceback_text_but_no_structured
 
 async def test_content_only_running_execution_omits_partial_body_and_structured_channels(content_client: Client[Any], valid_workspace: Path) -> None:
     await content_client.call_tool("set_workspace", {"path": str(valid_workspace)})
-    result = await content_client.call_tool("run_python", {"code": "import time\nprint('partial-content-only', flush=True)\ntime.sleep(1)", "timeout_seconds": 0.1})
+    result = await content_client.call_tool("run_python", {"freeform": "# loommux: timeout_seconds=0.1\nimport time\nprint('partial-content-only', flush=True)\ntime.sleep(1)"})
 
     assert assert_content_only_result(result) == "[exec-000001 running | output omitted: running | 1 line available | log: python-output:exec-000001]"
 
@@ -134,7 +134,7 @@ async def test_content_only_all_tools_return_no_structured_channels(content_clie
     calls = [
         ("python_status", {}),
         ("set_workspace", {"path": str(valid_workspace)}),
-        ("run_python", {"code": "print('all-tools-content-only')"}),
+        ("run_python", {"freeform": "print('all-tools-content-only')"}),
         ("python_execution_status", {"execution_id": "exec-000001"}),
         ("read_python_output", {"output_log": "python-output:exec-000001", "stream": "stdout"}),
         ("search_python_output", {"output_log": "python-output:exec-000001", "stream": "stdout", "query": "all-tools", "query_mode": "literal"}),

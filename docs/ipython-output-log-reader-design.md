@@ -50,7 +50,7 @@ python-output:<execution_id>/traceback
 
 ```text
 set_workspace(path)
-run_python(code, timeout_seconds=30)
+run_python(freeform)
 python_status()
 python_execution_status(execution_id=None)
 wait_python(execution_id=None, timeout_seconds=30)
@@ -58,7 +58,7 @@ interrupt_python()
 reset_python()
 ```
 
-`run_python` 与 `wait_python` 返回 execution status，并在返回体中包含 canonical `output_log`。它们不提供行范围、grep 或 max chars 参数。读取日志由日志工具完成。
+`run_python` 的当前 MCP tool surface 是 freeform Python cell 输入；timeout 覆盖使用 `docs/ipython-mcp-freeform-run-python-design.md` 定义的 canonical directive。`run_python` 与 `wait_python` 返回 execution status，并在返回体中包含 canonical `output_log`。它们不提供行范围、grep 或 max chars 参数。读取日志由日志工具完成。
 
 默认保护规则：`run_python` 与 `wait_python` 只有在 execution 已结束且 combined output log 不超过 300 行时，才携带完整小输出正文。execution 仍为 `running`，或 combined output log 超过 300 行时，文本字段必须为空，返回体只保留 execution id、状态、错误摘要、canonical output log handle 和省略元数据。省略元数据包括 `output_omitted`、`output_omitted_reason`、`output_line_limit` 与 `output_total_lines`。完整日志通过 `read_python_output` 或 `search_python_output` 读取。
 

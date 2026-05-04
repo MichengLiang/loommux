@@ -91,7 +91,7 @@ async def test_tool_result_preserves_structured_data_and_adds_pretty_status_cont
 
 async def test_run_python_success_content_includes_all_nonempty_output_blocks(raw_call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await raw_call("set_workspace", {"path": str(valid_workspace)})
-    result = await raw_call("run_python", {"code": "import sys\nprint('stdout-line')\nprint('stderr-line', file=sys.stderr)\n'RESULT-LINE'"})
+    result = await raw_call("run_python", {"freeform": "import sys\nprint('stdout-line')\nprint('stderr-line', file=sys.stderr)\n'RESULT-LINE'"})
 
     assert result.data["status"] == "completed"
     assert result.data["stdout"] == "stdout-line\n"
@@ -111,7 +111,7 @@ async def test_run_python_success_content_includes_all_nonempty_output_blocks(ra
 
 async def test_run_python_error_content_includes_error_summary_and_traceback_log(raw_call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await raw_call("set_workspace", {"path": str(valid_workspace)})
-    result = await raw_call("run_python", {"code": "def explode():\n    return 1 / 0\nexplode()"})
+    result = await raw_call("run_python", {"freeform": "def explode():\n    return 1 / 0\nexplode()"})
 
     assert result.data["status"] == "error"
     assert result.data["error"]["ename"] == "ZeroDivisionError"
@@ -132,7 +132,7 @@ async def test_run_python_error_content_includes_error_summary_and_traceback_log
 
 async def test_python_execution_status_pretty_text_handles_real_error_execution(raw_call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await raw_call("set_workspace", {"path": str(valid_workspace)})
-    result = await raw_call("run_python", {"code": "1 / 0"})
+    result = await raw_call("run_python", {"freeform": "1 / 0"})
     status = await raw_call("python_execution_status", {"execution_id": result.data["execution_id"]})
 
     text = result_text(status)
@@ -145,8 +145,8 @@ async def test_running_busy_and_execution_not_found_content_front_loads_state(ra
     assert result_text(not_found) == "execution_not_found: execution was not found"
 
     await raw_call("set_workspace", {"path": str(valid_workspace)})
-    running = await raw_call("run_python", {"code": "import time\nprint('partial', flush=True)\ntime.sleep(1)", "timeout_seconds": 0.1})
-    busy = await raw_call("run_python", {"code": "queued_value = 123"})
+    running = await raw_call("run_python", {"freeform": "# loommux: timeout_seconds=0.1\nimport time\nprint('partial', flush=True)\ntime.sleep(1)"})
+    busy = await raw_call("run_python", {"freeform": "queued_value = 123"})
 
     assert running.data["status"] == "running"
     assert busy.data["status"] == "busy"
@@ -158,7 +158,7 @@ async def test_running_busy_and_execution_not_found_content_front_loads_state(ra
 
 async def test_interrupt_and_reset_content_are_pretty_and_structured_data_is_unchanged(raw_call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await raw_call("set_workspace", {"path": str(valid_workspace)})
-    running = await raw_call("run_python", {"code": "import time\nwhile True:\n    time.sleep(0.1)", "timeout_seconds": 0.1})
+    running = await raw_call("run_python", {"freeform": "# loommux: timeout_seconds=0.1\nimport time\nwhile True:\n    time.sleep(0.1)"})
     interrupted = await raw_call("interrupt_python")
 
     assert interrupted.data["status"] == "interrupt_sent"
@@ -260,12 +260,12 @@ async def test_set_workspace_resolves_relative_paths_and_tilde(call: Callable[[s
 
 async def test_set_workspace_success_does_not_reuse_output_log_handles(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path, tmp_path: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
-    first = await call("run_python", {"code": "print('first-workspace')"})
+    first = await call("run_python", {"freeform": "print('first-workspace')"})
 
     next_workspace = tmp_path / "next-workspace"
     write_python_wrapper(next_workspace)
     await call("set_workspace", {"path": str(next_workspace)})
-    second = await call("run_python", {"code": "print('second-workspace')"})
+    second = await call("run_python", {"freeform": "print('second-workspace')"})
     stale = await call("read_python_output", {"output_log": first["output_log"]})
 
     assert first["execution_id"] == "exec-000001"
@@ -277,12 +277,12 @@ async def test_set_workspace_success_does_not_reuse_output_log_handles(call: Cal
 async def test_set_workspace_to_missing_path_closes_existing_kernel(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path, tmp_path: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
     old_pid = (await call("python_status"))["kernel_pid"]
-    assert (await call("run_python", {"code": "survivor = 42"}))["status"] == "completed"
+    assert (await call("run_python", {"freeform": "survivor = 42"}))["status"] == "completed"
 
     missing = tmp_path / "missing-after-valid"
     result = await call("set_workspace", {"path": str(missing)})
     status = await call("python_status")
-    rerun = await call("run_python", {"code": "survivor"})
+    rerun = await call("run_python", {"freeform": "survivor"})
 
     assert result["ok"] is False
     assert result["status"] == "workspace_not_found"
@@ -303,7 +303,7 @@ async def test_set_workspace_to_missing_python_closes_existing_kernel(call: Call
 
     result = await call("set_workspace", {"path": str(missing_python_workspace)})
     status = await call("python_status")
-    rerun = await call("run_python", {"code": "1 + 1"})
+    rerun = await call("run_python", {"freeform": "1 + 1"})
 
     assert result["ok"] is False
     assert result["status"] == "python_not_found"
@@ -316,7 +316,7 @@ async def test_set_workspace_to_missing_python_closes_existing_kernel(call: Call
 
 async def test_set_workspace_to_missing_ipykernel_closes_existing_running_execution(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path, tmp_path: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
-    running = await call("run_python", {"code": "import time\ntime.sleep(10)", "timeout_seconds": 0.1})
+    running = await call("run_python", {"freeform": "# loommux: timeout_seconds=0.1\nimport time\ntime.sleep(10)"})
     missing_ipykernel = tmp_path / "missing-ipykernel-after-valid"
     fake_python = missing_ipykernel / ".venv" / "bin" / "python"
     fake_python.parent.mkdir(parents=True)
@@ -335,15 +335,14 @@ async def test_set_workspace_to_missing_ipykernel_closes_existing_running_execut
     assert status["current_execution_id"] is None
 
 
-async def test_run_python_requires_workspace_and_positive_timeout(call: Callable[[str, dict[str, Any] | None], Any]) -> None:
-    assert (await call("run_python", {"code": "1 + 1"}))["status"] == "workspace_not_set"
-    assert (await call("run_python", {"code": "1 + 1", "timeout_seconds": 0}))["status"] == "invalid_timeout"
+async def test_run_python_freeform_requires_workspace(call: Callable[[str, dict[str, Any] | None], Any]) -> None:
+    assert (await call("run_python", {"freeform": "1 + 1"}))["status"] == "workspace_not_set"
 
 
 async def test_exec_001_state_is_retained_across_runs(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
-    first = await call("run_python", {"code": "x = 41"})
-    second = await call("run_python", {"code": "x + 1"})
+    first = await call("run_python", {"freeform": "x = 41"})
+    second = await call("run_python", {"freeform": "x + 1"})
 
     assert first["status"] == "completed"
     assert second["ok"] is True
@@ -356,7 +355,7 @@ async def test_exec_001_state_is_retained_across_runs(call: Callable[[str, dict[
 
 async def test_exec_002_stdout_is_collected(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
-    result = await call("run_python", {"code": "print('hello')"})
+    result = await call("run_python", {"freeform": "print('hello')"})
 
     assert result["status"] == "completed"
     assert "hello" in result["stdout"]
@@ -365,7 +364,7 @@ async def test_exec_002_stdout_is_collected(call: Callable[[str, dict[str, Any] 
 
 async def test_exec_003_stderr_is_collected(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
-    result = await call("run_python", {"code": "import sys; print('bad', file=sys.stderr)"})
+    result = await call("run_python", {"freeform": "import sys; print('bad', file=sys.stderr)"})
 
     assert result["status"] == "completed"
     assert "bad" in result["stderr"]
@@ -373,18 +372,18 @@ async def test_exec_003_stderr_is_collected(call: Callable[[str, dict[str, Any] 
 
 async def test_exec_004_python_exception_returns_error_without_crashing_kernel(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
-    result = await call("run_python", {"code": "1 / 0"})
+    result = await call("run_python", {"freeform": "1 / 0"})
 
     assert result["ok"] is False
     assert result["status"] == "error"
     assert result["error"]["ename"] == "ZeroDivisionError"
     assert (await call("python_status"))["kernel_started"] is True
-    assert (await call("run_python", {"code": "6 * 7"}))["result_text"] == "42"
+    assert (await call("run_python", {"freeform": "6 * 7"}))["result_text"] == "42"
 
 
 async def test_exec_005_and_006_timeout_returns_running_then_wait_completes(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
-    running = await call("run_python", {"code": "import time\ntime.sleep(1)\n42", "timeout_seconds": 0.1})
+    running = await call("run_python", {"freeform": "# loommux: timeout_seconds=0.1\nimport time\ntime.sleep(1)\n42"})
 
     assert running["ok"] is True
     assert running["status"] == "running"
@@ -399,7 +398,7 @@ async def test_exec_005_and_006_timeout_returns_running_then_wait_completes(call
 
 async def test_exec_007_running_output_can_be_read(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
-    running = await call("run_python", {"code": "import time\nfor i in range(3):\n    print(i, flush=True)\n    time.sleep(0.4)", "timeout_seconds": 0.2})
+    running = await call("run_python", {"freeform": "# loommux: timeout_seconds=0.2\nimport time\nfor i in range(3):\n    print(i, flush=True)\n    time.sleep(0.4)"})
     snapshot = await call("read_python_output", {"execution_id": running["execution_id"]})
 
     assert snapshot["ok"] is True
@@ -414,20 +413,20 @@ async def test_exec_007_running_output_can_be_read(call: Callable[[str, dict[str
 
 async def test_exec_008_busy_run_python_does_not_queue(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
-    running = await call("run_python", {"code": "import time\ntime.sleep(1)", "timeout_seconds": 0.1})
-    busy = await call("run_python", {"code": "queued_value = 123"})
+    running = await call("run_python", {"freeform": "# loommux: timeout_seconds=0.1\nimport time\ntime.sleep(1)"})
+    busy = await call("run_python", {"freeform": "queued_value = 123"})
 
     assert busy["ok"] is False
     assert busy["status"] == "busy"
     assert busy["current_execution_id"] == running["execution_id"]
 
     await call("wait_python", {"execution_id": running["execution_id"], "timeout_seconds": 5})
-    assert (await call("run_python", {"code": "'queued_value' in globals()"}))["result_text"] == "False"
+    assert (await call("run_python", {"freeform": "'queued_value' in globals()"}))["result_text"] == "False"
 
 
 async def test_ctrl_001_interrupt_running_execution(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
-    running = await call("run_python", {"code": "import time\nwhile True:\n    time.sleep(0.1)", "timeout_seconds": 0.1})
+    running = await call("run_python", {"freeform": "# loommux: timeout_seconds=0.1\nimport time\nwhile True:\n    time.sleep(0.1)"})
     interrupted = await call("interrupt_python")
 
     assert interrupted["status"] == "interrupt_sent"
@@ -436,16 +435,16 @@ async def test_ctrl_001_interrupt_running_execution(call: Callable[[str, dict[st
     final = await call("wait_python", {"execution_id": running["execution_id"], "timeout_seconds": 5})
     assert final["status"] in {"error", "interrupted"}
     assert final["status"] == "interrupted" or final["error"]["ename"] == "KeyboardInterrupt"
-    assert (await call("run_python", {"code": "21 * 2"}))["result_text"] == "42"
+    assert (await call("run_python", {"freeform": "21 * 2"}))["result_text"] == "42"
 
 
 async def test_ctrl_002_reset_restarts_kernel_and_clears_state(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
-    await call("run_python", {"code": "x = 41"})
+    await call("run_python", {"freeform": "x = 41"})
     old_pid = (await call("python_status"))["kernel_pid"]
     reset = await call("reset_python")
     new_pid = (await call("python_status"))["kernel_pid"]
-    visible = await call("run_python", {"code": "'x' in globals()"})
+    visible = await call("run_python", {"freeform": "'x' in globals()"})
 
     assert reset["status"] == "restarted"
     assert new_pid != old_pid
@@ -454,7 +453,7 @@ async def test_ctrl_002_reset_restarts_kernel_and_clears_state(call: Callable[[s
 
 async def test_ctrl_003_reset_kills_running_execution_and_new_kernel_can_run(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
-    running = await call("run_python", {"code": "import time\ntime.sleep(10)", "timeout_seconds": 0.1})
+    running = await call("run_python", {"freeform": "# loommux: timeout_seconds=0.1\nimport time\ntime.sleep(10)"})
     reset = await call("reset_python")
     old_status = await call("python_execution_status", {"execution_id": running["execution_id"]})
 
@@ -462,25 +461,25 @@ async def test_ctrl_003_reset_kills_running_execution_and_new_kernel_can_run(cal
     assert reset["status"] == "restarted"
     assert old_status["status"] == "killed"
     assert (await call("python_status"))["busy"] is False
-    assert (await call("run_python", {"code": "40 + 2"}))["result_text"] == "42"
+    assert (await call("run_python", {"freeform": "40 + 2"}))["result_text"] == "42"
 
 
 async def test_python_execution_status_pretty_text_handles_killed_execution(raw_call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await raw_call("set_workspace", {"path": str(valid_workspace)})
-    running = await raw_call("run_python", {"code": "import time\ntime.sleep(10)", "timeout_seconds": 0.1})
+    running = await raw_call("run_python", {"freeform": "# loommux: timeout_seconds=0.1\nimport time\ntime.sleep(10)"})
     await raw_call("reset_python")
     old_status = await raw_call("python_execution_status", {"execution_id": running.data["execution_id"]})
 
     text = result_text(old_status)
     assert text.startswith(f"execution {running.data['execution_id']}: killed\nlog: {running.data['output_log']}")
     assert "tool failed" not in text
-    assert (await raw_call("run_python", {"code": "40 + 2"})).data["result_text"] == "42"
+    assert (await raw_call("run_python", {"freeform": "40 + 2"})).data["result_text"] == "42"
 
 
 async def test_read_and_wait_default_to_current_or_last_execution(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     assert (await call("read_python_output"))["status"] == "execution_not_found"
     await call("set_workspace", {"path": str(valid_workspace)})
-    result = await call("run_python", {"code": "99"})
+    result = await call("run_python", {"freeform": "99"})
 
     assert (await call("read_python_output"))["execution_id"] == result["execution_id"]
     assert (await call("wait_python", {"timeout_seconds": 1}))["execution_id"] == result["execution_id"]
@@ -489,7 +488,7 @@ async def test_read_and_wait_default_to_current_or_last_execution(call: Callable
 
 async def test_execution_status_returns_log_handles_without_full_log_body(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
-    result = await call("run_python", {"code": "print('status-log-body')\n123"})
+    result = await call("run_python", {"freeform": "print('status-log-body')\n123"})
     status = await call("python_execution_status", {"execution_id": result["execution_id"]})
 
     assert status["ok"] is True
@@ -504,7 +503,7 @@ async def test_execution_status_returns_log_handles_without_full_log_body(call: 
 
 async def test_read_python_output_reads_line_ranges_and_stream_handles(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
-    result = await call("run_python", {"code": "import sys\nfor value in ['alpha', 'beta-match', 'gamma', 'delta']:\n    print(value)\nprint('stderr-payload', file=sys.stderr)"})
+    result = await call("run_python", {"freeform": "import sys\nfor value in ['alpha', 'beta-match', 'gamma', 'delta']:\n    print(value)\nprint('stderr-payload', file=sys.stderr)"})
     output_log = result["output_log"]
 
     head = await call("read_python_output", {"output_log": output_log, "stream": "stdout", "line_range": ":2", "show_line_numbers": True})
@@ -534,7 +533,7 @@ async def test_read_python_output_reads_line_ranges_and_stream_handles(call: Cal
 
 async def test_search_python_output_supports_literal_regex_and_context(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
-    result = await call("run_python", {"code": "for value in ['alpha', 'beta-match', 'gamma', 'delta-match']:\n    print(value)"})
+    result = await call("run_python", {"freeform": "for value in ['alpha', 'beta-match', 'gamma', 'delta-match']:\n    print(value)"})
     output_log = result["output_log"]
 
     literal = await call("search_python_output", {"output_log": output_log, "stream": "stdout", "query": "match", "query_mode": "literal", "context_before": 1})
@@ -558,7 +557,7 @@ async def test_search_python_output_supports_literal_regex_and_context(call: Cal
 
 async def test_run_python_omits_large_output_body_but_keeps_log_handle(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
-    result = await call("run_python", {"code": "for i in range(301):\n    print(f'line-{i:03d}')"})
+    result = await call("run_python", {"freeform": "for i in range(301):\n    print(f'line-{i:03d}')"})
     tail = await call("read_python_output", {"output_log": result["output_log"], "stream": "stdout", "line_range": "-2:", "show_line_numbers": True})
 
     assert result["status"] == "completed"
@@ -575,7 +574,7 @@ async def test_run_python_omits_large_output_body_but_keeps_log_handle(call: Cal
 
 async def test_run_python_timeout_omits_partial_body_but_keeps_log_handle(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
-    result = await call("run_python", {"code": "import time\nprint('partial-line', flush=True)\ntime.sleep(1)", "timeout_seconds": 0.1})
+    result = await call("run_python", {"freeform": "# loommux: timeout_seconds=0.1\nimport time\nprint('partial-line', flush=True)\ntime.sleep(1)"})
     output = await call("read_python_output", {"output_log": result["output_log"], "stream": "stdout", "line_range": "1:1"})
 
     assert result["status"] == "running"
@@ -607,11 +606,32 @@ async def test_api_001_and_002_tool_surface_is_exact_and_has_no_truncation_param
 
     assert names == EXPECTED_TOOLS
     assert "start_python" not in names
-    assert set(run_properties) == {"code", "timeout_seconds"}
+    assert set(run_properties) == {"freeform"}
+    assert run_python.inputSchema["required"] == ["freeform"]
+    assert run_python.inputSchema["additionalProperties"] is False
+    assert run_properties["freeform"]["type"] == "string"
+    assert "code" not in run_properties
+    assert "timeout_seconds" not in run_properties
     assert "max_output_chars" not in run_properties
     assert all("truncate" not in name.lower() for name in run_properties)
-    for tool in (run_python, wait_python):
-        description = tool.description or ""
+    run_description = run_python.description or ""
+    assert "# loommux: timeout_seconds=120" in run_description
+    assert "输入\n----" in run_description
+    assert "等待上限\n--------" in run_description
+    assert "返回表面\n--------" in run_description
+    assert "后续工具\n--------" in run_description
+    assert "10 秒" in run_description
+    assert "JSON arguments" in run_description
+    assert "python-output:<execution_id>" in run_description
+    assert "/stdout" in run_description
+    assert "/stderr" in run_description
+    assert "/result" in run_description
+    assert "/traceback" in run_description
+    assert "LOOMMUX_RUN_TIMEOUT_SECONDS" not in run_description
+    assert "timeout_seconds = 120" not in run_description
+    assert "read_python_output" in run_description
+    assert "search_python_output" in run_description
+    for description in (wait_python.description or "",):
         assert "python-output:<execution_id>" in description
         assert "/stdout" in description
         assert "/stderr" in description
@@ -657,7 +677,7 @@ def test_adapter_validation_and_kernel_not_started_branches(tmp_path: Path) -> N
     adapter.python_path = tmp_path / ".venv" / "bin" / "python"
 
     assert adapter.run_python(123)["status"] == "invalid_code"  # type: ignore[arg-type]
-    assert adapter.run_python("1 + 1", timeout_seconds="bad")["status"] == "invalid_timeout"  # type: ignore[arg-type]
+    assert adapter.wait_python(timeout_seconds="bad")["status"] == "invalid_timeout"  # type: ignore[arg-type]
     assert adapter.run_python("1 + 1")["status"] == "kernel_not_started"
     assert adapter.interrupt_python()["status"] == "kernel_not_started"
 

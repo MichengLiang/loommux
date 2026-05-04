@@ -109,6 +109,7 @@ addopts = [
     "--tb=short",
     "--cov=loommux",  # 修改为正确的模块路径
     "--cov-report=term-missing",
+    "--cov-fail-under=90",
 ]
 
 # 为不同类型的测试设置标记

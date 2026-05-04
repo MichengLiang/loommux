@@ -384,13 +384,13 @@ tests/test_ipython_mcp_content_server.py
 
 测试四：content-only `run_python` 小输出保留 pretty text。
 
-步骤：设置 workspace，调用 `run_python("print('hello')\n42")`。
+步骤：设置 workspace，调用 `run_python(freeform="print('hello')\n42")`。
 
 期望：content 文本以 Python visible output 开头，包含 `Out[n]:` result 或 stdout，末尾包含 execution footer 和 output log handle。`structured_content is None`，`data is None`。
 
 测试五：content-only error execution 不返回 structured content。
 
-步骤：调用 `run_python("1 / 0")`。
+步骤：调用 `run_python(freeform="1 / 0")`。
 
 期望：content 文本包含 traceback 或错误可见文本，footer 包含 traceback log handle；`structured_content is None`，`data is None`。
 
