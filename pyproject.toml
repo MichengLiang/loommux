@@ -1,0 +1,116 @@
+[project]
+name = "loommux"
+version = "0.1.0"
+description = "loommux 初始化uv工作区模板"
+requires-python = ">=3.13"
+dependencies = [
+    "fastmcp>=3.2.4",
+    "ipykernel>=7.2.0",
+    "jupyter-client>=8.8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# ========================================
+# Basedpyright - 目录级别类型检查 (新策略：默认推荐)
+# ========================================
+[tool.basedpyright]
+# 全局默认：推荐模式
+
+# BasedPyright 支持以下几种类型检查模式：
+# off - 完全关闭类型检查
+# basic - 基本类型检查
+# standard - 标准类型检查
+# strict - 严格类型检查
+# recommended - 推荐类型检查
+# all - 最严格的类型检查（BasedPyright 特有）
+
+typeCheckingMode = "standard"
+pythonVersion = "3.13"
+include = ["src"]
+exclude = [
+    "**/__pycache__",
+    "tests",
+    "tests/**",
+    "**/tests",
+    "**/tests/**",
+    "**/test_*.py",
+    "**/*_test.py",
+    "**/.venv"
+]
+
+# 其他配置保持默认即可
+reportMissingTypeStubs = false
+enableTypeIgnoreComments = false # 不强制要求第三方库的类型存根
+enableReachabilityAnalysis = false # 禁用旧的可达性分析标记 推荐使用更准确的 reportUnreachable 诊断规则
+
+# 将不可达代码报告设置为 "none" 以完全禁用此检查 
+reportUnreachable = "none"
+
+executionEnvironments = [
+
+]
+
+# ========================================
+# Ruff - 目录级别代码规范
+# ========================================
+[tool.ruff]
+line-length = 320
+target-version = "py313"
+
+[tool.ruff.lint]
+# 全局启用严格规则
+select = [
+    "E",      # pycodestyle errors
+    "F",      # pyflakes
+    "I",      # isort
+    "N",      # pep8-naming
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "A",      # flake8-builtins
+    "ANN",    # flake8-annotations（类型注解）
+    "C4",     # flake8-comprehensions
+]
+
+# 忽略特定规则
+ignore = [
+    "B008",   # typer.Argument在默认参数中是合法用法
+    "E501",
+]
+
+# 针对测试文件的特殊配置
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "ANN",     # 测试文件不强制类型注解
+    "B017",    # pytest.raises(Exception) is acceptable in tests
+    "E402",    # Module level import not at top (allowed in tests)
+    "E501",    # Line too long (test assertions can be long)
+    "F841",    # Unused local variable (test fixtures)
+    "D",      # 也可以考虑忽略 Docstrings
+    "S101",   # 允许使用 assert (测试必备)
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ========================================
+# Pytest - 测试配置
+# ========================================
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+asyncio_mode = "auto"
+addopts = [
+    "-v",              # verbose
+    "--tb=short",
+    "--cov=loommux",  # 修改为正确的模块路径
+    "--cov-report=term-missing",
+]
+
+# 为不同类型的测试设置标记
+markers = [
+]
