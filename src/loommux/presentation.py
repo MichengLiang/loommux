@@ -4,213 +4,214 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-PRIMARY_KEY_ORDER = (
-    "ok",
-    "status",
-    "execution_id",
-    "current_execution_id",
-    "workspace",
-    "python",
-    "kernel_started",
-    "kernel_pid",
-    "busy",
-    "execution_count",
-    "last_execution_id",
-    "message",
-)
-
-KERNEL_KEY_ORDER = (
-    "busy",
-    "kernel_pid",
-    "execution_count",
-)
-
-CONTENT_BLOCK_ORDER = (
-    "result_text",
-    "text",
-    "stdout",
-    "stderr",
-)
-
-SPECIAL_KEYS = {*CONTENT_BLOCK_ORDER, "error", "kernel"}
-
 
 def format_tool_result_text(tool_name: str, status: Mapping[str, Any]) -> str:
-    sections = [_conclusion(tool_name, status), _key_values(status)]
-    kernel = status.get("kernel")
-    if isinstance(kernel, Mapping):
-        sections.append(_mapping_section("kernel", kernel, KERNEL_KEY_ORDER))
-    sections.extend(_content_sections(status))
-    error = status.get("error")
-    if error:
-        sections.append(_error_section(error))
-    return "\n\n".join(section for section in sections if section)
-
-
-def _conclusion(tool_name: str, status: Mapping[str, Any]) -> str:
-    status_value = status.get("status")
-    execution_id = _optional_string(status.get("execution_id"))
-    current_execution_id = _optional_string(status.get("current_execution_id"))
-
-    if status_value == "busy":
-        active_id = current_execution_id or "当前 execution"
-        return f"前置状态：kernel 正在执行 {active_id}，未提交新代码。"
-    if status_value == "workspace_not_set":
-        return "前置状态：workspace 尚未设置。"
-    if status_value == "kernel_not_started":
-        return "前置状态：kernel 未启动。"
-    if status_value == "execution_not_found":
-        return "前置状态：未找到 execution。"
-    if status_value == "invalid_timeout":
-        return "前置状态：timeout_seconds 无效。"
-    if status_value == "invalid_code":
-        return "前置状态：code 无效。"
-
+    if _is_tool_failure(tool_name, status):
+        return _failure_surface(status)
+    if tool_name in {"run_python", "wait_python"}:
+        return _execution_output_surface(status)
+    if tool_name == "read_python_output":
+        return _read_output_surface(status)
+    if tool_name == "search_python_output":
+        return _search_output_surface(status)
     if tool_name == "python_status":
-        return _status_conclusion(status)
-    if tool_name == "set_workspace":
-        return _set_workspace_conclusion(status)
-    if tool_name in {"run_python", "wait_python", "read_python_output"}:
-        return _execution_conclusion(status_value, execution_id)
+        return _python_status_surface(status)
+    if tool_name == "python_execution_status":
+        return _python_execution_status_surface(status)
     if tool_name == "interrupt_python":
-        return _interrupt_conclusion(status_value, execution_id)
+        return _interrupt_surface(status)
     if tool_name == "reset_python":
-        return _reset_conclusion(status_value)
-    return _generic_conclusion(status)
+        return _reset_surface(status)
+    if tool_name == "set_workspace":
+        return _set_workspace_surface(status)
+    return _generic_surface(status)
 
 
-def _status_conclusion(status: Mapping[str, Any]) -> str:
-    if status.get("workspace") is None and status.get("kernel_started") is False:
-        return "状态：workspace 未设置，kernel 未启动。"
-    current_execution_id = _optional_string(status.get("current_execution_id"))
-    if status.get("busy") is True:
-        active_id = current_execution_id or "当前 execution"
-        return f"状态：kernel 正在执行 {active_id}。"
-    if status.get("kernel_started") is True:
-        return "状态：kernel 已启动，当前空闲。"
-    return "状态：kernel 未启动。"
+def _is_tool_failure(tool_name: str, status: Mapping[str, Any]) -> bool:
+    if status.get("ok") is not False:
+        return False
+    return not (tool_name in {"run_python", "wait_python"} and status.get("status") == "error")
 
 
-def _set_workspace_conclusion(status: Mapping[str, Any]) -> str:
+def _failure_surface(status: Mapping[str, Any]) -> str:
+    status_value = _optional_string(status.get("status")) or "error"
+    message = _optional_string(status.get("message")) or "tool failed"
+    return f"{status_value}: {message}"
+
+
+def _execution_output_surface(status: Mapping[str, Any]) -> str:
+    execution_id = _optional_string(status.get("execution_id")) or "unknown"
+    status_value = _optional_string(status.get("status")) or "unknown"
+    output_log = _optional_string(status.get("output_log")) or f"python-output:{execution_id}"
+    if status.get("output_omitted") is True:
+        return _omitted_execution_footer(execution_id, status_value, output_log, status)
+
+    output_text = _optional_string(status.get("output_text")) or ""
+    if not output_text:
+        return f"[{execution_id} {status_value} | no output | log: {output_log}]"
+
+    footer = _execution_footer(execution_id, status_value, output_log, status)
+    return f"{output_text}\n{footer}" if output_text.endswith("\n") else f"{output_text}\n\n{footer}"
+
+
+def _omitted_execution_footer(execution_id: str, status_value: str, output_log: str, status: Mapping[str, Any]) -> str:
+    reason = _optional_string(status.get("output_omitted_reason")) or "unknown"
+    total_lines = _optional_int(status.get("output_total_lines"))
+    line_limit = _optional_int_or_none(status.get("output_line_limit"))
+    if reason == "running":
+        line_word = "line" if total_lines == 1 else "lines"
+        return f"[{execution_id} {status_value} | output omitted: running | {total_lines} {line_word} available | log: {output_log}]"
+    if reason == "line_limit_exceeded" and line_limit is not None:
+        return f"[{execution_id} {status_value} | output omitted: {total_lines} lines > {line_limit} | log: {output_log}]"
+    return f"[{execution_id} {status_value} | output omitted: {reason} | log: {output_log}]"
+
+
+def _execution_footer(execution_id: str, status_value: str, output_log: str, status: Mapping[str, Any]) -> str:
+    if status_value == "error":
+        error = status.get("error")
+        if isinstance(error, Mapping):
+            traceback_log = _optional_string(error.get("traceback_log"))
+            if traceback_log is not None:
+                return f"[{execution_id} error | traceback: {traceback_log} | log: {output_log}]"
+    return f"[{execution_id} {status_value} | log: {output_log}]"
+
+
+def _read_output_surface(status: Mapping[str, Any]) -> str:
+    output_log = _optional_string(status.get("output_log")) or "python-output:unknown"
+    text = _optional_string(status.get("text")) or ""
+    returned_lines = _optional_int(status.get("returned_lines"))
+    total_lines = _optional_int(status.get("total_lines"))
+    if returned_lines == 0 or not text:
+        return f"[{output_log} | no lines]"
+    footer = _read_footer(output_log, text, returned_lines, total_lines, status)
+    return f"{text}\n\n{footer}"
+
+
+def _read_footer(output_log: str, text: str, returned_lines: int, total_lines: int, status: Mapping[str, Any]) -> str:
+    omitted_before = _optional_int(status.get("omitted_before"))
+    omitted_after = _optional_int(status.get("omitted_after"))
+    first_line = text.splitlines()[0] if text else ""
+    if first_line.split(" | ", 1)[0].isdigit():
+        start = omitted_before + 1
+        stop = omitted_before + returned_lines
+        return f"[{output_log} | lines {start}-{stop} of {total_lines}]"
+
+    parts = [f"{returned_lines} {'line' if returned_lines == 1 else 'lines'} of {total_lines}"]
+    if omitted_before:
+        parts.append(f"omitted_before={omitted_before}")
+    if omitted_after:
+        parts.append(f"omitted_after={omitted_after}")
+    return f"[{output_log} | {' | '.join(parts)}]"
+
+
+def _search_output_surface(status: Mapping[str, Any]) -> str:
+    output_log = _optional_string(status.get("output_log")) or "python-output:unknown"
+    query = _optional_string(status.get("query")) or ""
+    interpretation = _optional_string(status.get("query_interpretation")) or "unknown"
+    matched_lines = _optional_int(status.get("matched_lines"))
+    matches = _optional_int(status.get("matches"))
+    if matched_lines == 0:
+        return f"[{output_log} | query: {query} ({interpretation}) | no matches]"
+    text = _optional_string(status.get("text")) or ""
+    line_word = "line" if matched_lines == 1 else "lines"
+    match_word = "match" if matches == 1 else "matches"
+    footer = f"[{output_log} | query: {query} ({interpretation}) | {matched_lines} matched {line_word}, {matches} {match_word}]"
+    return f"{text}\n\n{footer}" if text else footer
+
+
+def _python_status_surface(status: Mapping[str, Any]) -> str:
+    kernel_state = "busy" if status.get("busy") is True else "idle" if status.get("kernel_started") is True else "not_started"
+    lines = [f"kernel: {kernel_state}"]
+    if kernel_state == "busy":
+        lines.append(f"current_execution_id: {_format_compact_value(status.get('current_execution_id'))}")
+    lines.append(f"workspace: {_format_compact_value(status.get('workspace'))}")
+    if kernel_state != "busy":
+        lines.append(f"python: {_format_compact_value(status.get('python'))}")
+        lines.append(f"last_execution_id: {_format_compact_value(status.get('last_execution_id'))}")
+    return "\n".join(lines)
+
+
+def _python_execution_status_surface(status: Mapping[str, Any]) -> str:
+    execution_id = _optional_string(status.get("execution_id")) or "unknown"
+    status_value = _optional_string(status.get("status")) or "unknown"
+    lines = [f"execution {execution_id}: {status_value}"]
+    error = status.get("error")
+    if isinstance(error, Mapping) and error:
+        ename = _optional_string(error.get("ename")) or "Error"
+        evalue = _optional_string(error.get("evalue")) or ""
+        lines.append(f"error: {ename}: {evalue}" if evalue else f"error: {ename}")
+        traceback_log = _optional_string(error.get("traceback_log"))
+        if traceback_log is not None:
+            lines.append(f"traceback: {traceback_log}")
+    output_log = _optional_string(status.get("output_log"))
+    if output_log is not None:
+        lines.append(f"log: {output_log}")
+    for key in ("submitted_at", "completed_at", "output_total_lines", "output_omitted_reason"):
+        value = status.get(key)
+        if value is not None:
+            lines.append(f"{key}: {_format_compact_value(value)}")
+    return "\n".join(lines)
+
+
+def _interrupt_surface(status: Mapping[str, Any]) -> str:
+    if status.get("status") == "interrupt_sent":
+        return f"中断：已向 execution {_format_compact_value(status.get('execution_id'))} 发送 interrupt。"
+    if status.get("status") == "idle":
+        return "中断：kernel 当前空闲，无需 interrupt。"
+    return _generic_surface(status)
+
+
+def _reset_surface(status: Mapping[str, Any]) -> str:
+    if status.get("status") == "restarted":
+        return "重置：kernel 已重启。"
+    return _generic_surface(status)
+
+
+def _set_workspace_surface(status: Mapping[str, Any]) -> str:
     if status.get("ok") is True:
         return "工作区：workspace 已设置，kernel 已启动。"
-    status_value = _optional_string(status.get("status")) or "unknown"
-    return f"前置状态：workspace 设置失败（{status_value}）。"
+    return _failure_surface(status)
 
 
-def _execution_conclusion(status_value: object, execution_id: str | None) -> str:
-    execution_label = execution_id or "当前 execution"
-    if status_value == "completed":
-        return f"完成：execution {execution_label} 已完成。"
-    if status_value == "running":
-        return f"运行中：execution {execution_label} 仍在执行。"
-    if status_value == "error":
-        return f"错误：execution {execution_label} 执行失败。"
-    if status_value == "interrupted":
-        return f"中断：execution {execution_label} 已结束。"
-    if status_value == "killed":
-        return f"终止：execution {execution_label} 已被 reset 终止。"
-    return _generic_conclusion({"status": status_value, "execution_id": execution_id})
-
-
-def _interrupt_conclusion(status_value: object, execution_id: str | None) -> str:
-    if status_value == "interrupt_sent":
-        execution_label = execution_id or "当前 execution"
-        return f"中断：已向 execution {execution_label} 发送 interrupt。"
-    if status_value == "idle":
-        return "中断：kernel 当前空闲，无需 interrupt。"
-    return _generic_conclusion({"status": status_value})
-
-
-def _reset_conclusion(status_value: object) -> str:
-    if status_value == "restarted":
-        return "重置：kernel 已重启。"
-    return _generic_conclusion({"status": status_value})
-
-
-def _generic_conclusion(status: Mapping[str, Any]) -> str:
-    status_value = status.get("status")
-    ok = status.get("ok")
+def _generic_surface(status: Mapping[str, Any]) -> str:
+    status_value = _optional_string(status.get("status"))
     if status_value is not None:
-        return f"状态：{_format_value(status_value)}。"
-    if ok is True:
-        return "状态：操作成功。"
-    if ok is False:
-        return "状态：操作失败。"
-    return "状态：已返回。"
-
-
-def _key_values(status: Mapping[str, Any]) -> str:
-    lines = ["关键状态:"]
-    for key in _ordered_keys(status, PRIMARY_KEY_ORDER, SPECIAL_KEYS):
-        lines.append(f"- {key}: {_format_value(status[key])}")
-    return "\n".join(lines)
-
-
-def _mapping_section(title: str, values: Mapping[str, Any], preferred_order: tuple[str, ...]) -> str:
-    lines = [f"{title}:"]
-    for key in _ordered_keys(values, preferred_order, frozenset()):
-        lines.append(f"- {key}: {_format_value(values[key])}")
-    return "\n".join(lines)
-
-
-def _content_sections(status: Mapping[str, Any]) -> list[str]:
-    sections: list[str] = []
-    for key in CONTENT_BLOCK_ORDER:
-        value = status.get(key)
-        if value:
-            sections.append(f"{key}:\n{_format_block_value(value)}")
-    return sections
-
-
-def _error_section(error: object) -> str:
-    if not isinstance(error, Mapping):
-        return f"error:\n{_format_block_value(error)}"
-
-    lines = ["error:"]
-    if "ename" in error:
-        lines.append(f"- ename: {_format_value(error['ename'])}")
-    if "evalue" in error:
-        lines.append(f"- evalue: {_format_value(error['evalue'])}")
-    traceback = error.get("traceback")
-    if traceback:
-        lines.append("traceback:")
-        lines.append(_format_traceback(traceback))
-    return "\n".join(lines)
-
-
-def _format_traceback(traceback: object) -> str:
-    if isinstance(traceback, list):
-        return "\n".join(str(line) for line in traceback)
-    return _format_block_value(traceback)
-
-
-def _ordered_keys(values: Mapping[str, Any], preferred_order: tuple[str, ...], excluded: set[str] | frozenset[str]) -> list[str]:
-    preferred = [key for key in preferred_order if key in values and key not in excluded]
-    remaining = sorted(key for key in values if key not in excluded and key not in preferred)
-    return [*preferred, *remaining]
-
-
-def _format_value(value: object) -> str:
-    if isinstance(value, str):
-        return value
-    if value is None:
-        return "null"
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    try:
-        return json.dumps(value, ensure_ascii=False, default=str)
-    except TypeError:
-        return str(value)
-
-
-def _format_block_value(value: object) -> str:
-    if isinstance(value, str):
-        return value
-    return _format_value(value)
+        return status_value
+    if status.get("ok") is True:
+        return "ok"
+    return json.dumps(status, ensure_ascii=False, default=str)
 
 
 def _optional_string(value: object) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _optional_int(value: object) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return 0
+    return 0
+
+
+def _optional_int_or_none(value: object) -> int | None:
+    if value is None:
+        return None
+    return _optional_int(value)
+
+
+def _format_compact_value(value: object) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False, default=str)

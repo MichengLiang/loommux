@@ -11,6 +11,7 @@ from loommux.kernel_session import KernelSession
 from loommux.output_log import parse_output_log_handle
 
 DEFAULT_OUTPUT_LINE_LIMIT = 300
+OUTPUT_STREAMS = {"combined", "stdout", "stderr", "result", "traceback"}
 
 
 class IPythonMCPAdapter:
@@ -138,17 +139,18 @@ class IPythonMCPAdapter:
         execution = self._select_execution(execution_id)
         if execution is None:
             return {"ok": False, "status": "execution_not_found", "message": "execution was not found"}
-        return execution.status_snapshot()
+        return execution.status_snapshot(output_line_limit=DEFAULT_OUTPUT_LINE_LIMIT)
 
     def read_python_output(
         self,
         execution_id: str | None = None,
         output_log: str | None = None,
+        stream: str = "combined",
         line_range: str | None = None,
         show_line_numbers: bool = False,
         max_chars: int | None = None,
     ) -> dict[str, Any]:
-        selected = self._select_output_log(execution_id, output_log)
+        selected = self._select_output_log(execution_id, output_log, stream)
         if isinstance(selected, dict):
             return selected
         execution, stream = selected
@@ -166,13 +168,14 @@ class IPythonMCPAdapter:
         query: str,
         execution_id: str | None = None,
         output_log: str | None = None,
+        stream: str = "combined",
         query_mode: str = "auto",
         context_before: int = 0,
         context_after: int = 0,
         ignore_case: bool = False,
         max_chars: int | None = None,
     ) -> dict[str, Any]:
-        selected = self._select_output_log(execution_id, output_log)
+        selected = self._select_output_log(execution_id, output_log, stream)
         if isinstance(selected, dict):
             return selected
         execution, stream = selected
@@ -256,20 +259,26 @@ class IPythonMCPAdapter:
                 return None
             return self.executions.get(selected_id)
 
-    def _select_output_log(self, execution_id: str | None, output_log: str | None) -> tuple[Execution, str] | dict[str, Any]:
+    def _select_output_log(self, execution_id: str | None, output_log: str | None, stream: str = "combined") -> tuple[Execution, str] | dict[str, Any]:
+        if stream not in OUTPUT_STREAMS:
+            return {"ok": False, "status": "invalid_output_log", "message": "output_log stream is not supported"}
         if output_log is not None:
             parsed = parse_output_log_handle(output_log)
             if isinstance(parsed, dict):
                 return parsed
-            selected_execution_id, stream = parsed
+            selected_execution_id, handle_stream = parsed
+            if handle_stream != "combined" and stream not in {"combined", handle_stream}:
+                return {"ok": False, "status": "invalid_output_log", "message": "output_log stream conflicts with stream parameter"}
             execution = self._select_execution(selected_execution_id)
             if execution is None:
                 return {"ok": False, "status": "execution_not_found", "message": "execution was not found"}
+            if handle_stream != "combined":
+                return execution, handle_stream
             return execution, stream
         execution = self._select_execution(execution_id)
         if execution is None:
             return {"ok": False, "status": "execution_not_found", "message": "execution was not found"}
-        return execution, "combined"
+        return execution, stream
 
     def _execution_response(self, execution: Execution) -> dict[str, Any]:
         snapshot = execution.snapshot(output_line_limit=DEFAULT_OUTPUT_LINE_LIMIT)

@@ -85,10 +85,7 @@ async def test_tool_result_preserves_structured_data_and_adds_pretty_status_cont
     }
 
     text = result_text(result)
-    assert text.splitlines()[0] == "状态：workspace 未设置，kernel 未启动。"
-    assert "- ok: true" in text
-    assert "- kernel_started: false" in text
-    assert "- busy: false" in text
+    assert text == "kernel: not_started\nworkspace: null\npython: null\nlast_execution_id: null"
     assert not text.lstrip().startswith("{")
 
 
@@ -100,13 +97,16 @@ async def test_run_python_success_content_includes_all_nonempty_output_blocks(ra
     assert result.data["stdout"] == "stdout-line\n"
     assert result.data["stderr"] == "stderr-line\n"
     assert result.data["result_text"] == "'RESULT-LINE'"
+    assert result.data["output_log"] == f"python-output:{result.data['execution_id']}"
+    assert "logs" not in result.data
 
     text = result_text(result)
-    assert text.splitlines()[0] == f"完成：execution {result.data['execution_id']} 已完成。"
-    assert text.index("result_text:") < text.index("stdout:") < text.index("stderr:")
-    assert "'RESULT-LINE'" in text
-    assert "stdout-line\n" in text
-    assert "stderr-line\n" in text
+    assert text.startswith("stdout-line\nstderr-line\nOut[")
+    assert text.endswith(f"\n\n[{result.data['execution_id']} completed | log: {result.data['output_log']}]")
+    assert "result_text:" not in text
+    assert "stdout:" not in text
+    assert "stderr:" not in text
+    assert "logs" not in text
 
 
 async def test_run_python_error_content_includes_error_summary_and_traceback_log(raw_call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
@@ -116,23 +116,23 @@ async def test_run_python_error_content_includes_error_summary_and_traceback_log
     assert result.data["status"] == "error"
     assert result.data["error"]["ename"] == "ZeroDivisionError"
     assert result.data["error"]["evalue"] == "division by zero"
-    assert result.data["error"]["traceback_log"] == result.data["logs"]["traceback"]
+    assert result.data["error"]["traceback_log"] == f"{result.data['output_log']}/traceback"
     assert "traceback" not in result.data["error"]
+    assert "logs" not in result.data
 
-    traceback = await raw_call("read_python_output", {"output_log": result.data["logs"]["traceback"]})
+    traceback = await raw_call("read_python_output", {"output_log": result.data["output_log"], "stream": "traceback"})
     assert "ZeroDivisionError" in traceback.data["text"]
 
     text = result_text(result)
-    assert text.splitlines()[0] == f"错误：execution {result.data['execution_id']} 执行失败。"
-    assert "error:" in text
-    assert "- ename: ZeroDivisionError" in text
-    assert "- evalue: division by zero" in text
-    assert "traceback:" not in text
+    assert not text.startswith("错误：execution")
+    assert "ZeroDivisionError: division by zero" in text
+    assert text.endswith(f"\n\n[{result.data['execution_id']} error | traceback: {result.data['output_log']}/traceback | log: {result.data['output_log']}]")
+    assert "error:" not in text
 
 
 async def test_running_busy_and_execution_not_found_content_front_loads_state(raw_call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     not_found = await raw_call("read_python_output")
-    assert result_text(not_found).splitlines()[0] == "前置状态：未找到 execution。"
+    assert result_text(not_found) == "execution_not_found: execution was not found"
 
     await raw_call("set_workspace", {"path": str(valid_workspace)})
     running = await raw_call("run_python", {"code": "import time\nprint('partial', flush=True)\ntime.sleep(1)", "timeout_seconds": 0.1})
@@ -140,8 +140,8 @@ async def test_running_busy_and_execution_not_found_content_front_loads_state(ra
 
     assert running.data["status"] == "running"
     assert busy.data["status"] == "busy"
-    assert result_text(running).splitlines()[0] == f"运行中：execution {running.data['execution_id']} 仍在执行。"
-    assert result_text(busy).splitlines()[0] == f"前置状态：kernel 正在执行 {running.data['execution_id']}，未提交新代码。"
+    assert result_text(running) == f"[{running.data['execution_id']} running | output omitted: running | 1 line available | log: {running.data['output_log']}]"
+    assert result_text(busy) == "busy: kernel is already executing code"
 
     await raw_call("wait_python", {"execution_id": running.data["execution_id"], "timeout_seconds": 5})
 
@@ -473,7 +473,8 @@ async def test_execution_status_returns_log_handles_without_full_log_body(call: 
     assert status["ok"] is True
     assert status["execution_id"] == result["execution_id"]
     assert status["output_log"] == f"python-output:{result['execution_id']}"
-    assert status["logs"]["stdout"] == f"python-output:{result['execution_id']}/stdout"
+    assert status["output_total_lines"] >= 2
+    assert "logs" not in status
     assert "stdout" not in status
     assert "stderr" not in status
     assert "result_text" not in status
@@ -482,12 +483,14 @@ async def test_execution_status_returns_log_handles_without_full_log_body(call: 
 async def test_read_python_output_reads_line_ranges_and_stream_handles(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
     result = await call("run_python", {"code": "for value in ['alpha', 'beta-match', 'gamma', 'delta']:\n    print(value)"})
-    output_log = result["logs"]["stdout"]
+    output_log = result["output_log"]
 
-    head = await call("read_python_output", {"output_log": output_log, "line_range": ":2", "show_line_numbers": True})
-    tail = await call("read_python_output", {"output_log": output_log, "line_range": "-2:", "show_line_numbers": True})
-    single = await call("read_python_output", {"output_log": output_log, "line_range": "2:2"})
-    clipped = await call("read_python_output", {"output_log": output_log, "line_range": "2:2", "max_chars": 4})
+    head = await call("read_python_output", {"output_log": output_log, "stream": "stdout", "line_range": ":2", "show_line_numbers": True})
+    tail = await call("read_python_output", {"output_log": output_log, "stream": "stdout", "line_range": "-2:", "show_line_numbers": True})
+    single = await call("read_python_output", {"output_log": output_log, "stream": "stdout", "line_range": "2:2"})
+    clipped = await call("read_python_output", {"output_log": output_log, "stream": "stdout", "line_range": "2:2", "max_chars": 4})
+    suffixed = await call("read_python_output", {"output_log": f"{output_log}/stdout", "line_range": "1:1"})
+    conflicting = await call("read_python_output", {"output_log": f"{output_log}/stderr", "stream": "stdout"})
 
     assert head["text"] == "1 | alpha\n2 | beta-match"
     assert tail["text"] == "3 | gamma\n4 | delta"
@@ -497,16 +500,21 @@ async def test_read_python_output_reads_line_ranges_and_stream_handles(call: Cal
     assert "error" not in head
     assert head["total_lines"] == 4
     assert head["returned_lines"] == 2
+    assert head["stream"] == "stdout"
+    assert head["output_log"] == f"{output_log}/stdout"
+    assert suffixed["text"] == "alpha"
+    assert conflicting["status"] == "invalid_output_log"
 
 
 async def test_search_python_output_supports_literal_regex_and_context(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
     result = await call("run_python", {"code": "for value in ['alpha', 'beta-match', 'gamma', 'delta-match']:\n    print(value)"})
-    output_log = result["logs"]["stdout"]
+    output_log = result["output_log"]
 
-    literal = await call("search_python_output", {"output_log": output_log, "query": "match", "query_mode": "literal", "context_before": 1})
-    regex = await call("search_python_output", {"output_log": output_log, "query": "^(alpha|gamma)$", "query_mode": "regex"})
-    none = await call("search_python_output", {"output_log": output_log, "query": "missing", "query_mode": "literal"})
+    literal = await call("search_python_output", {"output_log": output_log, "stream": "stdout", "query": "match", "query_mode": "literal", "context_before": 1})
+    regex = await call("search_python_output", {"output_log": output_log, "stream": "stdout", "query": "^(alpha|gamma)$", "query_mode": "regex"})
+    none = await call("search_python_output", {"output_log": output_log, "stream": "stdout", "query": "missing", "query_mode": "literal"})
+    conflicting = await call("search_python_output", {"output_log": f"{output_log}/stderr", "stream": "stdout", "query": "match", "query_mode": "literal"})
 
     assert literal["matched_lines"] == 2
     assert "C 1 | alpha" in literal["text"]
@@ -518,12 +526,14 @@ async def test_search_python_output_supports_literal_regex_and_context(call: Cal
     assert none["ok"] is True
     assert none["matched_lines"] == 0
     assert none["text"] == ""
+    assert literal["stream"] == "stdout"
+    assert conflicting["status"] == "invalid_output_log"
 
 
 async def test_run_python_omits_large_output_body_but_keeps_log_handle(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
     result = await call("run_python", {"code": "for i in range(301):\n    print(f'line-{i:03d}')"})
-    tail = await call("read_python_output", {"output_log": result["logs"]["stdout"], "line_range": "-2:", "show_line_numbers": True})
+    tail = await call("read_python_output", {"output_log": result["output_log"], "stream": "stdout", "line_range": "-2:", "show_line_numbers": True})
 
     assert result["status"] == "completed"
     assert result["output_omitted"] is True
@@ -533,13 +543,14 @@ async def test_run_python_omits_large_output_body_but_keeps_log_handle(call: Cal
     assert result["stderr"] == ""
     assert result["result_text"] == ""
     assert result["output_log"] == f"python-output:{result['execution_id']}"
+    assert "logs" not in result
     assert tail["text"] == "300 | line-299\n301 | line-300"
 
 
 async def test_run_python_timeout_omits_partial_body_but_keeps_log_handle(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await call("set_workspace", {"path": str(valid_workspace)})
     result = await call("run_python", {"code": "import time\nprint('partial-line', flush=True)\ntime.sleep(1)", "timeout_seconds": 0.1})
-    output = await call("read_python_output", {"output_log": result["logs"]["stdout"], "line_range": "1:1"})
+    output = await call("read_python_output", {"output_log": result["output_log"], "stream": "stdout", "line_range": "1:1"})
 
     assert result["status"] == "running"
     assert result["output_omitted"] is True
@@ -547,6 +558,7 @@ async def test_run_python_timeout_omits_partial_body_but_keeps_log_handle(call: 
     assert result["stdout"] == ""
     assert result["stderr"] == ""
     assert result["result_text"] == ""
+    assert "logs" not in result
     assert output["text"] == "partial-line"
 
     await call("wait_python", {"execution_id": result["execution_id"], "timeout_seconds": 5})
@@ -556,13 +568,23 @@ async def test_api_001_and_002_tool_surface_is_exact_and_has_no_truncation_param
     tools = await client.list_tools()
     names = {tool.name for tool in tools}
     run_python = next(tool for tool in tools if tool.name == "run_python")
-    properties = run_python.inputSchema["properties"]
+    read_python_output = next(tool for tool in tools if tool.name == "read_python_output")
+    search_python_output = next(tool for tool in tools if tool.name == "search_python_output")
+    run_properties = run_python.inputSchema["properties"]
+    read_properties = read_python_output.inputSchema["properties"]
+    search_properties = search_python_output.inputSchema["properties"]
 
     assert names == EXPECTED_TOOLS
     assert "start_python" not in names
-    assert set(properties) == {"code", "timeout_seconds"}
-    assert "max_output_chars" not in properties
-    assert all("truncate" not in name.lower() for name in properties)
+    assert set(run_properties) == {"code", "timeout_seconds"}
+    assert "max_output_chars" not in run_properties
+    assert all("truncate" not in name.lower() for name in run_properties)
+    assert "stream" in read_properties
+    assert "stream" in search_properties
+    server_source = Path("src/loommux/mcp_ipython_server.py").read_text()
+    assert "`output_log` 是 combined output log handle" in server_source
+    assert "`/stdout`、`/stderr`、`/result`、`/traceback`" in server_source
+    assert "显式传入冲突 stream 会返回" in server_source
 
 
 def test_api_003_stdio_client_example_does_not_import_server_module() -> None:

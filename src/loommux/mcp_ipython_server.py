@@ -44,16 +44,25 @@ def create_mcp() -> FastMCP:
 
     @mcp.tool
     def run_python(code: str, timeout_seconds: float = 30) -> dict[str, Any]:
-        """向当前 `kernel` 提交 Python 代码，并在超时前等待执行结果。
+        """向当前 IPython kernel 提交 Python 代码，并等待至完成或超时。
 
         Args:
-            code: 要在当前 `kernel` session 中执行的 Python 源代码。
-            timeout_seconds: 返回前最多等待的秒数。若达到超时仍未完成，
-                工具返回 `running` 状态，execution 继续在后台运行。
+            code: 要提交给当前 IPython kernel 的 Python 源代码。
+            timeout_seconds: 本次工具调用最多等待的秒数。到达该时间后，
+                execution 继续在 kernel 中运行，工具返回 `status="running"`。
 
         Returns:
-            状态字典。返回内容包括 `execution_id`、已捕获的输出、错误数据
-            以及当前 `kernel` 状态。
+            execution 结果。已结束且 combined output log 不超过 300 行时，返回
+            Python 可见输出：stdout 原文、`Out[n]: ...` 形式的 IPython result、
+            以及 Python traceback 文本。execution 仍在运行或 combined output log
+            超过 300 行时，返回不携带输出正文，只携带 `execution_id`、
+            `status`、`output_log`、`output_omitted_reason` 和已收集行数。
+
+            `output_log` 是 combined output log handle，格式为
+            `python-output:<execution_id>`。分流日志使用固定后缀：
+            `/stdout`、`/stderr`、`/result`、`/traceback`。读取日志使用
+            `read_python_output`；搜索日志使用 `search_python_output`；查看
+            execution 结构化状态使用 `python_execution_status`。
         """
         return _tool_result("run_python", adapter.run_python(code, timeout_seconds))
 
@@ -78,50 +87,69 @@ def create_mcp() -> FastMCP:
 
         Returns:
             状态字典。返回内容包括 execution 状态、时间信息、错误摘要和
-            output log handles。
+            canonical output log handle。分流日志由 `output_log` 加固定后缀
+            `/stdout`、`/stderr`、`/result`、`/traceback` 派生。
         """
         return _tool_result("python_execution_status", adapter.python_execution_status(execution_id))
 
     @mcp.tool
-    def read_python_output(execution_id: str | None = None, output_log: str | None = None, line_range: str | None = None, show_line_numbers: bool = False, max_chars: int | None = None) -> dict[str, Any]:
-        """按行读取某个 execution output log 的文本内容。
+    def read_python_output(execution_id: str | None = None, output_log: str | None = None, stream: str = "combined", line_range: str | None = None, show_line_numbers: bool = False, max_chars: int | None = None) -> dict[str, Any]:
+        """读取 execution output log 的文本行。
 
         Args:
-            execution_id: 要读取的 execution 标识。未提供 `output_log` 时，
-                该参数选择 execution 的 combined output log。
-            output_log: output log handle，例如 `python-output:exec-000001`
-                或 `python-output:exec-000001/stderr`。
-            line_range: 连续行范围。使用 `start:stop`；正数端点按
-                1-indexed line number 解释；端点可省略；负索引按从
-                日志尾部相对定位解释。
+            execution_id: execution 标识。未提供 `output_log` 时，读取该
+                execution 的 combined log。未提供该参数时，优先读取 current
+                execution，其次读取 last execution。
+            output_log: output log handle。`python-output:<execution_id>` 表示
+                combined log；后缀 `/stdout`、`/stderr`、`/result`、`/traceback`
+                表示对应分流日志。
+            stream: 要读取的 stream，支持 `combined`、`stdout`、`stderr`、
+                `result`、`traceback`。如果 `output_log` 已包含 stream 后缀，
+                该后缀决定 stream；显式传入冲突 stream 会返回
+                `invalid_output_log`。
+            line_range: 行范围，使用 `start:stop`。正数端点按 1-indexed line
+                number 解释；端点可省略；负数端点按从日志尾部相对定位解释；
+                stop 为包含端点。`:10` 读取前 10 行，`-10:` 读取后 10 行，
+                `20:40` 读取第 20 到第 40 行。
             show_line_numbers: 是否在返回文本中显示 1-indexed 行号。
-            max_chars: 当前读取结果中每一行的最大显示宽度。
+            max_chars: 每一行的最大显示宽度。该参数只裁切单行，不裁切整段
+                结果。
 
         Returns:
-            日志读取结果。返回内容包括 log handle、stream、总行数、
-            返回行数、省略行数和文本。
+            日志读取结果，包括 `output_log`、`stream`、`total_lines`、
+            `returned_lines`、省略行数和 `text`。
         """
-        return _tool_result("read_python_output", adapter.read_python_output(execution_id, output_log, line_range, show_line_numbers, max_chars))
+        return _tool_result("read_python_output", adapter.read_python_output(execution_id=execution_id, output_log=output_log, stream=stream, line_range=line_range, show_line_numbers=show_line_numbers, max_chars=max_chars))
 
     @mcp.tool
-    def search_python_output(query: str, execution_id: str | None = None, output_log: str | None = None, query_mode: str = "auto", context_before: int = 0, context_after: int = 0, ignore_case: bool = False, max_chars: int | None = None) -> dict[str, Any]:
-        """搜索某个 execution output log 的文本内容。
+    def search_python_output(query: str, execution_id: str | None = None, output_log: str | None = None, stream: str = "combined", query_mode: str = "auto", context_before: int = 0, context_after: int = 0, ignore_case: bool = False, max_chars: int | None = None) -> dict[str, Any]:
+        """搜索 execution output log。
 
         Args:
-            query: 要搜索的文本或正则模式。
-            execution_id: 要搜索的 execution 标识。未提供 `output_log` 时，
-                该参数选择 execution 的 combined output log。
-            output_log: output log handle。
-            query_mode: `auto`、`literal` 或 `regex`。
+            query: 要搜索的字面量或正则模式。
+            execution_id: execution 标识。未提供 `output_log` 时，搜索该
+                execution 的 combined log。未提供该参数时，优先搜索 current
+                execution，其次搜索 last execution。
+            output_log: output log handle。`python-output:<execution_id>` 表示
+                combined log；后缀 `/stdout`、`/stderr`、`/result`、`/traceback`
+                表示对应分流日志。
+            stream: 要搜索的 stream，支持 `combined`、`stdout`、`stderr`、
+                `result`、`traceback`。如果 `output_log` 已包含 stream 后缀，
+                该后缀决定 stream；显式传入冲突 stream 会返回
+                `invalid_output_log`。
+            query_mode: `literal` 按字面量搜索；`regex` 按正则搜索；`auto`
+                优先按正则解释，正则编译失败时回退为字面量搜索。
             context_before: 每条命中前返回的上下文行数。
             context_after: 每条命中后返回的上下文行数。
             ignore_case: 是否忽略大小写。
-            max_chars: 当前搜索结果中每一行的最大显示宽度。
+            max_chars: 每一行的最大显示宽度。该参数只裁切单行，不裁切整段
+                结果。
 
         Returns:
-            搜索结果。返回内容包括命中行数、匹配次数、上下文和文本。
+            搜索结果，包括 `output_log`、`stream`、`query_interpretation`、
+            `matched_lines`、`matches`、上下文设置和 `text`。
         """
-        return _tool_result("search_python_output", adapter.search_python_output(query, execution_id, output_log, query_mode, context_before, context_after, ignore_case, max_chars))
+        return _tool_result("search_python_output", adapter.search_python_output(query=query, execution_id=execution_id, output_log=output_log, stream=stream, query_mode=query_mode, context_before=context_before, context_after=context_after, ignore_case=ignore_case, max_chars=max_chars))
 
     @mcp.tool
     def wait_python(execution_id: str | None = None, timeout_seconds: float = 30) -> dict[str, Any]:
@@ -134,8 +162,11 @@ def create_mcp() -> FastMCP:
             timeout_seconds: 返回前最多等待的秒数。
 
         Returns:
-            状态字典。返回内容包括等待结束时的 execution 快照，以及当前
-            `kernel` 状态。
+            等待后的 execution 结果。已结束且 combined output log 不超过
+            300 行时直接展示 Python 可见输出；仍在运行或 combined output
+            log 超过 300 行时只返回 `execution_id`、`status`、`output_log`
+            和省略原因。分流日志由 `output_log` 加固定后缀 `/stdout`、
+            `/stderr`、`/result`、`/traceback` 派生。
         """
         return _tool_result("wait_python", adapter.wait_python(execution_id, timeout_seconds))
 

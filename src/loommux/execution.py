@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -8,6 +9,7 @@ from typing import Any, Literal
 from loommux.output_log import ExecutionLogs
 
 ExecutionStatus = Literal["running", "completed", "error", "interrupted", "killed"]
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 @dataclass
@@ -53,7 +55,7 @@ class Execution:
         self.error = error
         traceback = error.get("traceback")
         if isinstance(traceback, list):
-            self.logs.append_traceback([str(line) for line in traceback])
+            self.logs.append_traceback([_strip_ansi(str(line)) for line in traceback])
         self.status = "error"
         self.updated_at = time.time()
 
@@ -80,7 +82,7 @@ class Execution:
         output_total_lines = self.logs.combined.line_count
         output_omitted_reason = self._output_omitted_reason(output_line_limit, output_total_lines)
         output_omitted = output_omitted_reason is not None
-        return {
+        snapshot = {
             "ok": self.status not in {"error", "killed"},
             "execution_id": self.execution_id,
             "status": self.status,
@@ -89,14 +91,17 @@ class Execution:
             "result_text": "" if output_omitted else self.result_text,
             "error": self._status_error(),
             "output_log": self.logs.output_log,
-            "logs": self.logs.handles,
             "output_omitted": output_omitted,
             "output_omitted_reason": output_omitted_reason,
             "output_line_limit": output_line_limit,
             "output_total_lines": output_total_lines,
         }
+        if not output_omitted:
+            snapshot["output_text"] = self.logs.combined.text
+        return snapshot
 
-    def status_snapshot(self) -> dict[str, Any]:
+    def status_snapshot(self, output_line_limit: int | None = None) -> dict[str, Any]:
+        output_total_lines = self.logs.combined.line_count
         return {
             "ok": self.status not in {"error", "killed"},
             "execution_id": self.execution_id,
@@ -108,7 +113,8 @@ class Execution:
             "execution_count_at_submit": self.execution_count_at_submit,
             "error": self._status_error(),
             "output_log": self.logs.output_log,
-            "logs": self.logs.handles,
+            "output_total_lines": output_total_lines,
+            "output_omitted_reason": self._output_omitted_reason(output_line_limit, output_total_lines),
         }
 
     def _status_error(self) -> dict[str, Any] | None:
@@ -124,3 +130,7 @@ class Execution:
         if output_line_limit is not None and output_total_lines > output_line_limit:
             return "line_limit_exceeded"
         return None
+
+
+def _strip_ansi(text: str) -> str:
+    return ANSI_ESCAPE_RE.sub("", text)
