@@ -109,22 +109,25 @@ async def test_run_python_success_content_includes_all_nonempty_output_blocks(ra
     assert "stderr-line\n" in text
 
 
-async def test_run_python_error_content_includes_error_fields_and_full_traceback(raw_call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
+async def test_run_python_error_content_includes_error_summary_and_traceback_log(raw_call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
     await raw_call("set_workspace", {"path": str(valid_workspace)})
     result = await raw_call("run_python", {"code": "def explode():\n    return 1 / 0\nexplode()"})
 
     assert result.data["status"] == "error"
-    traceback = result.data["error"]["traceback"]
-    assert traceback
+    assert result.data["error"]["ename"] == "ZeroDivisionError"
+    assert result.data["error"]["evalue"] == "division by zero"
+    assert result.data["error"]["traceback_log"] == result.data["logs"]["traceback"]
+    assert "traceback" not in result.data["error"]
+
+    traceback = await raw_call("read_python_output", {"output_log": result.data["logs"]["traceback"]})
+    assert "ZeroDivisionError" in traceback.data["text"]
 
     text = result_text(result)
     assert text.splitlines()[0] == f"错误：execution {result.data['execution_id']} 执行失败。"
     assert "error:" in text
     assert "- ename: ZeroDivisionError" in text
     assert "- evalue: division by zero" in text
-    assert "traceback:" in text
-    for line in traceback:
-        assert line in text
+    assert "traceback:" not in text
 
 
 async def test_running_busy_and_execution_not_found_content_front_loads_state(raw_call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path) -> None:
@@ -243,6 +246,22 @@ async def test_set_workspace_resolves_relative_paths_and_tilde(call: Callable[[s
     assert tilde_result["ok"] is True
     assert tilde_result["workspace"] == str(tilde_workspace.resolve())
     assert (await call("read_python_output"))["status"] == "execution_not_found"
+
+
+async def test_set_workspace_success_does_not_reuse_output_log_handles(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path, tmp_path: Path) -> None:
+    await call("set_workspace", {"path": str(valid_workspace)})
+    first = await call("run_python", {"code": "print('first-workspace')"})
+
+    next_workspace = tmp_path / "next-workspace"
+    write_python_wrapper(next_workspace)
+    await call("set_workspace", {"path": str(next_workspace)})
+    second = await call("run_python", {"code": "print('second-workspace')"})
+    stale = await call("read_python_output", {"output_log": first["output_log"]})
+
+    assert first["execution_id"] == "exec-000001"
+    assert second["execution_id"] == "exec-000002"
+    assert second["output_log"] == "python-output:exec-000002"
+    assert stale["status"] == "execution_not_found"
 
 
 async def test_set_workspace_to_missing_path_closes_existing_kernel(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path, tmp_path: Path) -> None:

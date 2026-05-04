@@ -87,7 +87,7 @@ class Execution:
             "stdout": "" if output_omitted else self.stdout,
             "stderr": "" if output_omitted else self.stderr,
             "result_text": "" if output_omitted else self.result_text,
-            "error": self._status_error() if output_omitted else self.error,
+            "error": self._status_error(),
             "output_log": self.logs.output_log,
             "logs": self.logs.handles,
             "output_omitted": output_omitted,

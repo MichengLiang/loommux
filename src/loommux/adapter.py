@@ -63,7 +63,6 @@ class IPythonMCPAdapter:
             self.executions.clear()
             self.current_execution_id = None
             self.last_execution_id = None
-            self._next_execution_number = 1
         return {
             "ok": True,
             "workspace": str(workspace),
