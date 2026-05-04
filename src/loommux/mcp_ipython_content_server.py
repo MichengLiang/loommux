@@ -2,16 +2,17 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any, cast
+from typing import Any
 
 from fastmcp import FastMCP
+from fastmcp.tools import ToolResult
 
 from loommux.adapter import IPythonMCPAdapter
 from loommux.mcp_result_policy import make_tool_result
 
 
-def _tool_result(tool_name: str, raw_status: dict[str, Any]) -> dict[str, Any]:
-    return cast(dict[str, Any], make_tool_result(tool_name, raw_status, "dual_channel"))
+def _tool_result(tool_name: str, raw_status: dict[str, Any]) -> ToolResult:
+    return make_tool_result(tool_name, raw_status, "content_only")
 
 
 def create_mcp() -> FastMCP:
@@ -24,10 +25,10 @@ def create_mcp() -> FastMCP:
         finally:
             adapter.close()
 
-    mcp = FastMCP("loommux IPython MCP adapter", lifespan=lifespan)
+    mcp = FastMCP("loommux IPython MCP adapter (content only)", lifespan=lifespan)
 
-    @mcp.tool
-    def set_workspace(path: str) -> dict[str, Any]:
+    @mcp.tool(output_schema=None)
+    def set_workspace(path: str) -> ToolResult:
         """设置当前 `workspace`，并为该 `workspace` 启动 `kernel`。
 
         Args:
@@ -41,8 +42,8 @@ def create_mcp() -> FastMCP:
         """
         return _tool_result("set_workspace", adapter.set_workspace(path))
 
-    @mcp.tool
-    def run_python(code: str, timeout_seconds: float = 30) -> dict[str, Any]:
+    @mcp.tool(output_schema=None)
+    def run_python(code: str, timeout_seconds: float = 30) -> ToolResult:
         """向当前 IPython kernel 提交 Python 代码，并等待至完成或超时。
 
         已结束且 combined output 不超过 300 行时直接展示可见输出；
@@ -72,8 +73,8 @@ def create_mcp() -> FastMCP:
         """
         return _tool_result("run_python", adapter.run_python(code, timeout_seconds))
 
-    @mcp.tool
-    def python_status() -> dict[str, Any]:
+    @mcp.tool(output_schema=None)
+    def python_status() -> ToolResult:
         """返回当前 `workspace` 与 `kernel` 的状态快照。
 
         Returns:
@@ -82,8 +83,8 @@ def create_mcp() -> FastMCP:
         """
         return _tool_result("python_status", adapter.python_status())
 
-    @mcp.tool
-    def python_execution_status(execution_id: str | None = None) -> dict[str, Any]:
+    @mcp.tool(output_schema=None)
+    def python_execution_status(execution_id: str | None = None) -> ToolResult:
         """返回某个 execution 的结构化状态，不返回完整日志正文。
 
         返回 canonical output log handle `python-output:<execution_id>`。
@@ -102,8 +103,8 @@ def create_mcp() -> FastMCP:
         """
         return _tool_result("python_execution_status", adapter.python_execution_status(execution_id))
 
-    @mcp.tool
-    def read_python_output(execution_id: str | None = None, output_log: str | None = None, stream: str = "combined", line_range: str | None = None, show_line_numbers: bool = False, max_chars: int | None = None) -> dict[str, Any]:
+    @mcp.tool(output_schema=None)
+    def read_python_output(execution_id: str | None = None, output_log: str | None = None, stream: str = "combined", line_range: str | None = None, show_line_numbers: bool = False, max_chars: int | None = None) -> ToolResult:
         """读取 execution output log 的文本行。
 
         可用 execution_id 或 output_log 选择目标。`python-output:<execution_id>`
@@ -137,8 +138,8 @@ def create_mcp() -> FastMCP:
         """
         return _tool_result("read_python_output", adapter.read_python_output(execution_id=execution_id, output_log=output_log, stream=stream, line_range=line_range, show_line_numbers=show_line_numbers, max_chars=max_chars))
 
-    @mcp.tool
-    def search_python_output(query: str, execution_id: str | None = None, output_log: str | None = None, stream: str = "combined", query_mode: str = "auto", context_before: int = 0, context_after: int = 0, ignore_case: bool = False, max_chars: int | None = None) -> dict[str, Any]:
+    @mcp.tool(output_schema=None)
+    def search_python_output(query: str, execution_id: str | None = None, output_log: str | None = None, stream: str = "combined", query_mode: str = "auto", context_before: int = 0, context_after: int = 0, ignore_case: bool = False, max_chars: int | None = None) -> ToolResult:
         """搜索 execution output log。
 
         可用 execution_id 或 output_log 选择目标。`python-output:<execution_id>`
@@ -173,8 +174,8 @@ def create_mcp() -> FastMCP:
         """
         return _tool_result("search_python_output", adapter.search_python_output(query=query, execution_id=execution_id, output_log=output_log, stream=stream, query_mode=query_mode, context_before=context_before, context_after=context_after, ignore_case=ignore_case, max_chars=max_chars))
 
-    @mcp.tool
-    def wait_python(execution_id: str | None = None, timeout_seconds: float = 30) -> dict[str, Any]:
+    @mcp.tool(output_schema=None)
+    def wait_python(execution_id: str | None = None, timeout_seconds: float = 30) -> ToolResult:
         """等待某个 execution 完成，或在达到超时后返回。
 
         已结束且 combined output 不超过 300 行时直接展示可见输出；
@@ -199,8 +200,8 @@ def create_mcp() -> FastMCP:
         """
         return _tool_result("wait_python", adapter.wait_python(execution_id, timeout_seconds))
 
-    @mcp.tool
-    def interrupt_python() -> dict[str, Any]:
+    @mcp.tool(output_schema=None)
+    def interrupt_python() -> ToolResult:
         """向当前运行中的 execution 发送中断信号。
 
         Returns:
@@ -209,8 +210,8 @@ def create_mcp() -> FastMCP:
         """
         return _tool_result("interrupt_python", adapter.interrupt_python())
 
-    @mcp.tool
-    def reset_python() -> dict[str, Any]:
+    @mcp.tool(output_schema=None)
+    def reset_python() -> ToolResult:
         """为当前 `workspace` 重启 `kernel`。
 
         Returns:
