@@ -105,6 +105,7 @@ async def test_content_run_python_schema_is_freeform_only(content_client: Client
 
     assert schema["type"] == "object"
     assert set(schema["properties"]) == {"freeform"}
+    assert schema["properties"]["freeform"] == {"type": "string"}
     assert schema["properties"]["freeform"]["type"] == "string"
     assert schema["required"] == ["freeform"]
     assert schema["additionalProperties"] is False

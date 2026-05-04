@@ -82,7 +82,6 @@ def create_mcp() -> FastMCP:
         查看 execution 结构化状态使用 ``python_execution_status``。中断或
         重启使用 ``interrupt_python`` 或 ``reset_python``。
 
-        :param freeform: 要提交给当前 IPython kernel 的 Python cell 源码文本。
         :returns: execution 结果。小输出直接返回 Python 可见输出；running 或
             大输出返回 ``execution_id``、``status``、``output_log``、
             ``output_omitted_reason`` 和已收集行数。

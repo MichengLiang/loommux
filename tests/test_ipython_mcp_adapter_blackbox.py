@@ -607,6 +607,7 @@ async def test_api_001_and_002_tool_surface_is_exact_and_has_no_truncation_param
     assert names == EXPECTED_TOOLS
     assert "start_python" not in names
     assert set(run_properties) == {"freeform"}
+    assert run_properties["freeform"] == {"type": "string"}
     assert run_python.inputSchema["required"] == ["freeform"]
     assert run_python.inputSchema["additionalProperties"] is False
     assert run_properties["freeform"]["type"] == "string"
