@@ -31,6 +31,7 @@ class IPythonMCPAdapter:
 
     def set_workspace(self, path: str) -> dict[str, Any]:
         workspace = self._resolve_workspace(path)
+        self._close_kernel_before_workspace_switch()
         if not workspace.exists():
             return self._workspace_error("workspace_not_found", "workspace does not exist", workspace, workspace / ".venv" / "bin" / "python")
         if not workspace.is_dir():
@@ -40,14 +41,10 @@ class IPythonMCPAdapter:
         if python_check is not None:
             return python_check
 
-        with self._lock:
-            old_kernel = self.kernel
-            self.kernel = None
-            self.current_execution_id = None
-        if old_kernel is not None:
-            old_kernel.shutdown()
-
         kernel = KernelSession(workspace, python_path, self._on_execution_idle)
+        with self._lock:
+            self.workspace = workspace
+            self.python_path = python_path
         try:
             kernel.start()
         except TimeoutError:
@@ -74,6 +71,17 @@ class IPythonMCPAdapter:
             "current_execution_id": None,
             "execution_count": 0,
         }
+
+    def _close_kernel_before_workspace_switch(self) -> None:
+        with self._lock:
+            old_kernel = self.kernel
+            if old_kernel is None:
+                return
+            self.kernel = None
+            self.workspace = None
+            self.python_path = None
+            self.current_execution_id = None
+        old_kernel.shutdown()
 
     def run_python(self, code: str, timeout_seconds: float = 30) -> dict[str, Any]:
         if not isinstance(code, str):

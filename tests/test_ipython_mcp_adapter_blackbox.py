@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from fastmcp import Client
 
+from loommux.adapter import IPythonMCPAdapter
 from loommux.mcp_ipython_server import create_mcp
 
 EXPECTED_TOOLS = {
@@ -135,6 +136,67 @@ async def test_set_workspace_resolves_relative_paths_and_tilde(call: Callable[[s
     assert tilde_result["ok"] is True
     assert tilde_result["workspace"] == str(tilde_workspace.resolve())
     assert (await call("read_python_output"))["status"] == "execution_not_found"
+
+
+async def test_set_workspace_to_missing_path_closes_existing_kernel(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path, tmp_path: Path) -> None:
+    await call("set_workspace", {"path": str(valid_workspace)})
+    old_pid = (await call("python_status"))["kernel_pid"]
+    assert (await call("run_python", {"code": "survivor = 42"}))["status"] == "completed"
+
+    missing = tmp_path / "missing-after-valid"
+    result = await call("set_workspace", {"path": str(missing)})
+    status = await call("python_status")
+    rerun = await call("run_python", {"code": "survivor"})
+
+    assert result["ok"] is False
+    assert result["status"] == "workspace_not_found"
+    assert result["workspace"] == str(missing)
+    assert status["kernel_started"] is False
+    assert status["kernel_pid"] is None
+    assert status["busy"] is False
+    assert status["current_execution_id"] is None
+    assert rerun["ok"] is False
+    assert rerun["status"] in {"workspace_not_set", "kernel_not_started"}
+    assert old_pid is not None
+
+
+async def test_set_workspace_to_missing_python_closes_existing_kernel(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path, tmp_path: Path) -> None:
+    await call("set_workspace", {"path": str(valid_workspace)})
+    missing_python_workspace = tmp_path / "missing-python-after-valid"
+    missing_python_workspace.mkdir()
+
+    result = await call("set_workspace", {"path": str(missing_python_workspace)})
+    status = await call("python_status")
+    rerun = await call("run_python", {"code": "1 + 1"})
+
+    assert result["ok"] is False
+    assert result["status"] == "python_not_found"
+    assert result["python"] == str(missing_python_workspace / ".venv" / "bin" / "python")
+    assert status["kernel_started"] is False
+    assert status["busy"] is False
+    assert status["current_execution_id"] is None
+    assert rerun["ok"] is False
+
+
+async def test_set_workspace_to_missing_ipykernel_closes_existing_running_execution(call: Callable[[str, dict[str, Any] | None], Any], valid_workspace: Path, tmp_path: Path) -> None:
+    await call("set_workspace", {"path": str(valid_workspace)})
+    running = await call("run_python", {"code": "import time\ntime.sleep(10)", "timeout_seconds": 0.1})
+    missing_ipykernel = tmp_path / "missing-ipykernel-after-valid"
+    fake_python = missing_ipykernel / ".venv" / "bin" / "python"
+    fake_python.parent.mkdir(parents=True)
+    fake_python.write_text("#!/bin/sh\nexit 1\n")
+    fake_python.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+
+    result = await call("set_workspace", {"path": str(missing_ipykernel)})
+    killed_output = await call("read_python_output", {"execution_id": running["execution_id"]})
+    status = await call("python_status")
+
+    assert result["ok"] is False
+    assert result["status"] == "ipykernel_missing"
+    assert killed_output["status"] == "killed"
+    assert status["kernel_started"] is False
+    assert status["busy"] is False
+    assert status["current_execution_id"] is None
 
 
 async def test_run_python_requires_workspace_and_positive_timeout(call: Callable[[str, dict[str, Any] | None], Any]) -> None:
@@ -296,3 +358,60 @@ def test_api_003_stdio_client_example_does_not_import_server_module() -> None:
     assert "import mcp_ipython" not in source
     assert "StdioTransport" in source
     assert "mcp_ipython_server.py" in source
+
+
+def test_adapter_validation_and_kernel_not_started_branches(tmp_path: Path) -> None:
+    adapter = IPythonMCPAdapter()
+    adapter.workspace = tmp_path
+    adapter.python_path = tmp_path / ".venv" / "bin" / "python"
+
+    assert adapter.run_python(123)["status"] == "invalid_code"  # type: ignore[arg-type]
+    assert adapter.run_python("1 + 1", timeout_seconds="bad")["status"] == "invalid_timeout"  # type: ignore[arg-type]
+    assert adapter.run_python("1 + 1")["status"] == "kernel_not_started"
+    assert adapter.interrupt_python()["status"] == "kernel_not_started"
+
+
+def test_adapter_set_workspace_start_failure_does_not_restore_old_kernel(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class OldKernel:
+        pid = 12345
+        latest_execution_count = 7
+        shutdown_called = False
+
+        def shutdown(self) -> None:
+            self.shutdown_called = True
+
+    class FailingKernel:
+        pid = None
+
+        def __init__(self, workspace: Path, python_path: Path, on_idle: Callable[..., None]) -> None:
+            self.workspace = workspace
+            self.python_path = python_path
+            self.on_idle = on_idle
+
+        def start(self) -> None:
+            raise RuntimeError("boom")
+
+    target_workspace = tmp_path / "target"
+    target_python = write_python_wrapper(target_workspace)
+    old_kernel = OldKernel()
+    adapter = IPythonMCPAdapter()
+    adapter.workspace = tmp_path / "old"
+    adapter.python_path = tmp_path / "old" / ".venv" / "bin" / "python"
+    adapter.kernel = old_kernel  # type: ignore[assignment]
+    adapter.current_execution_id = "exec-000001"
+    monkeypatch.setattr("loommux.adapter.KernelSession", FailingKernel)
+
+    result = adapter.set_workspace(str(target_workspace))
+    status = adapter.python_status()
+    rerun = adapter.run_python("1 + 1")
+
+    assert result["ok"] is False
+    assert result["status"] == "kernel_start_failed"
+    assert result["workspace"] == str(target_workspace)
+    assert result["python"] == str(target_python)
+    assert old_kernel.shutdown_called is True
+    assert status["workspace"] == str(target_workspace)
+    assert status["python"] == str(target_python)
+    assert status["kernel_started"] is False
+    assert status["current_execution_id"] is None
+    assert rerun["status"] == "kernel_not_started"
