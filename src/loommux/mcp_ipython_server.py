@@ -49,8 +49,7 @@ def create_mcp() -> FastMCP:
         ----
 
         ``freeform`` 是原始 Python cell 源码文本。该文本原样提交给当前
-        持久 IPython kernel。模型不需要生成 JSON arguments，也不需要把
-        Python 源码转义成 JSON string。
+        持久 IPython kernel。
 
         等待上限
         --------
