@@ -37,13 +37,6 @@ test.afterAll(async () => {
 	}
 });
 
-test.beforeEach(async ({ page }) => {
-	await page.route("**/api/**", async (route) => {
-		const requestUrl = new URL(route.request().url());
-		await route.continue({ url: `${BACKEND_URL}${requestUrl.pathname}${requestUrl.search}` });
-	});
-});
-
 test("monitor receives backend events and keeps primary UI stable", async ({ page, request }) => {
 	await page.goto("/");
 
