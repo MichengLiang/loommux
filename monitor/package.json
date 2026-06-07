@@ -8,7 +8,8 @@
 		"build": "tsc --noEmit && vite build --emptyOutDir false && tsdown --config tsdown.server.config.ts",
 		"preview": "node dist/server/index.mjs",
 		"typecheck": "tsc --noEmit",
-		"test": "vitest run"
+		"test": "vitest run src",
+		"e2e": "playwright test"
 	},
 	"dependencies": {
 		"@hono/node-server": "^1.19.6",
@@ -21,6 +22,7 @@
 	"devDependencies": {
 		"@testing-library/dom": "^10.4.1",
 		"@testing-library/react": "^16.3.0",
+		"@playwright/test": "^1.60.0",
 		"@types/node": "^24.10.2",
 		"@types/react": "^19.2.7",
 		"@types/react-dom": "^19.2.3",
