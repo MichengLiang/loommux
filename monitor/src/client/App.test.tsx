@@ -53,7 +53,7 @@ describe("monitor UI", () => {
 				type: "execution_finished",
 				execution_id: "exec-000001",
 				status: "completed",
-				output_log: "pueue-log:1",
+				output_log: "python-output:exec-000001",
 				output_total_lines: 2,
 			},
 		]);
@@ -62,7 +62,7 @@ describe("monitor UI", () => {
 		expect(screen.getAllByText("completed").length).toBeGreaterThan(0);
 		expect(screen.getByText("print('hello')")).toBeTruthy();
 		expect(screen.getAllByText(/hello/).length).toBeGreaterThan(0);
-		expect(screen.getByText("pueue-log:1")).toBeTruthy();
+		expect(screen.getByText("python-output:exec-000001")).toBeTruthy();
 	});
 
 	test("error and traceback events render error and traceback", () => {
@@ -87,7 +87,7 @@ describe("monitor UI", () => {
 				type: "execution_finished",
 				execution_id: "exec-error",
 				status: "error",
-				output_log: "pueue-log:2",
+				output_log: "python-output:exec-error",
 				output_total_lines: 1,
 				error: { ename: "ZeroDivisionError", evalue: "division by zero" },
 			},
