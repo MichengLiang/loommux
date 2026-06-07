@@ -22,6 +22,8 @@ class KernelSession:
         self.workspace = workspace
         self.python_path = python_path
         self._on_idle = on_idle
+        self._on_output: Callable[[Execution, str, str], None] = _ignore_output
+        self._on_finished: Callable[[Execution], None] = _ignore_finished
         self.connection_file: str | None = None
         self.process: subprocess.Popen[str] | None = None
         self.client: BlockingKernelClient | None = None
@@ -30,6 +32,10 @@ class KernelSession:
         self._lock = threading.RLock()
         self._stop_collector = threading.Event()
         self._collector: threading.Thread | None = None
+
+    def set_monitor_callbacks(self, on_output: Callable[[Execution, str, str], None], on_finished: Callable[[Execution], None]) -> None:
+        self._on_output = on_output
+        self._on_finished = on_finished
 
     @property
     def pid(self) -> int | None:
@@ -79,6 +85,7 @@ class KernelSession:
             execution = self.current_execution
             if mark_execution_killed and execution is not None and execution.is_running:
                 execution.kill()
+                self._on_finished(execution)
             self.current_execution = None
             self._stop_collector.set()
             client = self.client
@@ -145,12 +152,16 @@ class KernelSession:
                 text = str(content.get("text", ""))
                 if content.get("name") == "stdout":
                     execution.append_stdout(text)
+                    self._on_output(execution, "stdout", text)
                 elif content.get("name") == "stderr":
                     execution.append_stderr(text)
+                    self._on_output(execution, "stderr", text)
             elif msg_type in {"execute_result", "display_data"}:
                 data = content.get("data", {})
                 if isinstance(data, dict) and "text/plain" in data:
-                    execution.append_result_text(str(data["text/plain"]))
+                    text = str(data["text/plain"])
+                    execution.append_result_text(text)
+                    self._on_output(execution, "result", text)
             elif msg_type == "error":
                 traceback = content.get("traceback", [])
                 execution.record_error(
@@ -160,9 +171,11 @@ class KernelSession:
                         "traceback": traceback if isinstance(traceback, list) else [str(traceback)],
                     }
                 )
+                self._on_output(execution, "traceback", execution.logs.traceback.text)
             elif msg_type == "status" and content.get("execution_state") == "idle":
                 execution.finish()
                 self.current_execution = None
+                self._on_finished(execution)
                 self._on_idle(execution)
 
     @staticmethod
@@ -184,3 +197,11 @@ class KernelSession:
             process.wait(timeout=1)
         except subprocess.TimeoutExpired:
             pass
+
+
+def _ignore_output(_execution: Execution, _stream: str, _text: str) -> None:
+    pass
+
+
+def _ignore_finished(_execution: Execution) -> None:
+    pass

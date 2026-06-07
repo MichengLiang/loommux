@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
@@ -8,14 +8,26 @@ from fastmcp import FastMCP
 
 from loommux.adapter import IPythonMCPAdapter
 from loommux.mcp_result_policy import make_tool_result
+from loommux.monitoring import MonitorPublisher, create_monitor_publisher, run_monitored_tool_call
 
 
 def _tool_result(tool_name: str, raw_status: dict[str, Any]) -> dict[str, Any]:
     return cast(dict[str, Any], make_tool_result(tool_name, raw_status, "dual_channel"))
 
 
-def create_mcp() -> FastMCP:
-    adapter = IPythonMCPAdapter()
+def create_mcp(monitor_publisher: MonitorPublisher | None = None) -> FastMCP:
+    publisher = monitor_publisher or create_monitor_publisher()
+    adapter = IPythonMCPAdapter(monitor_publisher=publisher)
+
+    def _call_tool(tool_name: str, arguments: dict[str, Any], operation: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+        def _operation(call_id: str) -> dict[str, Any]:
+            token = adapter.set_active_call_id(call_id)
+            try:
+                return operation()
+            finally:
+                adapter.reset_active_call_id(token)
+
+        return run_monitored_tool_call(tool_name, arguments, publisher, _operation)
 
     @asynccontextmanager
     async def lifespan(_server: FastMCP) -> AsyncIterator[dict[str, Any]]:
@@ -39,7 +51,7 @@ def create_mcp() -> FastMCP:
             解释器路径，以及 `kernel` 是否启动成功。失败返回包含 `status`
             和 `message`。
         """
-        return _tool_result("set_workspace", adapter.set_workspace(path))
+        return _tool_result("set_workspace", _call_tool("set_workspace", {"path": path}, lambda: adapter.set_workspace(path)))
 
     @mcp.tool
     def run_python(freeform: str) -> dict[str, Any]:
@@ -85,7 +97,7 @@ def create_mcp() -> FastMCP:
             大输出返回 ``execution_id``、``status``、``output_log``、
             ``output_omitted_reason`` 和已收集行数。
         """
-        return _tool_result("run_python", adapter.run_python(freeform))
+        return _tool_result("run_python", _call_tool("run_python", {"freeform": freeform}, lambda: adapter.run_python(freeform)))
 
     @mcp.tool
     def python_status() -> dict[str, Any]:
@@ -95,7 +107,7 @@ def create_mcp() -> FastMCP:
             状态字典。返回内容描述当前激活的 `workspace`、解释器、
             `kernel` 进程、执行计数以及 `kernel` 是否处于 busy 状态。
         """
-        return _tool_result("python_status", adapter.python_status())
+        return _tool_result("python_status", _call_tool("python_status", {}, adapter.python_status))
 
     @mcp.tool
     def python_execution_status(execution_id: str | None = None) -> dict[str, Any]:
@@ -115,7 +127,7 @@ def create_mcp() -> FastMCP:
             canonical output log handle。分流日志由 `output_log` 加固定后缀
             `/stdout`、`/stderr`、`/result`、`/traceback` 派生。
         """
-        return _tool_result("python_execution_status", adapter.python_execution_status(execution_id))
+        return _tool_result("python_execution_status", _call_tool("python_execution_status", {"execution_id": execution_id}, lambda: adapter.python_execution_status(execution_id)))
 
     @mcp.tool
     def read_python_output(execution_id: str | None = None, output_log: str | None = None, stream: str = "combined", line_range: str | None = None, show_line_numbers: bool = False, max_chars: int | None = None) -> dict[str, Any]:
@@ -150,7 +162,7 @@ def create_mcp() -> FastMCP:
             日志读取结果，包括 `output_log`、`stream`、`total_lines`、
             `returned_lines`、省略行数和 `text`。
         """
-        return _tool_result("read_python_output", adapter.read_python_output(execution_id=execution_id, output_log=output_log, stream=stream, line_range=line_range, show_line_numbers=show_line_numbers, max_chars=max_chars))
+        return _tool_result("read_python_output", _call_tool("read_python_output", {"execution_id": execution_id, "output_log": output_log, "stream": stream, "line_range": line_range, "show_line_numbers": show_line_numbers, "max_chars": max_chars}, lambda: adapter.read_python_output(execution_id=execution_id, output_log=output_log, stream=stream, line_range=line_range, show_line_numbers=show_line_numbers, max_chars=max_chars)))
 
     @mcp.tool
     def search_python_output(query: str, execution_id: str | None = None, output_log: str | None = None, stream: str = "combined", query_mode: str = "auto", context_before: int = 0, context_after: int = 0, ignore_case: bool = False, max_chars: int | None = None) -> dict[str, Any]:
@@ -186,7 +198,7 @@ def create_mcp() -> FastMCP:
             搜索结果，包括 `output_log`、`stream`、`query_interpretation`、
             `matched_lines`、`matches`、上下文设置和 `text`。
         """
-        return _tool_result("search_python_output", adapter.search_python_output(query=query, execution_id=execution_id, output_log=output_log, stream=stream, query_mode=query_mode, context_before=context_before, context_after=context_after, ignore_case=ignore_case, max_chars=max_chars))
+        return _tool_result("search_python_output", _call_tool("search_python_output", {"query": query, "execution_id": execution_id, "output_log": output_log, "stream": stream, "query_mode": query_mode, "context_before": context_before, "context_after": context_after, "ignore_case": ignore_case, "max_chars": max_chars}, lambda: adapter.search_python_output(query=query, execution_id=execution_id, output_log=output_log, stream=stream, query_mode=query_mode, context_before=context_before, context_after=context_after, ignore_case=ignore_case, max_chars=max_chars)))
 
     @mcp.tool
     def wait_python(execution_id: str | None = None, timeout_seconds: float = 30) -> dict[str, Any]:
@@ -212,7 +224,7 @@ def create_mcp() -> FastMCP:
             和省略原因。分流日志由 `output_log` 加固定后缀 `/stdout`、
             `/stderr`、`/result`、`/traceback` 派生。
         """
-        return _tool_result("wait_python", adapter.wait_python(execution_id, timeout_seconds))
+        return _tool_result("wait_python", _call_tool("wait_python", {"execution_id": execution_id, "timeout_seconds": timeout_seconds}, lambda: adapter.wait_python(execution_id, timeout_seconds)))
 
     @mcp.tool
     def interrupt_python() -> dict[str, Any]:
@@ -222,7 +234,7 @@ def create_mcp() -> FastMCP:
             状态字典。返回内容说明当前 `kernel` 是处于 idle、不可用，
             还是已经向当前 execution 发送了中断信号。
         """
-        return _tool_result("interrupt_python", adapter.interrupt_python())
+        return _tool_result("interrupt_python", _call_tool("interrupt_python", {}, adapter.interrupt_python))
 
     @mcp.tool
     def reset_python() -> dict[str, Any]:
@@ -233,7 +245,7 @@ def create_mcp() -> FastMCP:
             状态。若存在运行中的 execution，该 execution 会在新 `kernel`
             启动前被终止。
         """
-        return _tool_result("reset_python", adapter.reset_python())
+        return _tool_result("reset_python", _call_tool("reset_python", {}, adapter.reset_python))
 
     return mcp
 

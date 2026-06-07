@@ -3,11 +3,15 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 import urllib.error
 import urllib.request
+import uuid
 from collections import deque
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol
+
+from loommux.presentation import format_tool_result_text
 
 DEFAULT_MONITOR_URL = "http://127.0.0.1:9765/api/events"
 DEFAULT_MAX_QUEUE_EVENTS = 1000
@@ -17,6 +21,7 @@ DEFAULT_RETRY_DELAY_SECONDS = 0.25
 
 MonitorEvent = dict[str, Any]
 MonitorSender = Callable[[str, Mapping[str, Any], float], None]
+MonitoredToolOperation = Callable[[str], dict[str, Any]]
 type MonitorScalar = str | int | float | bool | None
 type SanitizedValue = MonitorScalar | list[SanitizedValue] | dict[str, SanitizedValue]
 
@@ -141,6 +146,60 @@ def create_monitor_publisher() -> MonitorPublisher:
     return BackgroundMonitorPublisher(os.environ.get("LOOMMUX_MONITOR_URL", DEFAULT_MONITOR_URL))
 
 
+def run_monitored_tool_call(tool_name: str, arguments: Mapping[str, Any], publisher: MonitorPublisher, operation: MonitoredToolOperation) -> dict[str, Any]:
+    call_id = f"call-{uuid.uuid4().hex}"
+    started_at = time.time()
+    _safe_publish(
+        publisher,
+        {
+            "type": "tool_call_started",
+            "call_id": call_id,
+            "tool_name": tool_name,
+            "arguments": dict(arguments),
+            "timestamp": started_at,
+        },
+    )
+    try:
+        raw_status = operation(call_id)
+    except Exception as exc:
+        _safe_publish(
+            publisher,
+            {
+                "type": "tool_call_finished",
+                "call_id": call_id,
+                "tool_name": tool_name,
+                "duration_ms": _duration_ms(started_at),
+                "ok": False,
+                "status": "exception",
+                "result_summary": f"{type(exc).__name__}: {exc}",
+                "pretty_text_summary": "",
+                "timestamp": time.time(),
+            },
+        )
+        raise
+
+    pretty_text = format_tool_result_text(tool_name, raw_status)
+    _safe_publish(
+        publisher,
+        {
+            "type": "tool_call_finished",
+            "call_id": call_id,
+            "tool_name": tool_name,
+            "duration_ms": _duration_ms(started_at),
+            "ok": raw_status.get("ok") is not False,
+            "status": _status_value(raw_status),
+            "result_summary": _summarize_mapping(raw_status),
+            "pretty_text_summary": _truncate_text(pretty_text, 2_000),
+            "timestamp": time.time(),
+        },
+    )
+    return raw_status
+
+
+def safe_publish(publisher: MonitorPublisher, event: Mapping[str, Any]) -> None:
+    _safe_publish(publisher, event)
+
+
 def _sanitize_event(value: Mapping[str, Any], max_text_field_chars: int) -> MonitorEvent:
     return {str(key): _sanitize_value(item, max_text_field_chars) for key, item in value.items()}
 
@@ -174,3 +233,47 @@ def _post_json(url: str, event: Mapping[str, Any], timeout_seconds: float) -> No
             response.read()
     except (OSError, urllib.error.URLError, urllib.error.HTTPError):
         raise
+
+
+def _safe_publish(publisher: MonitorPublisher, event: Mapping[str, Any]) -> None:
+    try:
+        publisher.publish(event)
+    except Exception:
+        pass
+
+
+def _duration_ms(started_at: float) -> float:
+    return round((time.time() - started_at) * 1000, 3)
+
+
+def _status_value(status: Mapping[str, Any]) -> str:
+    value = status.get("status")
+    if value is not None:
+        return str(value)
+    if status.get("ok") is True:
+        return "ok"
+    if status.get("ok") is False:
+        return "error"
+    return "unknown"
+
+
+def _summarize_mapping(status: Mapping[str, Any], *, max_items: int = 8) -> str:
+    parts: list[str] = []
+    for index, (key, value) in enumerate(status.items()):
+        if index >= max_items:
+            parts.append("...")
+            break
+        parts.append(f"{key}={_summarize_value(value)}")
+    return _truncate_text(", ".join(parts), 2_000)
+
+
+def _summarize_value(value: object) -> str:
+    if isinstance(value, str):
+        return value if len(value) <= 80 else f"{value[:80]}..."
+    if value is None or isinstance(value, bool | int | float):
+        return str(value)
+    if isinstance(value, Mapping):
+        return f"<mapping {len(value)}>"
+    if isinstance(value, list | tuple):
+        return f"<sequence {len(value)}>"
+    return str(value)

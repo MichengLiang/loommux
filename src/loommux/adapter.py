@@ -5,11 +5,13 @@ import os
 import re
 import subprocess
 import threading
+from contextvars import ContextVar, Token
 from pathlib import Path
 from typing import Any
 
 from loommux.execution import Execution
 from loommux.kernel_session import KernelSession
+from loommux.monitoring import MonitorPublisher, NoopMonitorPublisher, safe_publish
 from loommux.output_log import parse_output_log_handle
 
 DEFAULT_OUTPUT_LINE_LIMIT = 300
@@ -33,10 +35,12 @@ def parse_run_python_freeform_timeout(freeform: str) -> tuple[float, str]:
 
 
 class IPythonMCPAdapter:
-    def __init__(self) -> None:
+    def __init__(self, monitor_publisher: MonitorPublisher | None = None) -> None:
         self.workspace: Path | None = None
         self.python_path: Path | None = None
         self.kernel: KernelSession | None = None
+        self.monitor_publisher = monitor_publisher or NoopMonitorPublisher()
+        self._active_call_id: ContextVar[str | None] = ContextVar("loommux_monitor_call_id", default=None)
         self.executions: dict[str, Execution] = {}
         self.current_execution_id: str | None = None
         self.last_execution_id: str | None = None
@@ -50,6 +54,7 @@ class IPythonMCPAdapter:
             self.current_execution_id = None
         if kernel is not None:
             kernel.shutdown()
+        self.monitor_publisher.close()
 
     def set_workspace(self, path: str) -> dict[str, Any]:
         workspace = self._resolve_workspace(path)
@@ -63,7 +68,7 @@ class IPythonMCPAdapter:
         if python_check is not None:
             return python_check
 
-        kernel = KernelSession(workspace, python_path, self._on_execution_idle)
+        kernel = self._new_kernel_session(workspace, python_path)
         with self._lock:
             self.workspace = workspace
             self.python_path = python_path
@@ -128,6 +133,7 @@ class IPythonMCPAdapter:
             self.executions[execution.execution_id] = execution
             self.current_execution_id = execution.execution_id
             self.last_execution_id = execution.execution_id
+            self._publish_execution_submitted(execution, timeout_seconds)
         try:
             kernel.submit(execution)
         except Exception as exc:
@@ -135,6 +141,7 @@ class IPythonMCPAdapter:
                 self.current_execution_id = None
                 execution.record_error({"ename": type(exc).__name__, "evalue": str(exc), "traceback": []})
                 execution.finish()
+                self._publish_execution_finished(execution)
             return self._execution_response(execution)
 
         execution.done.wait(float(timeout_seconds))
@@ -248,11 +255,13 @@ class IPythonMCPAdapter:
             self.kernel = None
             self.current_execution_id = None
             if old_current_id is not None and old_current_id in self.executions:
-                self.executions[old_current_id].kill()
+                execution = self.executions[old_current_id]
+                execution.kill()
+                self._publish_execution_finished(execution)
         if old_kernel is not None:
             old_kernel.shutdown()
 
-        kernel = KernelSession(workspace, python_path, self._on_execution_idle)
+        kernel = self._new_kernel_session(workspace, python_path)
         try:
             kernel.start()
         except Exception as exc:
@@ -275,6 +284,12 @@ class IPythonMCPAdapter:
         with self._lock:
             if self.current_execution_id == execution.execution_id:
                 self.current_execution_id = None
+
+    def set_active_call_id(self, call_id: str | None) -> Token[str | None]:
+        return self._active_call_id.set(call_id)
+
+    def reset_active_call_id(self, token: Token[str | None]) -> None:
+        self._active_call_id.reset(token)
 
     def _select_execution(self, execution_id: str | None) -> Execution | None:
         with self._lock:
@@ -308,6 +323,55 @@ class IPythonMCPAdapter:
         snapshot = execution.snapshot(output_line_limit=DEFAULT_OUTPUT_LINE_LIMIT)
         snapshot["kernel"] = self.kernel.kernel_info() if self.kernel is not None else {"busy": False, "kernel_pid": None, "execution_count": 0}
         return snapshot
+
+    def _new_kernel_session(self, workspace: Path, python_path: Path) -> KernelSession:
+        kernel = KernelSession(workspace, python_path, self._on_execution_idle)
+        if hasattr(kernel, "set_monitor_callbacks"):
+            kernel.set_monitor_callbacks(self._publish_execution_output, self._publish_execution_finished)
+        return kernel
+
+    def _publish_execution_submitted(self, execution: Execution, timeout_seconds: float) -> None:
+        safe_publish(
+            self.monitor_publisher,
+            {
+                "type": "execution_submitted",
+                "execution_id": execution.execution_id,
+                "call_id": self._active_call_id.get(),
+                "workspace": str(self.workspace) if self.workspace is not None else None,
+                "kernel_pid": execution.kernel_pid,
+                "code": execution.code,
+                "timeout_seconds": timeout_seconds,
+                "timestamp": execution.submitted_at,
+            },
+        )
+
+    def _publish_execution_output(self, execution: Execution, stream: str, text: str) -> None:
+        safe_publish(
+            self.monitor_publisher,
+            {
+                "type": "execution_output",
+                "execution_id": execution.execution_id,
+                "stream": stream,
+                "text": text,
+                "execution_count": execution.execution_count_at_submit,
+                "timestamp": execution.updated_at,
+            },
+        )
+
+    def _publish_execution_finished(self, execution: Execution) -> None:
+        status_error = execution.status_snapshot().get("error")
+        safe_publish(
+            self.monitor_publisher,
+            {
+                "type": "execution_finished",
+                "execution_id": execution.execution_id,
+                "status": execution.status,
+                "output_log": execution.logs.output_log,
+                "output_total_lines": execution.logs.combined.line_count,
+                "error": status_error,
+                "timestamp": execution.completed_at or execution.updated_at,
+            },
+        )
 
     def _kernel_wait_status(self) -> dict[str, Any]:
         kernel = self.kernel
