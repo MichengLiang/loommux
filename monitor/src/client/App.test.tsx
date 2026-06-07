@@ -1,0 +1,148 @@
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, test } from "vitest";
+import { App } from "./App";
+import type { MonitorClientEvent } from "./events";
+
+afterEach(() => {
+	cleanup();
+});
+
+const baseEvent = {
+	sequence: 1,
+	received_at: 1_700_000_000_000,
+	timestamp: 1_700_000_000,
+};
+
+function renderWithEvents(events: MonitorClientEvent[]) {
+	return render(<App initialEvents={events} connect={false} />);
+}
+
+describe("monitor UI", () => {
+	test("submitted, output, and finished events render code, output, and status", () => {
+		renderWithEvents([
+			{
+				...baseEvent,
+				type: "execution_submitted",
+				execution_id: "exec-000001",
+				code: "print('hello')\n42",
+				timeout_seconds: 5,
+				workspace: "/workspace/demo",
+				kernel_pid: 1234,
+			},
+			{
+				...baseEvent,
+				sequence: 2,
+				type: "execution_output",
+				execution_id: "exec-000001",
+				stream: "stdout",
+				text: "hello\n",
+				execution_count: 7,
+			},
+			{
+				...baseEvent,
+				sequence: 3,
+				type: "execution_output",
+				execution_id: "exec-000001",
+				stream: "result",
+				text: "42\n",
+				execution_count: 7,
+			},
+			{
+				...baseEvent,
+				sequence: 4,
+				type: "execution_finished",
+				execution_id: "exec-000001",
+				status: "completed",
+				output_log: "pueue-log:1",
+				output_total_lines: 2,
+			},
+		]);
+
+		expect(screen.getAllByText("exec-000001").length).toBeGreaterThan(0);
+		expect(screen.getAllByText("completed").length).toBeGreaterThan(0);
+		expect(screen.getByText("print('hello')")).toBeTruthy();
+		expect(screen.getAllByText(/hello/).length).toBeGreaterThan(0);
+		expect(screen.getByText("pueue-log:1")).toBeTruthy();
+	});
+
+	test("error and traceback events render error and traceback", () => {
+		renderWithEvents([
+			{
+				...baseEvent,
+				type: "execution_submitted",
+				execution_id: "exec-error",
+				code: "1 / 0",
+			},
+			{
+				...baseEvent,
+				sequence: 2,
+				type: "execution_output",
+				execution_id: "exec-error",
+				stream: "traceback",
+				text: "ZeroDivisionError: division by zero",
+			},
+			{
+				...baseEvent,
+				sequence: 3,
+				type: "execution_finished",
+				execution_id: "exec-error",
+				status: "error",
+				output_log: "pueue-log:2",
+				output_total_lines: 1,
+				error: { ename: "ZeroDivisionError", evalue: "division by zero" },
+			},
+		]);
+
+		expect(screen.getAllByText("exec-error").length).toBeGreaterThan(0);
+		expect(screen.getAllByText("error").length).toBeGreaterThan(0);
+		expect(screen.getAllByText(/ZeroDivisionError/).length).toBeGreaterThan(0);
+		expect(screen.getAllByText(/division by zero/).length).toBeGreaterThan(0);
+	});
+
+	test("tool events render timeline rows and result summary", () => {
+		renderWithEvents([
+			{
+				...baseEvent,
+				type: "tool_call_started",
+				call_id: "call-1",
+				tool_name: "run_python",
+				arguments: { code: "print('x')" },
+			},
+			{
+				...baseEvent,
+				sequence: 2,
+				type: "tool_call_finished",
+				call_id: "call-1",
+				tool_name: "run_python",
+				duration_ms: 12,
+				ok: true,
+				status: "completed",
+				result_summary: "ok=true status=completed",
+				pretty_text_summary: "Python execution completed.",
+			},
+		]);
+
+		expect(screen.getByText("run_python")).toBeTruthy();
+		expect(screen.getByText("completed")).toBeTruthy();
+		expect(screen.getByText(/ok=true status=completed/)).toBeTruthy();
+		expect(screen.getByText(/print/)).toBeTruthy();
+	});
+
+	test("clear view clears displayed events without implying backend deletion", () => {
+		renderWithEvents([
+			{
+				...baseEvent,
+				type: "execution_submitted",
+				execution_id: "exec-clear",
+				code: "print('clear')",
+			},
+		]);
+
+		expect(screen.getAllByText("exec-clear").length).toBeGreaterThan(0);
+
+		fireEvent.click(screen.getByRole("button", { name: /clear browser view/i }));
+
+		expect(screen.queryByText("exec-clear")).toBeNull();
+		expect(screen.getByText(/browser view only/i)).toBeTruthy();
+	});
+});

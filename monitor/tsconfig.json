@@ -3,6 +3,7 @@
 		"target": "ES2024",
 		"useDefineForClassFields": true,
 		"lib": ["ES2024", "DOM", "DOM.Iterable"],
+		"jsx": "react-jsx",
 		"allowJs": false,
 		"skipLibCheck": true,
 		"esModuleInterop": true,
