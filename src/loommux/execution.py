@@ -22,6 +22,7 @@ class Execution:
     submitted_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     status: ExecutionStatus = "running"
+    full_output_requested: bool = False
     stdout: str = ""
     stderr: str = ""
     result_text: str = ""
@@ -85,6 +86,7 @@ class Execution:
             "ok": self.status not in {"error", "killed"},
             "execution": self.execution,
             "status": self.status,
+            "full_output_requested": self.full_output_requested,
             "stdout": "" if omitted else self.stdout,
             "stderr": "" if omitted else self.stderr,
             "result_text": "" if omitted else self.result_text,
@@ -104,6 +106,7 @@ class Execution:
             "ok": self.status not in {"error", "killed"},
             "execution": self.execution,
             "status": self.status,
+            "full_output_requested": self.full_output_requested,
             "submitted_at": self.submitted_at,
             "updated_at": self.updated_at,
             "completed_at": self.completed_at,
@@ -122,6 +125,8 @@ class Execution:
     def _output_omitted_reason(self, output_line_limit: int | None, output_total_lines: int) -> str | None:
         if self.status == "running":
             return "running"
+        if self.full_output_requested:
+            return None
         if output_line_limit is not None and output_total_lines > output_line_limit:
             return "line_limit_exceeded"
         return None

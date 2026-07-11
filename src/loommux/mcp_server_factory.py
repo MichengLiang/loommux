@@ -62,18 +62,31 @@ def create_mcp(policy: ResultChannelPolicy, monitor_publisher: MonitorPublisher 
         没有唯一有效注释时使用 10 秒。等待到期不会中断仍在运行的 cell；
         该注释不改变 Python runtime 或后续调用的等待上限。
 
+        完整输出
+        --------
+
+        若 cell 中至少有一行完整匹配下列无值注释，该 execution 在终态时
+        直接交付完整 combined 正文，不受默认 300 行交付阈值限制::
+
+            # loommux: full_output
+
+        该标记只作用于本次 execution，且保留在原始 cell 中作为 Python
+        注释执行。它不改变仍在运行时的响应：此时仍返回 running 与
+        ``execution``，后续 ``wait_python`` 在终态时继续完整交付。没有
+        该标记时，默认 300 行规则以及读取、搜索工具的使用方式不变。
+
         执行编号与后续操作
         --------------------
 
         已接受的提交会分配一个正整数 ``execution``，它在服务器进程存续
-        期间严格递增。若执行仍在运行，或 combined 输出超过 300 行，响应
-        不携带完整输出正文；使用 ``wait_python`` 等待，使用
+        期间严格递增。若执行仍在运行，或未标记 execution 的 combined 输出
+        超过 300 行，响应不携带完整输出正文；使用 ``wait_python`` 等待，使用
         ``python_execution_status`` 查看状态，使用 ``read_python_output``
         或 ``search_python_output`` 读取或搜索保留的输出。
 
         Args:
             freeform: 要提交的原始 Python cell 源码文本；可包含唯一的
-                timeout directive。
+                timeout directive 和无值的 full_output directive。
 
         Returns:
             已接受 execution 的当前状态；完成的小输出直接进入模型内容，
@@ -204,6 +217,13 @@ def create_mcp(policy: ResultChannelPolicy, monitor_publisher: MonitorPublisher 
         ``execution`` 的选择规则与 ``python_execution_status`` 相同。等待
         到期只结束本次工具调用，不中断 Python cell。后续可再次调用本工具，
         或用 ``read_python_output`` 查看已到达的输出。
+
+        完整输出交付
+        ------------
+
+        当所选 execution 带有 ``# loommux: full_output`` 标记且已达到
+        终态时，本工具直接返回完整 combined 正文，不应用默认 300 行省略。
+        仍在运行的标记 execution 继续返回 running，而非不完整正文。
 
         Args:
             execution: 要等待的正整数执行编号。省略时使用当前记录，随后

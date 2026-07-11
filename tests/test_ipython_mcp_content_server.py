@@ -58,6 +58,9 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
     assert "等待上限\n--------" in run_python
     assert "执行编号与后续操作\n--------------------" in run_python
     assert "# loommux: timeout_seconds=120" in run_python
+    assert "# loommux: full_output" in run_python
+    assert "300 行" in run_python
+    assert "wait_python" in run_python
     assert "execution_id" not in run_python and "output_log" not in run_python
     assert "原始 Python cell 源码文本" in tools["run_python"].inputSchema["properties"]["freeform"]["description"]
 
@@ -86,6 +89,7 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
     wait = tools["wait_python"].description or ""
     assert "选择与等待\n----------" in wait
     assert "不中断 Python cell" in wait
+    assert "完整 combined 正文" in wait
     assert "默认 30 秒" in tools["wait_python"].inputSchema["properties"]["timeout_seconds"]["description"]
 
     interrupt = tools["interrupt_python"].description or ""
@@ -107,6 +111,19 @@ async def test_result_policies_share_content_but_only_dual_exposes_structured_st
     assert dual.structured_content["execution"] == 1
     assert content.structured_content is None
     assert dual.content[0].text == content.content[0].text == "Execution 1 completed without a display result."
+
+
+async def test_result_policies_share_marked_complete_long_output(content_client: Client[Any]) -> None:
+    source = "# loommux: full_output\nprint('\\n'.join(f'line-{number}' for number in range(301)))"
+    async with Client(create_standard_mcp()) as dual_client:
+        dual = await dual_client.call_tool("run_python", {"freeform": source})
+    content = await content_client.call_tool("run_python", {"freeform": source})
+
+    expected = "\n".join(f"line-{number}" for number in range(301)) + "\n"
+    assert dual.content[0].text == content.content[0].text == expected
+    assert dual.structured_content is not None
+    assert dual.structured_content["output_omitted"] is False
+    assert content.structured_content is None
 
 
 async def test_shared_factory_binds_every_tool_to_the_integer_contract(content_client: Client[Any]) -> None:

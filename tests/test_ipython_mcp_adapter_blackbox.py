@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import stat
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -60,6 +61,68 @@ def test_busy_submission_reports_running_integer_without_queueing(adapter: IPyth
     assert busy == {"ok": False, "status": "busy", "execution": 1, "message": "kernel is already executing code"}
     assert adapter.wait_python(1, 3)["status"] == "completed"
     assert len(adapter.executions) == 1
+
+
+def test_full_output_directive_returns_complete_long_combined_output(adapter: IPythonMCPAdapter) -> None:
+    response = adapter.run_python("# loommux: full_output\nprint('\\n'.join(f'line-{number}' for number in range(301)))")
+
+    assert response["status"] == "completed"
+    assert response["full_output_requested"] is True
+    assert response["output_omitted"] is False
+    assert response["output_text"].splitlines() == [f"line-{number}" for number in range(301)]
+
+
+def test_full_output_directive_preserves_the_combined_iopub_order(adapter: IPythonMCPAdapter) -> None:
+    response = adapter.run_python("# loommux: full_output\nimport sys\nprint('stdout')\nprint('stderr', file=sys.stderr)\n'display'")
+    output = response["output_text"]
+
+    assert response["output_omitted"] is False
+    assert output.index("stdout") < output.index("stderr") < output.index("Out[1]: 'display'")
+
+
+def test_unmarked_long_combined_output_keeps_the_default_omission_rule(adapter: IPythonMCPAdapter) -> None:
+    marked = adapter.run_python("# loommux: full_output\nprint('marked only')")
+    response = adapter.run_python("print('\\n'.join(f'line-{number}' for number in range(301)))")
+
+    assert marked["output_omitted"] is False
+    assert response["status"] == "completed"
+    assert response["full_output_requested"] is False
+    assert response["output_omitted"] is True
+    assert response["output_omitted_reason"] == "line_limit_exceeded"
+    assert "output_text" not in response
+
+
+def test_full_output_directive_survives_running_wait_error_and_reset(adapter: IPythonMCPAdapter) -> None:
+    running = adapter.run_python("# loommux: timeout_seconds=0.1\n# loommux: full_output\nimport time\ntime.sleep(0.3)\nprint('\\n'.join(f'wait-{number}' for number in range(301)))")
+    assert running["status"] == "running"
+    assert running["output_omitted_reason"] == "running"
+
+    completed = adapter.wait_python(running["execution"], timeout_seconds=3)
+    assert completed["status"] == "completed"
+    assert completed["output_text"].splitlines() == [f"wait-{number}" for number in range(301)]
+
+    failed = adapter.run_python("# loommux: full_output\nprint('before failure')\nraise RuntimeError('expected failure')")
+    assert failed["status"] == "error"
+    assert failed["output_omitted"] is False
+    assert "before failure" in failed["output_text"]
+    assert "RuntimeError: expected failure" in failed["output_text"]
+
+    killed = adapter.run_python("# loommux: timeout_seconds=0.1\n# loommux: full_output\nimport time\nprint('before reset', flush=True)\ntime.sleep(5)")
+    assert killed["status"] == "running"
+    time.sleep(0.2)
+    adapter.reset_python()
+    reset_result = adapter.wait_python(killed["execution"])
+    assert reset_result["status"] == "killed"
+    assert reset_result["output_omitted"] is False
+    assert "before reset" in reset_result["output_text"]
+
+
+def test_full_output_directive_remains_a_kernel_comment(adapter: IPythonMCPAdapter) -> None:
+    submitted = adapter.run_python("# loommux: full_output\nvalue = 'unchanged'")
+    namespace = adapter.run_python("('full_output' in globals(), value)")
+
+    assert submitted["status"] == "completed"
+    assert "Out[2]: (False, 'unchanged')" in namespace["output_text"]
 
 
 def test_reset_preserves_records_and_sequence_and_reauthors_out_label(adapter: IPythonMCPAdapter) -> None:

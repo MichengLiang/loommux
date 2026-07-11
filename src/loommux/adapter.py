@@ -17,11 +17,16 @@ DEFAULT_OUTPUT_LINE_LIMIT = 300
 DEFAULT_RUN_PYTHON_TIMEOUT_SECONDS = 10.0
 OUTPUT_STREAMS = {"combined", "stdout", "stderr", "result", "traceback"}
 RUN_PYTHON_TIMEOUT_DIRECTIVE_RE = re.compile(r"^# loommux: timeout_seconds=([1-9][0-9]*|[0-9]+\.[0-9]+)$")
+RUN_PYTHON_FULL_OUTPUT_DIRECTIVE_RE = re.compile(r"^# loommux: full_output$")
 
 
 def parse_run_python_freeform_timeout(freeform: str) -> tuple[float, str]:
     matches = [float(match.group(1)) for line in freeform.splitlines() if (match := RUN_PYTHON_TIMEOUT_DIRECTIVE_RE.fullmatch(line)) and math.isfinite(float(match.group(1))) and float(match.group(1)) > 0]
     return (matches[0], "directive") if len(matches) == 1 else (DEFAULT_RUN_PYTHON_TIMEOUT_SECONDS, "default")
+
+
+def parse_run_python_full_output(freeform: str) -> bool:
+    return any(RUN_PYTHON_FULL_OUTPUT_DIRECTIVE_RE.fullmatch(line) for line in freeform.splitlines())
 
 
 class IPythonMCPAdapter:
@@ -79,9 +84,9 @@ class IPythonMCPAdapter:
         if not isinstance(freeform, str):
             return {"ok": False, "status": "invalid_code", "message": "freeform must be a string"}
         timeout_seconds, _source = parse_run_python_freeform_timeout(freeform)
-        return self._submit_python_cell(freeform, timeout_seconds)
+        return self._submit_python_cell(freeform, timeout_seconds, parse_run_python_full_output(freeform))
 
-    def _submit_python_cell(self, code: str, timeout_seconds: float) -> dict[str, Any]:
+    def _submit_python_cell(self, code: str, timeout_seconds: float, full_output_requested: bool = False) -> dict[str, Any]:
         if not isinstance(code, str):
             return {"ok": False, "status": "invalid_code", "message": "code must be a string"}
         if (error := self._validate_timeout(timeout_seconds)) is not None:
@@ -94,7 +99,7 @@ class IPythonMCPAdapter:
                 return {"ok": False, "status": "kernel_not_started", "message": "kernel is not started"}
             if self.current_execution is not None:
                 return {"ok": False, "status": "busy", "execution": self.current_execution, "message": "kernel is already executing code"}
-            execution = Execution(execution=self._next_execution, code=code, kernel_pid=kernel.pid or 0)
+            execution = Execution(execution=self._next_execution, code=code, kernel_pid=kernel.pid or 0, full_output_requested=full_output_requested)
             self._next_execution += 1
             self.executions[execution.execution] = execution
             self.current_execution = execution.execution

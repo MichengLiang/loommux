@@ -39,6 +39,8 @@ def _execution_surface(status: Mapping[str, Any]) -> str:
         return f"Python execution {execution} is still running. Use wait_python() or read_python_output()."
     if status.get("output_omitted_reason") == "line_limit_exceeded":
         return f"Python execution {execution} produced more than {status.get('output_line_limit')} lines. Use read_python_output()."
+    if status.get("full_output_requested") is True and (output := _optional_string(status.get("output_text"))):
+        return output
     if state == "error":
         return _error_sentence(execution, status)
     if state == "interrupted":

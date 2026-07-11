@@ -23,6 +23,28 @@ def test_execution_states_name_the_integer_coordinate() -> None:
     assert format_tool_result_text("wait_python", killed) == "Python execution 5 was killed by reset_python()."
 
 
+def test_marked_terminal_execution_renders_its_complete_combined_output() -> None:
+    error = {
+        "ok": False,
+        "execution": 5,
+        "status": "error",
+        "full_output_requested": True,
+        "output_text": "before failure\nTraceback...\n",
+        "output_omitted": False,
+    }
+    killed = {
+        "ok": False,
+        "execution": 6,
+        "status": "killed",
+        "full_output_requested": True,
+        "output_text": "before reset\n",
+        "output_omitted": False,
+    }
+
+    assert format_tool_result_text("run_python", error) == "before failure\nTraceback...\n"
+    assert format_tool_result_text("wait_python", killed) == "before reset\n"
+
+
 def test_read_search_and_status_surfaces_are_output_oriented() -> None:
     assert format_tool_result_text("read_python_output", {"ok": True, "returned_lines": 1, "text": "1 | payload"}) == "1 | payload"
     assert format_tool_result_text("read_python_output", {"ok": True, "returned_lines": 0, "text": ""}) == "No output lines are available."
