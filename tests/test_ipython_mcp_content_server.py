@@ -99,7 +99,8 @@ async def test_content_only_run_python_preserves_output_first_pretty_text(conten
 
     assert text.startswith("hello-content-only\nOut[")
     assert "42" in text
-    assert "\n\n[exec-000001 completed | log: python-output:exec-000001]" in text
+    assert "exec-" not in text
+    assert "python-output:" not in text
     assert '"status"' not in text
     assert "'status'" not in text
     assert "structuredContent" not in text
@@ -110,14 +111,15 @@ async def test_content_only_error_execution_has_traceback_text_but_no_structured
     text = assert_content_only_result(result)
 
     assert "ZeroDivisionError: division by zero" in text
-    assert "[exec-000001 error | traceback: python-output:exec-000001/traceback | log: python-output:exec-000001]" in text
+    assert "exec-" not in text
+    assert "python-output:" not in text
     assert '"error"' not in text
 
 
 async def test_content_only_running_execution_omits_partial_body_and_structured_channels(content_client: Client[Any], valid_workspace: Path) -> None:
     result = await content_client.call_tool("run_python", {"freeform": "# loommux: timeout_seconds=0.1\nimport time\nprint('partial-content-only', flush=True)\ntime.sleep(1)"})
 
-    assert assert_content_only_result(result) == "[exec-000001 running | output omitted: running | 1 line available | log: python-output:exec-000001]"
+    assert assert_content_only_result(result) == "Python execution is still running. Use wait_python() to wait, python_status() to check its state, or read_python_output() to inspect available output."
 
     await content_client.call_tool("wait_python", {"execution_id": "exec-000001", "timeout_seconds": 5})
 

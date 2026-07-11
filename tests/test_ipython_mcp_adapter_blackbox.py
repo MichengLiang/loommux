@@ -96,7 +96,9 @@ async def test_run_python_success_content_includes_all_nonempty_output_blocks(ra
 
     text = result_text(result)
     assert text.startswith("stdout-line\nstderr-line\nOut[")
-    assert text.endswith(f"\n\n[{result.data['execution_id']} completed | log: {result.data['output_log']}]")
+    assert text == result.data["output_text"]
+    assert result.data["execution_id"] not in text
+    assert result.data["output_log"] not in text
     assert "result_text:" not in text
     assert "stdout:" not in text
     assert "stderr:" not in text
@@ -119,7 +121,9 @@ async def test_run_python_error_content_includes_error_summary_and_traceback_log
     text = result_text(result)
     assert not text.startswith("错误：execution")
     assert "ZeroDivisionError: division by zero" in text
-    assert text.endswith(f"\n\n[{result.data['execution_id']} error | traceback: {result.data['output_log']}/traceback | log: {result.data['output_log']}]")
+    assert text == result.data["output_text"]
+    assert result.data["execution_id"] not in text
+    assert result.data["output_log"] not in text
     assert "error:" not in text
 
 
@@ -141,7 +145,7 @@ async def test_running_busy_and_execution_not_found_content_front_loads_state(ra
 
     assert running.data["status"] == "running"
     assert busy.data["status"] == "busy"
-    assert result_text(running) == f"[{running.data['execution_id']} running | output omitted: running | 1 line available | log: {running.data['output_log']}]"
+    assert result_text(running) == "Python execution is still running. Use wait_python() to wait, python_status() to check its state, or read_python_output() to inspect available output."
     assert result_text(busy) == "busy: kernel is already executing code"
 
     await raw_call("wait_python", {"execution_id": running.data["execution_id"], "timeout_seconds": 5})

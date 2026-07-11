@@ -351,37 +351,35 @@ pretty text 不得默认把 structured content 转成完整 key-value 表。pret
 
 ### 6.2 Output First
 
-`run_python` 与 `wait_python` 在小输出完成时必须先展示 Python 可见输出。状态 footer 只能占一行。
+`run_python` 与 `wait_python` 在小输出完成时必须只展示 Python 可见输出。不得在正文后追加 execution id、output log handle、状态或其它协议元数据。
 
-### 6.3 One-Line Footer
+### 6.3 Navigation Metadata
 
-当 pretty text 已展示正文时，footer 使用一行表达最小定位信息：
+`execution_id`、`output_log`、状态和 stream 信息属于 structured content。调用方需要继续观察最新 execution 时，使用 `wait_python()`、`read_python_output()` 或 `search_python_output()` 的 current-or-last 默认选择规则；不应要求 pretty text 重复这些字段。
 
-```text
-[exec-000001 completed | log: python-output:exec-000001]
-```
+### 6.4 Exceptional Output Surface
 
-footer 不得展开分流 handle。
-
-### 6.4 Omitted Surface
-
-当 output 被省略时，pretty text 不展示空的 `stdout:`、`stderr:` 或 `result_text:` 块。它只展示一行省略说明：
+当 output 被省略或没有可见正文时，pretty text 使用一句自然英文提示。提示不得包含方括号、管道符、execution id 或 output log handle：
 
 ```text
-[exec-000002 running | output omitted: running | 1 line available | log: python-output:exec-000002]
+Python execution is still running. Use wait_python() to wait, python_status() to check its state, or read_python_output() to inspect available output.
 ```
 
 ```text
-[exec-000003 completed | output omitted: 301 lines > 300 | log: python-output:exec-000003]
+Python output is available through read_python_output().
+```
+
+```text
+Python execution completed without visible output.
 ```
 
 ### 6.5 Log Read Surface
 
-`read_python_output` 成功时 pretty text 先展示读取到的文本。footer 使用一行表达 log、行范围和总行数。
+`read_python_output` 成功时 pretty text 只展示读取到的文本。空结果使用 `No output lines are available.`。
 
 ### 6.6 Search Surface
 
-`search_python_output` 成功时 pretty text 先展示命中和上下文。footer 使用一行表达 log、query 和命中统计。
+`search_python_output` 成功时 pretty text 只展示命中和上下文。无命中使用 `No matching output lines were found.`。
 
 ## 7. `run_python` Pretty Text 规格
 
@@ -397,8 +395,6 @@ pretty text：
 
 ```text
 hello
-
-[exec-000001 completed | log: python-output:exec-000001]
 ```
 
 ### 7.2 Small Result
@@ -413,8 +409,6 @@ pretty text：
 
 ```text
 Out[1]: 42
-
-[exec-000001 completed | log: python-output:exec-000001]
 ```
 
 ### 7.3 Small Stdout And Result
@@ -424,8 +418,6 @@ Out[1]: 42
 ```text
 hello
 Out[1]: 42
-
-[exec-000001 completed | log: python-output:exec-000001]
 ```
 
 ### 7.4 Small Error
@@ -436,8 +428,6 @@ Out[1]: 42
 Traceback (most recent call last):
   File "<stdin>", line 1, in <module>
 ZeroDivisionError: division by zero
-
-[exec-000002 error | traceback: python-output:exec-000002/traceback | log: python-output:exec-000002]
 ```
 
 ### 7.5 Running
@@ -445,7 +435,7 @@ ZeroDivisionError: division by zero
 execution 未结束：
 
 ```text
-[exec-000003 running | output omitted: running | 1 line available | log: python-output:exec-000003]
+Python execution is still running. Use wait_python() to wait, python_status() to check its state, or read_python_output() to inspect available output.
 ```
 
 ### 7.6 Large Completed
@@ -453,7 +443,7 @@ execution 未结束：
 execution 已结束但 output 超过 300 行：
 
 ```text
-[exec-000004 completed | output omitted: 301 lines > 300 | log: python-output:exec-000004]
+Python output is available through read_python_output().
 ```
 
 ### 7.7 Completed No Output
@@ -461,7 +451,7 @@ execution 已结束但 output 超过 300 行：
 execution 已结束且无输出：
 
 ```text
-[exec-000005 completed | no output | log: python-output:exec-000005]
+Python execution completed without visible output.
 ```
 
 ## 8. `read_python_output` Pretty Text 规格
@@ -472,8 +462,6 @@ execution 已结束且无输出：
 299 | line-298
 300 | line-299
 301 | line-300
-
-[python-output:exec-000004/stdout | lines 299-301 of 301]
 ```
 
 ### 8.2 Range Without Line Numbers
@@ -482,14 +470,12 @@ execution 已结束且无输出：
 line-298
 line-299
 line-300
-
-[python-output:exec-000004/stdout | 3 lines of 301 | omitted_before=298]
 ```
 
 ### 8.3 Empty Result
 
 ```text
-[python-output:exec-000004/stdout | no lines]
+No output lines are available.
 ```
 
 ### 8.4 Invalid Range
@@ -507,14 +493,12 @@ C 2 | stderr-02 warn
 M 3 | stdout-03 beta-match
 C 4 | stdout-04 tail
 M 5 | stderr-05 err-match
-
-[python-output:exec-000004 | query: match (literal) | 2 matched lines, 2 matches]
 ```
 
 ### 9.2 No Matches
 
 ```text
-[python-output:exec-000004 | query: missing (literal) | no matches]
+No matching output lines were found.
 ```
 
 ### 9.3 Invalid Regex
@@ -624,10 +608,10 @@ Implementation must include tests for:
 2. Small completed result pretty text uses `Out[n]:`.
 3. Small completed mixed output does not show `logs` map.
 4. Small error pretty text shows traceback body, but structured `error` has no traceback list.
-5. Running output pretty text is one omitted line with `output_log`.
-6. Large completed output pretty text is one omitted line with line count and `output_log`.
-7. `read_python_output` success pretty text starts with log text, not `状态：已返回。`.
-8. `search_python_output` success pretty text starts with match text, not `状态：操作成功。`.
+5. Running output pretty text is the documented natural-language notice without execution metadata.
+6. Large completed output pretty text is the documented natural-language notice without output body.
+7. `read_python_output` success pretty text equals the log text; empty results use the documented natural-language notice.
+8. `search_python_output` success pretty text equals the match text; no matches use the documented natural-language notice.
 9. `run_python` structured return contains `output_log` and does not contain default `logs` map.
 10. `read_python_output(stream="stderr")` reads stderr stream.
 11. Conflicting `output_log` suffix and `stream` returns `invalid_output_log`.
@@ -646,13 +630,13 @@ Existing clients that read `stdout` from structured content remain supported dur
 
 The design is implemented when all of the following are true:
 
-1. `run_python` small completed pretty text shows Python output first.
-2. `run_python` running pretty text contains no output body and no `logs` map.
-3. `run_python` large completed pretty text contains no output body and no `logs` map.
+1. `run_python` small completed pretty text equals Python visible output without protocol metadata.
+2. `run_python` running pretty text contains the documented natural-language notice and no `logs` map.
+3. `run_python` large completed pretty text contains the documented natural-language notice and no `logs` map.
 4. `run_python` error structured content returns summary error only.
 5. `run_python` small error pretty text can show traceback body as output text.
-6. `read_python_output` success pretty text is log text plus one footer.
-7. `search_python_output` success pretty text is grep text plus one footer.
+6. `read_python_output` success pretty text equals log text without a footer.
+7. `search_python_output` success pretty text equals grep text without a footer.
 8. `python_status` and `python_execution_status` keep status-oriented output.
 9. Tool docstrings contain the handle derivation rules.
 10. Default structured returns do not repeat the full stream handle map.
@@ -661,4 +645,4 @@ The design is implemented when all of the following are true:
 
 ## 15. 文档结论
 
-IPython MCP adapter 的输出展示面应遵守最小剂量原则。执行 Python 时，agent 首先需要看到 Python 可见输出；只有输出不可直接返回时，agent 才需要 execution id、output log handle 和省略原因。stream handle 派生规则属于工具说明，不属于每次返回的正文。日志读取和搜索工具应直接展示日志文本和搜索命中，状态工具才展示状态。该结构既保留 IPython 的执行直觉，也适合响应式 agent 的离散观察方式。
+IPython MCP adapter 的输出展示面应遵守最小剂量原则。执行 Python 时，agent 看到的正文是 Python 可见输出；execution id、output log handle 和 stream 规则属于 structured content 与工具说明，不属于每次返回的正文。只有输出无法直接返回时，pretty text 才给出一句自然语言的下一步提示。日志读取和搜索工具直接展示日志文本和搜索命中，状态工具才展示状态。该结构既保留 IPython 的执行直觉，也适合响应式 agent 的离散观察方式。
