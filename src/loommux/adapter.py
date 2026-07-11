@@ -15,6 +15,7 @@ from loommux.monitoring import MonitorPublisher, NoopMonitorPublisher, safe_publ
 
 DEFAULT_OUTPUT_LINE_LIMIT = 300
 DEFAULT_RUN_PYTHON_TIMEOUT_SECONDS = 10.0
+KERNEL_START_ATTEMPTS = 2
 OUTPUT_STREAMS = {"combined", "stdout", "stderr", "result", "traceback"}
 RUN_PYTHON_TIMEOUT_DIRECTIVE_RE = re.compile(r"^# loommux: timeout_seconds=([1-9][0-9]*|[0-9]+\.[0-9]+)$")
 RUN_PYTHON_FULL_OUTPUT_DIRECTIVE_RE = re.compile(r"^# loommux: full_output$")
@@ -63,13 +64,24 @@ class IPythonMCPAdapter:
             return self._workspace_error("workspace_not_directory", "workspace path is not a directory", workspace, python_path)
         if (error := self._check_workspace_python(workspace, python_path)) is not None:
             return error
-        kernel = self._new_kernel_session(workspace, python_path)
-        try:
-            kernel.start()
-        except TimeoutError:
-            return self._workspace_error("kernel_start_timeout", "kernel did not become ready before timeout", workspace, python_path)
-        except Exception as exc:
-            return self._workspace_error("kernel_start_failed", f"kernel failed to start: {exc}", workspace, python_path)
+        kernel: KernelSession | None = None
+        start_error: Exception | None = None
+        # A kernel can miss its first readiness handshake while its ZMQ channels
+        # initialize. Retry once with a fresh process rather than rejecting a
+        # valid workspace because of that transient startup race.
+        for _attempt in range(KERNEL_START_ATTEMPTS):
+            candidate = self._new_kernel_session(workspace, python_path)
+            try:
+                candidate.start()
+            except Exception as exc:
+                start_error = exc
+            else:
+                kernel = candidate
+                break
+        if kernel is None:
+            if isinstance(start_error, TimeoutError):
+                return self._workspace_error("kernel_start_timeout", "kernel did not become ready before timeout", workspace, python_path)
+            return self._workspace_error("kernel_start_failed", f"kernel failed to start: {start_error}", workspace, python_path)
         with self._lock:
             self.workspace, self.python_path, self.kernel = workspace, python_path, kernel
             # A server lifespan has one session. This path is startup only; reset_python

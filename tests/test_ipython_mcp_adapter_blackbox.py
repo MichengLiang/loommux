@@ -52,6 +52,43 @@ def test_omitted_selection_uses_current_then_recent_and_empty_adapter_is_not_fou
         adapter.close()
 
 
+def test_workspace_start_retries_one_transient_kernel_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    workspace = tmp_path / "workspace"
+    python = workspace / ".venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.write_text(f'#!/bin/sh\nexec {sys.executable} "$@"\n')
+    python.chmod(0o700)
+
+    class ControlledKernel:
+        def __init__(self, should_fail: bool) -> None:
+            self.should_fail = should_fail
+            self.pid = 123
+            self.latest_execution_count = 0
+
+        def start(self) -> None:
+            if self.should_fail:
+                raise RuntimeError("transient startup failure")
+
+        def shutdown(self) -> None:
+            pass
+
+        def is_alive(self) -> bool:
+            return True
+
+        def set_monitor_callbacks(self, *_callbacks: object) -> None:
+            pass
+
+    adapter = IPythonMCPAdapter()
+    kernels = [ControlledKernel(True), ControlledKernel(False)]
+    monkeypatch.setattr(adapter, "_new_kernel_session", lambda *_args: kernels.pop(0))
+    try:
+        started = adapter.start_workspace(workspace, python)
+        assert started["ok"] is True
+        assert not kernels
+    finally:
+        adapter.close()
+
+
 def test_busy_submission_reports_running_integer_without_queueing(adapter: IPythonMCPAdapter) -> None:
     running = adapter.run_python("# loommux: timeout_seconds=0.1\nimport time\ntime.sleep(1)")
     busy = adapter.run_python("'not queued'")
