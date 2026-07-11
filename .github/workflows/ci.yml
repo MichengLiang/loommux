@@ -33,7 +33,11 @@ jobs:
         with:
           node-version: "24"
       - run: corepack enable
-      - run: pnpm --dir monitor install --frozen-lockfile
-      - run: pnpm --dir monitor typecheck
-      - run: pnpm --dir monitor test
-      - run: pnpm --dir monitor build
+      - run: pnpm install --frozen-lockfile
+        working-directory: monitor
+      - run: pnpm typecheck
+        working-directory: monitor
+      - run: pnpm test
+        working-directory: monitor
+      - run: pnpm build
+        working-directory: monitor
