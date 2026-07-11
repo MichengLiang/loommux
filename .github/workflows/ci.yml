@@ -12,14 +12,30 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.13"
           enable-cache: true
+          cache-dependency-glob: pyproject.toml
       - run: uv sync --group dev
       - run: uv run pytest
       - run: uv run ruff check src tests
       - run: uv run basedpyright src
       - run: uv build
       - run: uv run twine check dist/*
+
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: monitor/pnpm-lock.yaml
+      - run: corepack enable
+      - run: pnpm --dir monitor install --frozen-lockfile
+      - run: pnpm --dir monitor typecheck
+      - run: pnpm --dir monitor test
+      - run: pnpm --dir monitor build
