@@ -1,22 +1,28 @@
 import { expect, test } from "@playwright/test";
 import type { Server } from "node:http";
 import { spawn, type ChildProcess } from "node:child_process";
+import { createServer } from "node:net";
 import { serve } from "@hono/node-server";
 import { createApp } from "../src/server/app";
 
-const BACKEND_URL = "http://127.0.0.1:9765";
-const FRONTEND_URL = "http://127.0.0.1:5175";
 let backendServer: Server;
 let viteServer: ChildProcess;
+let backendUrl: string;
+let frontendUrl: string;
 
 test.beforeAll(async () => {
+	const backendPort = await findOpenPort();
+	const frontendPort = await findOpenPort();
+	backendUrl = `http://127.0.0.1:${backendPort}`;
+	frontendUrl = `http://127.0.0.1:${frontendPort}`;
 	backendServer = serve({
 		fetch: createApp().fetch,
 		hostname: "127.0.0.1",
-		port: 9765,
+		port: backendPort,
 	});
 	await waitForBackend();
-	viteServer = spawn("pnpm", ["exec", "vite", "--host", "127.0.0.1", "--port", "5175", "--strictPort"], {
+	viteServer = spawn("pnpm", ["exec", "vite", "--host", "127.0.0.1", "--port", String(frontendPort), "--strictPort"], {
+		env: { ...process.env, MONITOR_BACKEND_URL: backendUrl },
 		stdio: "ignore",
 	});
 	await waitForFrontend();
@@ -38,14 +44,14 @@ test.afterAll(async () => {
 });
 
 test("monitor receives backend events and keeps primary UI stable", async ({ page, request }) => {
-	await page.goto("/");
+	await page.goto(frontendUrl);
 
 	await expect(page.getByRole("heading", { name: "loommux monitor" })).toBeVisible();
 	await expect(page.getByText(/clients \d+/)).toBeVisible();
 	await expect(page.getByText("open")).toBeVisible();
 
 	const executionId = `exec-e2e-${test.info().project.name}`;
-	await request.post(`${BACKEND_URL}/api/events`, {
+	await request.post(`${backendUrl}/api/events`, {
 		data: {
 			type: "execution_submitted",
 			execution_id: executionId,
@@ -57,7 +63,7 @@ test("monitor receives backend events and keeps primary UI stable", async ({ pag
 			timestamp: Date.now() / 1000,
 		},
 	});
-	await request.post(`${BACKEND_URL}/api/events`, {
+	await request.post(`${backendUrl}/api/events`, {
 		data: {
 			type: "execution_output",
 			execution_id: executionId,
@@ -77,19 +83,66 @@ test("monitor receives backend events and keeps primary UI stable", async ({ pag
 	);
 	expect(hasHorizontalOverflow).toBe(false);
 
-	for (const label of ["Executions", "Execution detail", "Tool timeline"]) {
+	for (const label of ["Executions", "Python code", "Python output"]) {
 		const box = await page.getByLabel(label).boundingBox();
 		expect(box, `${label} panel should render`).not.toBeNull();
 		expect(box?.width ?? 0, `${label} width`).toBeGreaterThan(120);
 		expect(box?.height ?? 0, `${label} height`).toBeGreaterThan(80);
 	}
+	const codeStyle = await page.locator(".codeBlock").evaluate((element) => {
+		const style = getComputedStyle(element);
+		return { backgroundColor: style.backgroundColor, color: style.color, fontSize: style.fontSize, fontFamily: style.fontFamily };
+	});
+	const outputStyle = await page.locator(".outputBlock").evaluate((element) => {
+		const style = getComputedStyle(element);
+		return { backgroundColor: style.backgroundColor, color: style.color, fontSize: style.fontSize };
+	});
+	expect(codeStyle.backgroundColor).not.toBe("rgb(16, 35, 31)");
+	expect(outputStyle.backgroundColor).not.toBe("rgb(17, 24, 32)");
+	expect(Number.parseFloat(codeStyle.fontSize)).toBeGreaterThanOrEqual(15);
+	expect(Number.parseFloat(outputStyle.fontSize)).toBeGreaterThanOrEqual(15);
+	expect(codeStyle.fontFamily.toLowerCase()).toContain("mono");
+	const fontSlider = page.getByRole("slider", { name: "Code and output font size" });
+	await fontSlider.focus();
+	await fontSlider.press("ArrowRight");
+	await fontSlider.press("ArrowRight");
+	const resizedCodeStyle = await page.locator(".codeBlock").evaluate((element) => {
+		const style = getComputedStyle(element);
+		return { fontSize: style.fontSize, fontFamily: style.fontFamily };
+	});
+	const resizedOutputStyle = await page.locator(".outputBlock").evaluate((element) => getComputedStyle(element).fontSize);
+	expect(resizedCodeStyle.fontSize).toBe("18px");
+	expect(resizedOutputStyle).toBe("18px");
+	expect(resizedCodeStyle.fontFamily.toLowerCase()).toContain("mono");
+	const resizeHandle = page.getByRole("separator", { name: "Resize code and output panels" });
+	const handleBox = await resizeHandle.boundingBox();
+	expect(handleBox).not.toBeNull();
+	if (test.info().project.name === "chromium-desktop" && handleBox) {
+		const codeBeforeResize = await page.getByLabel("Python code").boundingBox();
+		expect(codeBeforeResize).not.toBeNull();
+		if (!codeBeforeResize) {
+			throw new Error("missing code panel before resize");
+		}
+		await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+		await page.mouse.down();
+		await page.mouse.move(handleBox.x + handleBox.width / 2 + 160, handleBox.y + handleBox.height / 2);
+		await page.mouse.up();
+		const codeAfterResize = await page.getByLabel("Python code").boundingBox();
+		expect((codeAfterResize?.width ?? 0) - codeBeforeResize.width).toBeGreaterThan(80);
+	}
+	await expect(page.getByLabel("Execution detail")).toHaveCount(0);
+	await expect(page.getByLabel("Tool timeline")).toHaveCount(0);
+	await page.getByRole("button", { name: "Collapse execution list" }).click();
+	await expect(page.getByText(executionId).first()).toHaveCount(0);
+	await page.getByRole("button", { name: "Expand execution list" }).click();
+	await expect(page.getByText(executionId).first()).toBeVisible();
 });
 
 async function waitForBackend() {
 	const deadline = Date.now() + 5_000;
 	while (Date.now() < deadline) {
 		try {
-			const response = await fetch(`${BACKEND_URL}/api/health`);
+			const response = await fetch(`${backendUrl}/api/health`);
 			if (response.ok) {
 				return;
 			}
@@ -104,7 +157,7 @@ async function waitForFrontend() {
 	const deadline = Date.now() + 10_000;
 	while (Date.now() < deadline) {
 		try {
-			const response = await fetch(FRONTEND_URL);
+			const response = await fetch(frontendUrl);
 			if (response.ok) {
 				return;
 			}
@@ -113,4 +166,20 @@ async function waitForFrontend() {
 		}
 	}
 	throw new Error("monitor frontend did not become ready");
+}
+
+async function findOpenPort(): Promise<number> {
+	return new Promise((resolve, reject) => {
+		const server = createServer();
+		server.once("error", reject);
+		server.listen(0, "127.0.0.1", () => {
+			const address = server.address();
+			if (typeof address === "object" && address !== null) {
+				const { port } = address;
+				server.close(() => resolve(port));
+				return;
+			}
+			server.close(() => reject(new Error("failed to allocate port")));
+		});
+	});
 }

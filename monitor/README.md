@@ -17,18 +17,19 @@ Install dependencies from this directory:
 pnpm install
 ```
 
-Start the monitor backend:
+Start the monitor as a single local service:
 
 ```bash
 pnpm dev
 ```
 
-The backend defaults to `127.0.0.1:9765`.
+The command builds the React client, starts the Hono backend, and serves the frontend from the same process. The service defaults to `127.0.0.1:9765`.
 
-For frontend development, run Vite in a second terminal:
+For hot frontend development, run the API and Vite in separate terminals:
 
 ```bash
-pnpm exec vite --host 127.0.0.1 --port 5175
+pnpm dev:api
+pnpm dev:vite
 ```
 
 Production build:

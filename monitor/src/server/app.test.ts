@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { createApp } from "./app";
 import { MonitorEventStore } from "./events";
@@ -55,6 +58,27 @@ describe("monitor backend", () => {
 		expect(result).toEqual({ ok: true, sequence: 1 });
 		expect(health.events_received).toBe(1);
 		expect(health.events_buffered).toBe(1);
+	});
+
+	test("static root serves built frontend without swallowing api routes", async () => {
+		const staticRoot = await mkdtemp(join(tmpdir(), "loommux-monitor-static-"));
+		await writeFile(join(staticRoot, "index.html"), "<!doctype html><title>monitor shell</title>");
+		await writeFile(join(staticRoot, "asset.js"), "console.log('asset');");
+		const app = createApp({ staticRoot });
+
+		const index = await app.request("/");
+		const asset = await app.request("/asset.js");
+		const frontendRoute = await app.request("/executions/exec-1");
+		const apiMissing = await app.request("/api/missing");
+
+		expect(index.status).toBe(200);
+		expect(await index.text()).toContain("monitor shell");
+		expect(asset.status).toBe(200);
+		expect(await asset.text()).toContain("asset");
+		expect(frontendRoute.status).toBe(200);
+		expect(await frontendRoute.text()).toContain("monitor shell");
+		expect(apiMissing.status).toBe(404);
+		expect(await apiMissing.json()).toEqual({ ok: false, error: "not_found" });
 	});
 
 	test("illegal event post returns 400", async () => {

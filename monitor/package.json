@@ -4,7 +4,9 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "tsx src/server/index.ts",
+		"dev": "pnpm run build && pnpm run preview",
+		"dev:api": "tsx src/server/index.ts",
+		"dev:vite": "vite --host 127.0.0.1 --port 5175",
 		"build": "tsc --noEmit && vite build --emptyOutDir false && tsdown --config tsdown.server.config.ts",
 		"preview": "node dist/server/index.mjs",
 		"typecheck": "tsc --noEmit",
@@ -13,16 +15,19 @@
 	},
 	"dependencies": {
 		"@hono/node-server": "^1.19.6",
+		"@radix-ui/react-slider": "^1.4.0",
+		"highlight.js": "^11.11.1",
 		"hono": "^4.11.1",
 		"lucide-react": "^0.561.0",
 		"react": "^19.2.7",
 		"react-dom": "^19.2.7",
+		"react-resizable-panels": "^4.11.2",
 		"zod": "^4.2.1"
 	},
 	"devDependencies": {
+		"@playwright/test": "^1.60.0",
 		"@testing-library/dom": "^10.4.1",
 		"@testing-library/react": "^16.3.0",
-		"@playwright/test": "^1.60.0",
 		"@types/node": "^24.10.2",
 		"@types/react": "^19.2.7",
 		"@types/react-dom": "^19.2.3",

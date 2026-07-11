@@ -18,7 +18,7 @@ function renderWithEvents(events: MonitorClientEvent[]) {
 }
 
 describe("monitor UI", () => {
-	test("submitted, output, and finished events render code, output, and status", () => {
+	test("submitted, output, and finished events render focused code and output surfaces", () => {
 		renderWithEvents([
 			{
 				...baseEvent,
@@ -63,6 +63,9 @@ describe("monitor UI", () => {
 		expect(screen.getByText("print('hello')")).toBeTruthy();
 		expect(screen.getAllByText(/hello/).length).toBeGreaterThan(0);
 		expect(screen.getByText("python-output:exec-000001")).toBeTruthy();
+		expect(screen.getByLabelText("Python code")).toBeTruthy();
+		expect(screen.getByLabelText("Python output")).toBeTruthy();
+		expect(screen.queryByLabelText("Execution detail")).toBeNull();
 	});
 
 	test("error and traceback events render error and traceback", () => {
@@ -99,7 +102,7 @@ describe("monitor UI", () => {
 		expect(screen.getAllByText(/division by zero/).length).toBeGreaterThan(0);
 	});
 
-	test("tool events render timeline rows and result summary", () => {
+	test("tool timeline is omitted so code and output remain the primary surface", () => {
 		renderWithEvents([
 			{
 				...baseEvent,
@@ -122,10 +125,43 @@ describe("monitor UI", () => {
 			},
 		]);
 
-		expect(screen.getByText("run_python")).toBeTruthy();
-		expect(screen.getByText("completed")).toBeTruthy();
-		expect(screen.getByText(/ok=true status=completed/)).toBeTruthy();
-		expect(screen.getByText(/print/)).toBeTruthy();
+		expect(screen.queryByLabelText("Tool timeline")).toBeNull();
+		expect(screen.queryByText("Tool Timeline")).toBeNull();
+	});
+
+	test("execution sidebar can collapse", () => {
+		renderWithEvents([
+			{
+				...baseEvent,
+				type: "execution_submitted",
+				execution_id: "exec-sidebar",
+				code: "print('sidebar')",
+			},
+		]);
+
+		expect(screen.getByText("exec-sidebar")).toBeTruthy();
+
+		fireEvent.click(screen.getByRole("button", { name: /collapse execution list/i }));
+
+		expect(screen.queryByText("exec-sidebar")).toBeNull();
+
+		fireEvent.click(screen.getByRole("button", { name: /expand execution list/i }));
+
+		expect(screen.getByText("exec-sidebar")).toBeTruthy();
+	});
+
+	test("code size control is available in the status bar", () => {
+		renderWithEvents([
+			{
+				...baseEvent,
+				type: "execution_submitted",
+				execution_id: "exec-font-size",
+				code: "print('font')",
+			},
+		]);
+
+		expect(screen.getByLabelText("Code and output font size")).toBeTruthy();
+		expect(screen.getByText("Code 16px")).toBeTruthy();
 	});
 
 	test("clear view clears displayed events without implying backend deletion", () => {

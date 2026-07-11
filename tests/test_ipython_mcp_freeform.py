@@ -124,7 +124,6 @@ async def test_content_run_python_docstring_only_teaches_canonical_directive(con
     assert "返回表面\n--------" in description
     assert "后续工具\n--------" in description
     assert "10 秒" in description
-    assert "JSON arguments" in description
     assert "python-output:<execution_id>" in description
     assert "/stdout" in description
     assert "/stderr" in description

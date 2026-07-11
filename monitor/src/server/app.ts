@@ -1,3 +1,4 @@
+import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { MonitorEventSchema } from "../shared/schema";
@@ -8,6 +9,7 @@ export type CreateAppOptions = {
 	eventStore?: MonitorEventStore;
 	ringBufferCapacity?: number;
 	heartbeatIntervalMs?: number;
+	staticRoot?: string;
 };
 
 type EventResponse = {
@@ -98,6 +100,11 @@ export function createApp(options: CreateAppOptions = {}) {
 	);
 
 	app.all("/api/*", (c) => c.json({ ok: false, error: "not_found" }, 404));
+
+	if (options.staticRoot) {
+		app.use("*", serveStatic({ root: options.staticRoot }));
+		app.get("*", serveStatic({ path: "index.html", root: options.staticRoot }));
+	}
 
 	return app;
 }

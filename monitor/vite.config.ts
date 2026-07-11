@@ -7,7 +7,7 @@ export default defineConfig({
 		host: "127.0.0.1",
 		port: 5175,
 		proxy: {
-			"/api": "http://127.0.0.1:9765",
+			"/api": process.env.MONITOR_BACKEND_URL ?? "http://127.0.0.1:9765",
 		},
 	},
 });

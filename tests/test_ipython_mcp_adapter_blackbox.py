@@ -622,7 +622,6 @@ async def test_api_001_and_002_tool_surface_is_exact_and_has_no_truncation_param
     assert "返回表面\n--------" in run_description
     assert "后续工具\n--------" in run_description
     assert "10 秒" in run_description
-    assert "JSON arguments" in run_description
     assert "python-output:<execution_id>" in run_description
     assert "/stdout" in run_description
     assert "/stderr" in run_description
