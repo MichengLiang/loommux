@@ -9,5 +9,6 @@ dist/
 build/
 *.egg-info/
 tmp/
+node_modules/
 docs/001-raw.md
 docs/superpowers/

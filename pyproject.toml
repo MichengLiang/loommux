@@ -1,6 +1,6 @@
 [project]
 name = "loommux"
-version = "0.1.0"
+version = "0.1.1"
 description = "Persistent IPython MCP server with inspectable execution output"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -48,6 +48,27 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/loommux"]
+
+[tool.hatch.build.targets.sdist]
+# An explicit source allowlist keeps local monitor dependencies and workspace
+# experiments out of the PyPI source archive.
+include = [
+    "/src/loommux",
+    "/tests",
+    "/docs",
+    "/README.md",
+    "/LICENSE",
+    "/pyproject.toml",
+    "/CONTRIBUTING.md",
+    "/CODE_OF_CONDUCT.md",
+    "/SECURITY.md",
+    "/loommux_workspace.py",
+    "/loommux_workspace.py.example",
+    "/mcp_ipython_client.py",
+]
 
 # ========================================
 # Basedpyright - 目录级别类型检查 (新策略：默认推荐)
