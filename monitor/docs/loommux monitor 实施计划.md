@@ -1,3 +1,7 @@
+# Historical Planning Notice
+
+> This implementation plan predates the integer execution control plane. Current monitor behavior is defined by the [execution control-plane design](../../docs/ipython-mcp-execution-control-plane-design.md) and [monitor README](../README.md); do not use this plan as an interface contract.
+
 # loommux Monitor Implementation Plan
 
 > For agentic workers: read this file together with `loommux monitor 完整设计汇总.md`, `loommux monitor 执行者提示词.md`, and `loommux monitor 审核标准.md` before editing. Implement batch-by-batch. Do not skip verification or commits.

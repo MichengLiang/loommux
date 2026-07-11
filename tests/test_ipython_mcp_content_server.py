@@ -8,155 +8,130 @@ from typing import Any
 
 import pytest
 from fastmcp import Client
-from fastmcp.tools import ToolResult
 
 from loommux.mcp_ipython_content_server import create_mcp as create_content_mcp
 from loommux.mcp_ipython_server import create_mcp as create_standard_mcp
 from loommux.mcp_result_policy import make_tool_result
 
-EXPECTED_TOOLS = {
-    "run_python",
-    "python_status",
-    "python_execution_status",
-    "read_python_output",
-    "search_python_output",
-    "wait_python",
-    "interrupt_python",
-    "reset_python",
-}
+
+@pytest.fixture
+def workspace(tmp_path: Path) -> Path:
+    value = tmp_path / "workspace"
+    python = value / ".venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.write_text(f'#!/bin/sh\nexec {sys.executable} "$@"\n')
+    python.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+    return value
 
 
 @pytest.fixture
-async def content_client(valid_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Client[Any]]:
-    monkeypatch.chdir(valid_workspace)
-    async with Client(create_content_mcp()) as mcp_client:
-        yield mcp_client
+async def content_client(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Client[Any]]:
+    monkeypatch.chdir(workspace)
+    async with Client(create_content_mcp()) as client:
+        yield client
 
 
-@pytest.fixture
-def valid_workspace(tmp_path: Path) -> Path:
-    workspace = tmp_path / "workspace"
-    python_path = workspace / ".venv" / "bin" / "python"
-    python_path.parent.mkdir(parents=True)
-    python_path.write_text(f'#!/bin/sh\nexec {sys.executable} "$@"\n')
-    python_path.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
-    return workspace
+async def test_entrypoints_have_identical_eight_tool_schemas_and_descriptions(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(workspace)
+    async with Client(create_standard_mcp()) as dual, Client(create_content_mcp()) as content:
+        dual_tools = {tool.name: tool for tool in await dual.list_tools()}
+        content_tools = {tool.name: tool for tool in await content.list_tools()}
+
+    expected = {"run_python", "python_status", "python_execution_status", "read_python_output", "search_python_output", "wait_python", "interrupt_python", "reset_python"}
+    assert set(dual_tools) == set(content_tools) == expected
+    for name in expected:
+        assert dual_tools[name].inputSchema == content_tools[name].inputSchema
+        assert dual_tools[name].description == content_tools[name].description
+    schema = dual_tools["read_python_output"].inputSchema["properties"]
+    assert set(schema) == {"execution", "stream", "line_range", "show_line_numbers", "max_chars"}
+    assert schema["execution"]["anyOf"][0]["type"] == "integer"
 
 
-def result_text(result: Any) -> str:
-    assert len(result.content) == 1
-    assert result.content[0].type == "text"
-    return result.content[0].text
+async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(workspace)
+    async with Client(create_standard_mcp()) as client:
+        tools = {tool.name: tool for tool in await client.list_tools()}
+
+    run_python = tools["run_python"].description or ""
+    assert "向持久 IPython kernel 提交一个原始 Python cell。" in run_python
+    assert "输入\n----" in run_python
+    assert "等待上限\n--------" in run_python
+    assert "执行编号与后续操作\n--------------------" in run_python
+    assert "# loommux: timeout_seconds=120" in run_python
+    assert "execution_id" not in run_python and "output_log" not in run_python
+    assert "原始 Python cell 源码文本" in tools["run_python"].inputSchema["properties"]["freeform"]["description"]
+
+    status = tools["python_execution_status"].description or ""
+    assert "选择规则\n--------" in status
+    assert "当前\nrunning 记录" in status
+    assert "正整数执行编号" in tools["python_execution_status"].inputSchema["properties"]["execution"]["description"]
+
+    read = tools["read_python_output"].description or ""
+    assert "行坐标\n------" in read
+    assert "``:10``" in read and "``-10:``" in read and "``3:3``" in read
+    read_parameters = tools["read_python_output"].inputSchema["properties"]
+    assert "省略时使用当前记录" in read_parameters["execution"]["description"]
+    assert "从 1 开始的" in read_parameters["show_line_numbers"]["description"]
+    assert "必须为正数" in read_parameters["max_chars"]["description"]
+
+    search = tools["search_python_output"].description or ""
+    assert "选择与匹配\n------------" in search
+    assert "query_mode=\"auto\"" in search
+    search_parameters = tools["search_python_output"].inputSchema["properties"]
+    assert "字面文本或正则表达式" in search_parameters["query"]["description"]
+    assert "必须大于或等于 0" in search_parameters["context_before"]["description"]
+    assert "每个命中之后" in search_parameters["context_after"]["description"]
+    assert "忽略大小写" in search_parameters["ignore_case"]["description"]
+
+    wait = tools["wait_python"].description or ""
+    assert "选择与等待\n----------" in wait
+    assert "不中断 Python cell" in wait
+    assert "默认 30 秒" in tools["wait_python"].inputSchema["properties"]["timeout_seconds"]["description"]
+
+    interrupt = tools["interrupt_python"].description or ""
+    assert "中断语义\n--------" in interrupt
+    assert "IOPub ``idle``" in interrupt
+    assert "信号已发送不等同于记录已终态" in interrupt
+
+    reset = tools["reset_python"].description or ""
+    assert "重置边界\n--------" in reset
+    assert "连续的下一个编号" in reset
 
 
-def assert_content_only_result(result: Any) -> str:
-    assert result.structured_content is None
-    assert result.data is None
-    assert result.meta is None or result.meta == {}
-    return result_text(result)
+async def test_result_policies_share_content_but_only_dual_exposes_structured_status(content_client: Client[Any]) -> None:
+    async with Client(create_standard_mcp()) as dual_client:
+        dual = await dual_client.call_tool("run_python", {"freeform": "value = 1"})
+    content = await content_client.call_tool("run_python", {"freeform": "value = 1"})
+
+    assert dual.structured_content is not None
+    assert dual.structured_content["execution"] == 1
+    assert content.structured_content is None
+    assert dual.content[0].text == content.content[0].text == "Execution 1 completed without a display result."
 
 
-def test_make_tool_result_exposes_dual_channel_or_content_only() -> None:
-    raw_status = {"ok": True, "workspace": None, "python": None, "kernel_started": False, "kernel_pid": None, "busy": False, "current_execution_id": None, "execution_count": 0, "last_execution_id": None}
+async def test_shared_factory_binds_every_tool_to_the_integer_contract(content_client: Client[Any]) -> None:
+    await content_client.call_tool("python_status", {})
+    submitted = await content_client.call_tool("run_python", {"freeform": "print('factory')"})
+    execution = submitted.data
+    # content-only intentionally has no data; the current-or-recent default still
+    # exercises the same single selection path without any hidden alternate id.
+    status = await content_client.call_tool("python_execution_status", {})
+    read = await content_client.call_tool("read_python_output", {"stream": "stdout"})
+    search = await content_client.call_tool("search_python_output", {"query": "factory", "stream": "stdout", "query_mode": "literal"})
+    wait = await content_client.call_tool("wait_python", {"timeout_seconds": 1})
+    interrupt = await content_client.call_tool("interrupt_python", {})
+    reset = await content_client.call_tool("reset_python", {})
 
-    dual = make_tool_result("python_status", raw_status, "dual_channel")
-    content_only = make_tool_result("python_status", raw_status, "content_only")
-
-    assert isinstance(dual, ToolResult)
-    assert dual.structured_content == raw_status
-    assert dual.structured_content is not raw_status
-    assert content_only.structured_content is None
-    assert dual.content == content_only.content
-    assert len(dual.content) == 1
-    assert dual.content[0].type == "text"
-    assert dual.content[0].text == "kernel: not_started\nworkspace: null\npython: null\nlast_execution_id: null"
-
-
-async def test_content_only_tools_match_standard_server_and_declare_no_output_schema(content_client: Client[Any]) -> None:
-    async with Client(create_standard_mcp()) as standard_client:
-        standard_tools = await standard_client.list_tools()
-    content_tools = await content_client.list_tools()
-
-    standard_names = {tool.name for tool in standard_tools}
-    content_names = {tool.name for tool in content_tools}
-
-    assert standard_names == content_names == EXPECTED_TOOLS
-    for tool in content_tools:
-        assert tool.inputSchema is not None
-        assert tool.outputSchema is None
+    assert execution is None
+    assert "execution 1: completed" in status.content[0].text
+    assert read.content[0].text == "factory"
+    assert "M 1 | factory" in search.content[0].text
+    assert "Execution 1 completed" in wait.content[0].text
+    assert interrupt.content[0].text == "Python kernel is idle."
+    assert "sequence is preserved" in reset.content[0].text
 
 
-async def test_content_only_python_status_returns_pretty_text_without_structured_channels(content_client: Client[Any], valid_workspace: Path) -> None:
-    result = await content_client.call_tool("python_status", {})
-
-    text = assert_content_only_result(result)
-    assert text.startswith(f"kernel: idle\nworkspace: {valid_workspace}\npython: ")
-
-
-async def test_content_only_run_python_preserves_output_first_pretty_text(content_client: Client[Any], valid_workspace: Path) -> None:
-    result = await content_client.call_tool("run_python", {"freeform": "print('hello-content-only')\n42"})
-    text = assert_content_only_result(result)
-
-    assert text.startswith("hello-content-only\nOut[")
-    assert "42" in text
-    assert "exec-" not in text
-    assert "python-output:" not in text
-    assert '"status"' not in text
-    assert "'status'" not in text
-    assert "structuredContent" not in text
-
-
-async def test_content_only_error_execution_has_traceback_text_but_no_structured_channels(content_client: Client[Any], valid_workspace: Path) -> None:
-    result = await content_client.call_tool("run_python", {"freeform": "1 / 0"})
-    text = assert_content_only_result(result)
-
-    assert "ZeroDivisionError: division by zero" in text
-    assert "exec-" not in text
-    assert "python-output:" not in text
-    assert '"error"' not in text
-
-
-async def test_content_only_running_execution_omits_partial_body_and_structured_channels(content_client: Client[Any], valid_workspace: Path) -> None:
-    result = await content_client.call_tool("run_python", {"freeform": "# loommux: timeout_seconds=0.1\nimport time\nprint('partial-content-only', flush=True)\ntime.sleep(1)"})
-
-    assert assert_content_only_result(result) == "Python execution is still running. Use wait_python() to wait, python_status() to check its state, or read_python_output() to inspect available output."
-
-    await content_client.call_tool("wait_python", {"execution_id": "exec-000001", "timeout_seconds": 5})
-
-
-async def test_content_only_all_tools_return_no_structured_channels(content_client: Client[Any], valid_workspace: Path) -> None:
-    calls = [
-        ("python_status", {}),
-        ("run_python", {"freeform": "print('all-tools-content-only')"}),
-        ("python_execution_status", {"execution_id": "exec-000001"}),
-        ("read_python_output", {"output_log": "python-output:exec-000001", "stream": "stdout"}),
-        ("search_python_output", {"output_log": "python-output:exec-000001", "stream": "stdout", "query": "all-tools", "query_mode": "literal"}),
-        ("wait_python", {"execution_id": "exec-000001", "timeout_seconds": 1}),
-        ("interrupt_python", {}),
-        ("reset_python", {}),
-    ]
-
-    texts = []
-    for name, arguments in calls:
-        result = await content_client.call_tool(name, arguments)
-        texts.append(assert_content_only_result(result))
-
-    assert texts[0].startswith("kernel: idle")
-    assert texts[1].startswith("all-tools-content-only")
-    assert texts[2].startswith("execution exec-000001: completed")
-    assert texts[3].startswith("all-tools-content-only")
-    assert texts[4].startswith("M 1 | all-tools-content-only")
-    assert texts[5].startswith("all-tools-content-only")
-    assert texts[6] == "中断：kernel 当前空闲，无需 interrupt。"
-    assert texts[7] == "重置：kernel 已重启。"
-
-
-async def test_standard_server_still_returns_structured_content_and_data(valid_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(valid_workspace)
-    async with Client(create_standard_mcp()) as standard_client:
-        result = await standard_client.call_tool("python_status", {})
-
-    assert result.structured_content is not None
-    assert result.data == result.structured_content
-    assert result.data["kernel_started"] is True
-    assert result_text(result).startswith(f"kernel: idle\nworkspace: {valid_workspace}\npython: ")
+def test_mcp_result_policy_only_changes_structured_channel() -> None:
+    raw = {"ok": True, "execution": 4, "status": "completed", "result_text": "1", "output_text": "Out[4]: 1\n", "output_omitted": False}
+    assert make_tool_result("run_python", raw, "dual_channel").structured_content == raw
+    assert make_tool_result("run_python", raw, "content_only").structured_content is None

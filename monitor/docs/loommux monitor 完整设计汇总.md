@@ -1,3 +1,7 @@
+# Historical Design Notice
+
+> This design summary predates the integer execution control plane. The monitor now aggregates lifecycle events by numeric `execution`; current runtime behavior is defined by the [execution control-plane design](../../docs/ipython-mcp-execution-control-plane-design.md) and [monitor README](../README.md).
+
 # loommux MCP Python 工具实时审计面：完整设计汇总
 
 下面是我把前两轮观察、你的补充、项目现状和技术选型统一整理后的完整设计汇总。这份内容的目标不是再发散讨论，而是把我们已经对齐的方案变成一个清楚、可审查、可落地的设计对象。你可以把它理解为正式 spec 前的总览版：它说明这个东西为什么存在、负责什么、不负责什么、怎么接入 loommux、前后端怎么组织、事件怎么流动、浏览器怎么展示、失败时怎么处理、后续怎么实现和验证。

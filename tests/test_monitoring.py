@@ -5,11 +5,15 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
+import pytest
+
 from loommux.monitoring import (
     DEFAULT_MONITOR_URL,
     BackgroundMonitorPublisher,
     NoopMonitorPublisher,
     create_monitor_publisher,
+    run_monitored_tool_call,
+    safe_publish,
 )
 
 
@@ -196,3 +200,31 @@ def test_close_is_idempotent_and_publish_after_close_is_noop() -> None:
 
     assert publisher.closed is True
     assert len(sent) <= 1
+
+
+def test_monitored_call_records_success_and_exception_without_leaking_publish_errors() -> None:
+    events: list[Mapping[str, Any]] = []
+
+    class Publisher:
+        def publish(self, event: Mapping[str, Any]) -> None:
+            events.append(event)
+
+        def close(self) -> None:
+            pass
+
+    publisher = Publisher()
+    assert run_monitored_tool_call("python_status", {}, publisher, lambda _call_id: {"ok": True}) == {"ok": True}
+    with pytest.raises(RuntimeError, match="boom"):
+        run_monitored_tool_call("python_status", {}, publisher, lambda _call_id: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    assert [event["type"] for event in events] == ["tool_call_started", "tool_call_finished", "tool_call_started", "tool_call_finished"]
+    assert events[-1]["status"] == "exception"
+
+    class BrokenPublisher:
+        def publish(self, event: Mapping[str, Any]) -> None:
+            raise RuntimeError("monitor unavailable")
+
+        def close(self) -> None:
+            pass
+
+    safe_publish(BrokenPublisher(), {"type": "execution_output", "items": (1, 2)})

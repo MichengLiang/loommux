@@ -1,68 +1,57 @@
 from __future__ import annotations
 
-from loommux.output_log import ExecutionLogs, LineLog, parse_output_log_handle
+from loommux.execution import Execution
+from loommux.output_log import ExecutionLogs, LineLog
 
 
-def test_line_log_reports_invalid_read_parameters_and_empty_ranges() -> None:
+def test_line_log_reads_ranges_with_numbers_and_clipping() -> None:
     log = LineLog()
-    log.append("alpha\nbeta\n")
+    log.append("alpha\nbeta\ngamma\n")
 
-    invalid_range = log.read("bad")
-    invalid_endpoint = log.read("x:2")
-    invalid_max_chars = log.read(max_chars=0)
-    empty = log.read("3:2")
-    unnumbered = log.read()
-    numbered = log.read(show_line_numbers=True)
-
-    assert invalid_range["status"] == "invalid_line_range"
-    assert invalid_endpoint["status"] == "invalid_line_range"
-    assert invalid_max_chars["status"] == "invalid_max_chars"
-    assert empty["ok"] is True
-    assert empty["returned_lines"] == 0
-    assert empty["text"] == ""
-    assert unnumbered["show_line_numbers"] is False
-    assert numbered["show_line_numbers"] is True
+    assert log.read(":2", show_line_numbers=True)["text"] == "1 | alpha\n2 | beta"
+    assert log.read("-2:")["text"] == "beta\ngamma"
+    assert log.read("3:3", max_chars=3)["text"] == "gam...[2 chars omitted]"
+    assert log.read("bad")["status"] == "invalid_line_range"
+    assert log.read(max_chars=0)["status"] == "invalid_max_chars"
 
 
-def test_line_log_search_handles_modes_context_and_errors() -> None:
+def test_line_log_search_supports_context_and_query_modes() -> None:
     log = LineLog()
     log.append("alpha\nbeta-match\ngamma\nDELTA-MATCH\n")
 
-    ignore_case = log.search("delta-match", query_mode="literal", ignore_case=True)
-    clipped = log.search("match", query_mode="literal", max_chars=5)
-    auto_fallback = log.search("[", query_mode="auto")
-    invalid_regex = log.search("[", query_mode="regex")
-    invalid_context = log.search("match", context_before=-1)
-
-    assert ignore_case["matched_lines"] == 1
-    assert "M 4 | DELTA-MATCH" in str(ignore_case["text"])
-    assert "M 2 | beta-...[5 chars omitted]" in str(clipped["text"])
-    assert auto_fallback["query_interpretation"] == "literal"
-    assert invalid_regex["status"] == "invalid_query"
-    assert invalid_context["status"] == "invalid_context"
+    result = log.search("match", query_mode="literal", context_before=1, context_after=0)
+    assert result["text"] == "C 1 | alpha\nM 2 | beta-match"
+    assert log.search("delta-match", query_mode="literal", ignore_case=True)["matched_lines"] == 1
+    assert log.search("[", query_mode="auto")["query_interpretation"] == "literal"
+    assert log.search("[", query_mode="regex")["status"] == "invalid_query"
+    assert log.search("match", context_before=-1)["status"] == "invalid_context"
 
 
-def test_execution_logs_write_result_traceback_and_parse_handles() -> None:
-    logs = ExecutionLogs("exec-000123")
-
+def test_execution_logs_keep_streams_and_author_public_execution_label() -> None:
+    logs = ExecutionLogs()
     logs.append_stdout("hello\n")
     logs.append_stderr("warn\n")
-    logs.append_result("42", 7)
-    logs.append_traceback(["Traceback line", "ValueError: bad"])
+    logs.append_result("42", 5)
+    logs.append_traceback(["Traceback", "ValueError: bad"])
 
-    assert logs.handles["combined"] == "python-output:exec-000123"
-    assert logs.handles["stderr"] == "python-output:exec-000123/stderr"
-    assert logs.result.read()["text"] == "42"
-    assert "Out[7]: 42" in str(logs.combined.read()["text"])
-    assert "ValueError: bad" in str(logs.traceback.read()["text"])
-    bad_scheme = parse_output_log_handle("bad")
-    missing_execution = parse_output_log_handle("python-output:")
-    bad_stream = parse_output_log_handle("python-output:exec-000123/bad")
+    assert logs.stdout.text == "hello\n"
+    assert logs.result.text == "42\n"
+    assert "Out[5]: 42" in logs.combined.text
+    assert "ValueError: bad" in logs.traceback.text
+    assert logs.get("unknown") is None
 
-    assert parse_output_log_handle("python-output:exec-000123/stderr") == ("exec-000123", "stderr")
-    assert isinstance(bad_scheme, dict)
-    assert bad_scheme["status"] == "invalid_output_log"
-    assert isinstance(missing_execution, dict)
-    assert missing_execution["status"] == "invalid_output_log"
-    assert isinstance(bad_stream, dict)
-    assert bad_stream["status"] == "invalid_output_log"
+
+def test_execution_tracks_error_interrupt_and_omitted_snapshots() -> None:
+    record = Execution(execution=9, code="x", kernel_pid=12)
+    record.append_stdout("one\n")
+    record.append_result_text("first")
+    record.append_result_text("second")
+    record.record_error({"ename": "KeyboardInterrupt", "evalue": "", "traceback": ["\x1b[31mtrace"]})
+    record.interrupt_requested = True
+    record.finish()
+
+    assert record.status == "interrupted"
+    assert record.result_text == "first\nsecond"
+    assert record.logs.traceback.text == "trace\n"
+    assert record.snapshot(1)["output_omitted_reason"] == "line_limit_exceeded"
+    assert record.status_snapshot()["error"] == {"ename": "KeyboardInterrupt", "evalue": ""}

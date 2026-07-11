@@ -1,3 +1,7 @@
+# Historical Execution Notice
+
+> This handoff prompt predates the integer execution control plane and is retained only as project history. Current implementation must use numeric `execution` events as defined by the [execution control-plane design](../../docs/ipython-mcp-execution-control-plane-design.md).
+
 # loommux Monitor Executor Prompt
 
 Use this prompt when dispatching an implementation subagent. The coordinator must provide this file path and the current batch number.

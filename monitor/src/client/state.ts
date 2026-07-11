@@ -5,7 +5,7 @@ import { summarizeValue } from "./events";
 export type OutputStreamName = "stdout" | "stderr" | "result" | "traceback";
 
 export type ExecutionView = {
-	id: string;
+	execution: number;
 	callId?: string | null;
 	status: string;
 	code: string;
@@ -18,9 +18,8 @@ export type ExecutionView = {
 	durationMs?: number;
 	outputs: Record<OutputStreamName, string>;
 	combinedOutput: string;
-	outputLog?: string | null;
 	outputTotalLines: number;
-	executionCount?: number | null;
+	kernelExecutionCount?: number | null;
 	error?: unknown;
 	errorSummary: string;
 	latestSequence: number;
@@ -56,7 +55,7 @@ const EMPTY_OUTPUTS: Record<OutputStreamName, string> = {
 };
 
 export function buildMonitorState(events: MonitorClientEvent[], health?: MonitorHealth): MonitorViewState {
-	const executions = new Map<string, ExecutionView>();
+	const executions = new Map<number, ExecutionView>();
 	const toolCalls = new Map<string, ToolCallView>();
 	let latestEventTime: number | undefined;
 
@@ -94,12 +93,12 @@ export function eventTimeMs(event: MonitorClientEvent): number | undefined {
 	return undefined;
 }
 
-function applyExecutionEvent(executions: Map<string, ExecutionView>, event: MonitorClientEvent) {
-	const id = event.execution_id;
-	if (!id) {
+function applyExecutionEvent(executions: Map<number, ExecutionView>, event: MonitorClientEvent) {
+	const execution = event.execution;
+	if (typeof execution !== "number") {
 		return;
 	}
-	const current = ensureExecution(executions, id, event.sequence);
+	const current = ensureExecution(executions, execution, event.sequence);
 	current.latestSequence = Math.max(current.latestSequence, event.sequence);
 
 	if (event.type === "execution_submitted") {
@@ -118,17 +117,16 @@ function applyExecutionEvent(executions: Map<string, ExecutionView>, event: Moni
 		const stream = normalizeStream(event.stream);
 		if (stream && event.text) {
 			current.outputs[stream] += event.text;
-			current.combinedOutput += event.text;
+			current.combinedOutput += stream === "result" ? authorResultOutput(execution, event.text) : event.text;
 			current.outputTotalLines = Math.max(current.outputTotalLines, countLines(current.combinedOutput));
 		}
-		assignDefined(current, "executionCount", event.execution_count);
+		assignDefined(current, "kernelExecutionCount", event.kernel_execution_count);
 		return;
 	}
 
 	if (event.type === "execution_finished") {
 		current.status = event.status ?? current.status;
 		assignDefined(current, "finishedAt", eventTimeMs(event));
-		assignDefined(current, "outputLog", event.output_log);
 		current.outputTotalLines = event.output_total_lines ?? current.outputTotalLines;
 		assignDefined(current, "error", event.error);
 		current.errorSummary = summarizeError(current.error);
@@ -164,13 +162,13 @@ function applyToolEvent(toolCalls: Map<string, ToolCallView>, event: MonitorClie
 	}
 }
 
-function ensureExecution(executions: Map<string, ExecutionView>, id: string, sequence: number): ExecutionView {
-	const existing = executions.get(id);
+function ensureExecution(executions: Map<number, ExecutionView>, execution: number, sequence: number): ExecutionView {
+	const existing = executions.get(execution);
 	if (existing) {
 		return existing;
 	}
 	const created: ExecutionView = {
-		id,
+		execution,
 		status: "unknown",
 		code: "",
 		codeFirstLine: "",
@@ -180,7 +178,7 @@ function ensureExecution(executions: Map<string, ExecutionView>, id: string, seq
 		errorSummary: "",
 		latestSequence: sequence,
 	};
-	executions.set(id, created);
+	executions.set(execution, created);
 	return created;
 }
 
@@ -218,6 +216,12 @@ function countLines(value: string): number {
 		return 0;
 	}
 	return value.endsWith("\n") ? value.split(/\r?\n/).length - 1 : value.split(/\r?\n/).length;
+}
+
+function authorResultOutput(execution: number, text: string): string {
+	const value = text.endsWith("\n") ? text : `${text}\n`;
+	const [firstLine = "", ...remainingLines] = value.split(/(?<=\n)/);
+	return `Out[${execution}]: ${firstLine}${remainingLines.join("")}`;
 }
 
 function summarizeError(error: unknown): string {

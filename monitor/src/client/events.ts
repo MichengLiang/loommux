@@ -10,15 +10,14 @@ export type MonitorClientEvent = BufferedMonitorEvent & {
 	status?: string;
 	result_summary?: string;
 	pretty_text_summary?: string;
-	execution_id?: string;
+	execution?: number;
 	workspace?: string | null;
 	kernel_pid?: number | null;
 	code?: string;
 	timeout_seconds?: number;
 	stream?: string;
 	text?: string;
-	execution_count?: number | null;
-	output_log?: string | null;
+	kernel_execution_count?: number | null;
 	output_total_lines?: number;
 	error?: unknown;
 };

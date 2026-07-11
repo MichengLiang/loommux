@@ -1,3 +1,7 @@
+# Historical Review Notice
+
+> This review guide predates the integer execution control plane. Validate monitor events against the [execution control-plane design](../../docs/ipython-mcp-execution-control-plane-design.md) and [monitor README](../README.md).
+
 # loommux Monitor Review Standard
 
 This document defines what counts as good, acceptable, and complete for the loommux monitor implementation. Reviewers must use it after every implementation batch.

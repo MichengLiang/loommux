@@ -26,7 +26,7 @@ export function App({ initialEvents = [], initialHealth, connect = true }: AppPr
 	const [events, setEvents] = useState<MonitorClientEvent[]>(initialEvents);
 	const [health, setHealth] = useState<MonitorHealth | undefined>(initialHealth);
 	const [connection, setConnection] = useState<ConnectionState>(connect ? "connecting" : "disabled");
-	const [selectedExecutionId, setSelectedExecutionId] = useState<string | undefined>();
+	const [selectedExecution, setSelectedExecution] = useState<number | undefined>();
 	const [activeStream, setActiveStream] = useState<OutputStreamName | "combined">("combined");
 	const [paused, setPaused] = useState(false);
 	const [autoScroll, setAutoScroll] = useState(true);
@@ -67,24 +67,24 @@ export function App({ initialEvents = [], initialHealth, connect = true }: AppPr
 	}, [connect, paused]);
 
 	const view = useMemo(() => buildMonitorState(events, health), [events, health]);
-	const selectedExecution =
-		view.executions.find((execution) => execution.id === selectedExecutionId) ?? view.executions[0];
+	const selectedExecutionView =
+		view.executions.find((execution) => execution.execution === selectedExecution) ?? view.executions[0];
 
 	useEffect(() => {
-		if (selectedExecution && selectedExecution.id !== selectedExecutionId) {
-			setSelectedExecutionId(selectedExecution.id);
+		if (selectedExecutionView && selectedExecutionView.execution !== selectedExecution) {
+			setSelectedExecution(selectedExecutionView.execution);
 		}
-	}, [selectedExecution, selectedExecutionId]);
+	}, [selectedExecutionView, selectedExecution]);
 
 	useEffect(() => {
 		if (autoScroll && outputRef.current) {
 			outputRef.current.scrollTop = outputRef.current.scrollHeight;
 		}
-	}, [autoScroll, selectedExecution?.combinedOutput, activeStream]);
+	}, [autoScroll, selectedExecutionView?.combinedOutput, activeStream]);
 
 	const clearView = () => {
 		setEvents([]);
-		setSelectedExecutionId(undefined);
+		setSelectedExecution(undefined);
 	};
 
 	return (
@@ -124,17 +124,17 @@ export function App({ initialEvents = [], initialHealth, connect = true }: AppPr
 					{sidebarCollapsed ? null : (
 						<ExecutionList
 							executions={view.executions}
-							onSelect={setSelectedExecutionId}
-							{...(selectedExecution?.id === undefined ? {} : { selectedId: selectedExecution.id })}
+							onSelect={setSelectedExecution}
+							{...(selectedExecutionView?.execution === undefined ? {} : { selectedExecution: selectedExecutionView.execution })}
 						/>
 					)}
 				</section>
 				<div className="detailPanel">
 					<ExecutionWorkspace
 						activeStream={activeStream}
-						onActiveStreamChange={setActiveStream}
-						outputRef={outputRef}
-						{...(selectedExecution === undefined ? {} : { execution: selectedExecution })}
+							onActiveStreamChange={setActiveStream}
+							outputRef={outputRef}
+							{...(selectedExecutionView === undefined ? {} : { execution: selectedExecutionView })}
 					/>
 				</div>
 			</main>
@@ -220,12 +220,12 @@ function StatusBar({
 
 function ExecutionList({
 	executions,
-	selectedId,
+	selectedExecution,
 	onSelect,
 }: {
 	executions: ExecutionView[];
-	selectedId?: string;
-	onSelect: (id: string) => void;
+	selectedExecution?: number;
+	onSelect: (execution: number) => void;
 }) {
 	if (executions.length === 0) {
 		return <div className="emptyState">Waiting for Python execution events.</div>;
@@ -235,12 +235,12 @@ function ExecutionList({
 			{executions.map((execution) => (
 				<button
 					type="button"
-					key={execution.id}
-					className={`executionRow ${execution.id === selectedId ? "selected" : ""}`}
-					onClick={() => onSelect(execution.id)}
+					key={execution.execution}
+					className={`executionRow ${execution.execution === selectedExecution ? "selected" : ""}`}
+					onClick={() => onSelect(execution.execution)}
 				>
 					<div className="rowTop">
-						<strong>{execution.id}</strong>
+						<strong>Execution {execution.execution}</strong>
 						<StatusPill tone={statusTone(execution.status)} label={execution.status} />
 					</div>
 					<div className="codeLine">{execution.codeFirstLine || "(code unavailable)"}</div>
@@ -292,7 +292,7 @@ function ExecutionWorkspace({
 					<div className="sectionHeader">
 						<div className="surfaceMeta">
 							<span>output</span>
-							<span>{execution.outputLog ?? `${execution.outputTotalLines} lines`}</span>
+							<span>Execution {execution.execution} | {execution.outputTotalLines} lines</span>
 							{execution.errorSummary ? <strong>{execution.errorSummary}</strong> : null}
 						</div>
 						<CopyButton text={outputText || execution.combinedOutput} label="Copy output" />

@@ -1,3 +1,7 @@
+# Historical Design Notice
+
+> Superseded by [IPython MCP Execution Control Plane Design](ipython-mcp-execution-control-plane-design.md). The output-address grammar below is retired; current readers use integer `execution` plus `stream`.
+
 # IPython Execution Output Log Reader 设计
 
 ## 1. 文档对象与设计灵感

@@ -50,11 +50,11 @@ test("monitor receives backend events and keeps primary UI stable", async ({ pag
 	await expect(page.getByText(/clients \d+/)).toBeVisible();
 	await expect(page.getByText("open")).toBeVisible();
 
-	const executionId = `exec-e2e-${test.info().project.name}`;
+	const execution = test.info().project.name === "chromium-desktop" ? 101 : 102;
 	await request.post(`${backendUrl}/api/events`, {
 		data: {
 			type: "execution_submitted",
-			execution_id: executionId,
+			execution,
 			call_id: "call-e2e",
 			code: "print('e2e monitor')",
 			timeout_seconds: 5,
@@ -66,17 +66,28 @@ test("monitor receives backend events and keeps primary UI stable", async ({ pag
 	await request.post(`${backendUrl}/api/events`, {
 		data: {
 			type: "execution_output",
-			execution_id: executionId,
+			execution,
 			stream: "stdout",
 			text: "e2e monitor output\n",
-			execution_count: 1,
+			kernel_execution_count: 1,
+			timestamp: Date.now() / 1000,
+		},
+	});
+	await request.post(`${backendUrl}/api/events`, {
+		data: {
+			type: "execution_output",
+			execution,
+			stream: "result",
+			text: "42",
+			kernel_execution_count: 1,
 			timestamp: Date.now() / 1000,
 		},
 	});
 
-	await expect(page.getByText(executionId).first()).toBeVisible();
+	await expect(page.getByText(`Execution ${execution}`).first()).toBeVisible();
 	await expect(page.getByText("print('e2e monitor')").first()).toBeVisible();
 	await expect(page.getByText(/e2e monitor output/)).toBeVisible();
+	await expect(page.getByText(`Out[${execution}]: 42`)).toBeVisible();
 
 	const hasHorizontalOverflow = await page.evaluate(
 		() => document.documentElement.scrollWidth > window.innerWidth + 1,
@@ -133,9 +144,9 @@ test("monitor receives backend events and keeps primary UI stable", async ({ pag
 	await expect(page.getByLabel("Execution detail")).toHaveCount(0);
 	await expect(page.getByLabel("Tool timeline")).toHaveCount(0);
 	await page.getByRole("button", { name: "Collapse execution list" }).click();
-	await expect(page.getByText(executionId).first()).toHaveCount(0);
+	await expect(page.locator(".executionList").getByText(`Execution ${execution}`)).toHaveCount(0);
 	await page.getByRole("button", { name: "Expand execution list" }).click();
-	await expect(page.getByText(executionId).first()).toBeVisible();
+	await expect(page.locator(".executionList").getByText(`Execution ${execution}`)).toBeVisible();
 });
 
 async function waitForBackend() {

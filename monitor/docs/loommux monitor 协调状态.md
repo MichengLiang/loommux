@@ -1,3 +1,7 @@
+# Historical Coordination Notice
+
+> This status snapshot predates the implemented integer execution control plane and is retained only as historical coordination context. Current monitor behavior is documented in [monitor README](../README.md).
+
 # loommux Monitor Coordination State
 
 ## Current State

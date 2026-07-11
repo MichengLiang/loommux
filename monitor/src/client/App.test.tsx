@@ -23,7 +23,7 @@ describe("monitor UI", () => {
 			{
 				...baseEvent,
 				type: "execution_submitted",
-				execution_id: "exec-000001",
+				execution: 1,
 				code: "print('hello')\n42",
 				timeout_seconds: 5,
 				workspace: "/workspace/demo",
@@ -33,36 +33,36 @@ describe("monitor UI", () => {
 				...baseEvent,
 				sequence: 2,
 				type: "execution_output",
-				execution_id: "exec-000001",
+				execution: 1,
 				stream: "stdout",
 				text: "hello\n",
-				execution_count: 7,
+				kernel_execution_count: 7,
 			},
 			{
 				...baseEvent,
 				sequence: 3,
 				type: "execution_output",
-				execution_id: "exec-000001",
+				execution: 1,
 				stream: "result",
 				text: "42\n",
-				execution_count: 7,
+				kernel_execution_count: 7,
 			},
 			{
 				...baseEvent,
 				sequence: 4,
 				type: "execution_finished",
-				execution_id: "exec-000001",
+				execution: 1,
 				status: "completed",
-				output_log: "python-output:exec-000001",
 				output_total_lines: 2,
 			},
 		]);
 
-		expect(screen.getAllByText("exec-000001").length).toBeGreaterThan(0);
+		expect(screen.getAllByText("Execution 1").length).toBeGreaterThan(0);
 		expect(screen.getAllByText("completed").length).toBeGreaterThan(0);
 		expect(screen.getByText("print('hello')")).toBeTruthy();
 		expect(screen.getAllByText(/hello/).length).toBeGreaterThan(0);
-		expect(screen.getByText("python-output:exec-000001")).toBeTruthy();
+		expect(screen.getByText(/Out\[1\]: 42/)).toBeTruthy();
+		expect(screen.getByText("Execution 1 | 2 lines")).toBeTruthy();
 		expect(screen.getByLabelText("Python code")).toBeTruthy();
 		expect(screen.getByLabelText("Python output")).toBeTruthy();
 		expect(screen.queryByLabelText("Execution detail")).toBeNull();
@@ -73,14 +73,14 @@ describe("monitor UI", () => {
 			{
 				...baseEvent,
 				type: "execution_submitted",
-				execution_id: "exec-error",
+				execution: 2,
 				code: "1 / 0",
 			},
 			{
 				...baseEvent,
 				sequence: 2,
 				type: "execution_output",
-				execution_id: "exec-error",
+				execution: 2,
 				stream: "traceback",
 				text: "ZeroDivisionError: division by zero",
 			},
@@ -88,15 +88,14 @@ describe("monitor UI", () => {
 				...baseEvent,
 				sequence: 3,
 				type: "execution_finished",
-				execution_id: "exec-error",
+				execution: 2,
 				status: "error",
-				output_log: "python-output:exec-error",
 				output_total_lines: 1,
 				error: { ename: "ZeroDivisionError", evalue: "division by zero" },
 			},
 		]);
 
-		expect(screen.getAllByText("exec-error").length).toBeGreaterThan(0);
+		expect(screen.getAllByText("Execution 2").length).toBeGreaterThan(0);
 		expect(screen.getAllByText("error").length).toBeGreaterThan(0);
 		expect(screen.getAllByText(/ZeroDivisionError/).length).toBeGreaterThan(0);
 		expect(screen.getAllByText(/division by zero/).length).toBeGreaterThan(0);
@@ -134,20 +133,20 @@ describe("monitor UI", () => {
 			{
 				...baseEvent,
 				type: "execution_submitted",
-				execution_id: "exec-sidebar",
+				execution: 3,
 				code: "print('sidebar')",
 			},
 		]);
 
-		expect(screen.getByText("exec-sidebar")).toBeTruthy();
+		expect(screen.getByText("Execution 3")).toBeTruthy();
 
 		fireEvent.click(screen.getByRole("button", { name: /collapse execution list/i }));
 
-		expect(screen.queryByText("exec-sidebar")).toBeNull();
+		expect(screen.queryByText("Execution 3")).toBeNull();
 
 		fireEvent.click(screen.getByRole("button", { name: /expand execution list/i }));
 
-		expect(screen.getByText("exec-sidebar")).toBeTruthy();
+		expect(screen.getByText("Execution 3")).toBeTruthy();
 	});
 
 	test("code size control is available in the status bar", () => {
@@ -155,7 +154,7 @@ describe("monitor UI", () => {
 			{
 				...baseEvent,
 				type: "execution_submitted",
-				execution_id: "exec-font-size",
+				execution: 4,
 				code: "print('font')",
 			},
 		]);
@@ -169,16 +168,16 @@ describe("monitor UI", () => {
 			{
 				...baseEvent,
 				type: "execution_submitted",
-				execution_id: "exec-clear",
+				execution: 5,
 				code: "print('clear')",
 			},
 		]);
 
-		expect(screen.getAllByText("exec-clear").length).toBeGreaterThan(0);
+		expect(screen.getAllByText("Execution 5").length).toBeGreaterThan(0);
 
 		fireEvent.click(screen.getByRole("button", { name: /clear browser view/i }));
 
-		expect(screen.queryByText("exec-clear")).toBeNull();
+		expect(screen.queryByText("Execution 5")).toBeNull();
 		expect(screen.getByText(/browser view only/i)).toBeTruthy();
 	});
 });

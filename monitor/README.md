@@ -4,10 +4,16 @@ The loommux monitor is an observation-only local web UI for MCP tool calls and P
 
 ## Scope
 
-- Shows MCP tool-call timelines and Python execution details.
+- Shows MCP tool-call timelines and Python execution details keyed by the
+  same integer `execution` coordinate exposed by MCP.
 - Receives events through `POST /api/events` and streams them to the browser through SSE.
 - Does not run Python, interrupt executions, reset kernels, or set workspaces.
 - Does not persist event history to disk.
+
+Execution lifecycle events carry `execution: number`. `execution_output` may
+also carry `kernel_execution_count` as diagnostic metadata, but the monitor
+never aggregates records by that resettable kernel-local value and does not
+accept output-address strings.
 
 ## Start Commands
 

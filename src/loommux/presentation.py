@@ -9,7 +9,7 @@ def format_tool_result_text(tool_name: str, status: Mapping[str, Any]) -> str:
     if _is_tool_failure(tool_name, status):
         return _failure_surface(status)
     if tool_name in {"run_python", "wait_python"}:
-        return _execution_output_surface(status)
+        return _execution_surface(status)
     if tool_name == "read_python_output":
         return _read_output_surface(status)
     if tool_name == "search_python_output":
@@ -17,147 +17,109 @@ def format_tool_result_text(tool_name: str, status: Mapping[str, Any]) -> str:
     if tool_name == "python_status":
         return _python_status_surface(status)
     if tool_name == "python_execution_status":
-        return _python_execution_status_surface(status)
+        return _execution_status_surface(status)
     if tool_name == "interrupt_python":
         return _interrupt_surface(status)
     if tool_name == "reset_python":
-        return _reset_surface(status)
+        return "Python kernel restarted; the session execution sequence is preserved." if status.get("status") == "restarted" else _generic_surface(status)
     return _generic_surface(status)
 
 
 def _is_tool_failure(tool_name: str, status: Mapping[str, Any]) -> bool:
     if status.get("ok") is not False:
         return False
-    if tool_name == "python_execution_status" and status.get("execution_id") is not None:
-        return False
-    return not (tool_name in {"run_python", "wait_python"} and status.get("status") == "error")
+    # Python errors and killed records are execution states, not MCP transport failures.
+    return not (tool_name in {"run_python", "wait_python", "python_execution_status"} and isinstance(status.get("execution"), int))
 
 
-def _failure_surface(status: Mapping[str, Any]) -> str:
-    status_value = _optional_string(status.get("status")) or "error"
-    message = _optional_string(status.get("message")) or "tool failed"
-    return f"{status_value}: {message}"
+def _execution_surface(status: Mapping[str, Any]) -> str:
+    execution = _execution_number(status)
+    state = str(status.get("status", "unknown"))
+    if state == "running":
+        return f"Python execution {execution} is still running. Use wait_python() or read_python_output()."
+    if status.get("output_omitted_reason") == "line_limit_exceeded":
+        return f"Python execution {execution} produced more than {status.get('output_line_limit')} lines. Use read_python_output()."
+    if state == "error":
+        return _error_sentence(execution, status)
+    if state == "interrupted":
+        return f"Python execution {execution} was interrupted. Use read_python_output() to inspect its output."
+    if state == "killed":
+        return f"Python execution {execution} was killed by reset_python()."
+    output = _optional_string(status.get("output_text")) or ""
+    if _optional_string(status.get("result_text")):
+        return output
+    completion = f"Execution {execution} completed without a display result."
+    return f"{output.rstrip()}\n{completion}" if output else completion
 
 
-def _execution_output_surface(status: Mapping[str, Any]) -> str:
-    if status.get("output_omitted") is True:
-        return _omitted_execution_notice(status)
-
-    output_text = _optional_string(status.get("output_text")) or ""
-    if output_text:
-        return output_text
-    if status.get("status") == "error":
-        return "Python execution failed without visible output."
-    return "Python execution completed without visible output."
-
-
-
-def _omitted_execution_notice(status: Mapping[str, Any]) -> str:
-    reason = _optional_string(status.get("output_omitted_reason")) or "unknown"
-    if reason == "running":
-        return "Python execution is still running. Use wait_python() to wait, python_status() to check its state, or read_python_output() to inspect available output."
-    if reason == "line_limit_exceeded":
-        return "Python output is available through read_python_output()."
-    return "Python output is not available in this response."
+def _error_sentence(execution: str, status: Mapping[str, Any]) -> str:
+    error = status.get("error")
+    if isinstance(error, Mapping):
+        name = str(error.get("ename") or "Error")
+        value = str(error.get("evalue") or "")
+        return f"Python execution {execution} failed with {name}{': ' + value if value else ''}."
+    return f"Python execution {execution} failed. Use read_python_output() to inspect its traceback."
 
 
 def _read_output_surface(status: Mapping[str, Any]) -> str:
     text = _optional_string(status.get("text")) or ""
-    returned_lines = _optional_int(status.get("returned_lines"))
-    if returned_lines == 0 or not text:
-        return "No output lines are available."
-    return text
+    return text if text and _number(status.get("returned_lines")) else "No output lines are available."
 
 
 def _search_output_surface(status: Mapping[str, Any]) -> str:
-    matched_lines = _optional_int(status.get("matched_lines"))
-    if matched_lines == 0:
-        return "No matching output lines were found."
-    text = _optional_string(status.get("text")) or ""
-    return text
+    return "No matching output lines were found." if _number(status.get("matched_lines")) == 0 else (_optional_string(status.get("text")) or "No matching output lines were found.")
 
 
 def _python_status_surface(status: Mapping[str, Any]) -> str:
-    kernel_state = "busy" if status.get("busy") is True else "idle" if status.get("kernel_started") is True else "not_started"
-    lines = [f"kernel: {kernel_state}"]
-    if kernel_state == "busy":
-        lines.append(f"current_execution_id: {_format_compact_value(status.get('current_execution_id'))}")
-    lines.append(f"workspace: {_format_compact_value(status.get('workspace'))}")
-    if kernel_state != "busy":
-        lines.append(f"python: {_format_compact_value(status.get('python'))}")
-        lines.append(f"last_execution_id: {_format_compact_value(status.get('last_execution_id'))}")
+    state = "busy" if status.get("busy") is True else "idle" if status.get("kernel_started") is True else "not_started"
+    lines = [f"kernel: {state}"]
+    if state == "busy":
+        lines.append(f"current_execution: {_compact(status.get('current_execution'))}")
+    else:
+        lines.append(f"recent_execution: {_compact(status.get('recent_execution'))}")
+    lines.append(f"workspace: {_compact(status.get('workspace'))}")
     return "\n".join(lines)
 
 
-def _python_execution_status_surface(status: Mapping[str, Any]) -> str:
-    execution_id = _optional_string(status.get("execution_id")) or "unknown"
-    status_value = _optional_string(status.get("status")) or "unknown"
-    lines = [f"execution {execution_id}: {status_value}"]
+def _execution_status_surface(status: Mapping[str, Any]) -> str:
+    execution = _execution_number(status)
+    lines = [f"execution {execution}: {status.get('status', 'unknown')}"]
     error = status.get("error")
-    if isinstance(error, Mapping) and error:
-        ename = _optional_string(error.get("ename")) or "Error"
-        evalue = _optional_string(error.get("evalue")) or ""
-        lines.append(f"error: {ename}: {evalue}" if evalue else f"error: {ename}")
-        traceback_log = _optional_string(error.get("traceback_log"))
-        if traceback_log is not None:
-            lines.append(f"traceback: {traceback_log}")
-    output_log = _optional_string(status.get("output_log"))
-    if output_log is not None:
-        lines.append(f"log: {output_log}")
-    for key in ("submitted_at", "completed_at", "output_total_lines", "output_omitted_reason"):
-        value = status.get(key)
-        if value is not None:
-            lines.append(f"{key}: {_format_compact_value(value)}")
+    if isinstance(error, Mapping):
+        lines.append(_error_sentence(execution, status).removesuffix("."))
+    for key in ("submitted_at", "updated_at", "completed_at", "kernel_pid", "execution_count_at_submit", "output_total_lines", "output_omitted_reason"):
+        if status.get(key) is not None:
+            lines.append(f"{key}: {_compact(status[key])}")
     return "\n".join(lines)
 
 
 def _interrupt_surface(status: Mapping[str, Any]) -> str:
     if status.get("status") == "interrupt_sent":
-        return f"中断：已向 execution {_format_compact_value(status.get('execution_id'))} 发送 interrupt。"
+        return f"Interrupt sent to Python execution {_execution_number(status)}."
     if status.get("status") == "idle":
-        return "中断：kernel 当前空闲，无需 interrupt。"
+        return "Python kernel is idle."
     return _generic_surface(status)
 
 
-def _reset_surface(status: Mapping[str, Any]) -> str:
-    if status.get("status") == "restarted":
-        return "重置：kernel 已重启。"
-    return _generic_surface(status)
+def _failure_surface(status: Mapping[str, Any]) -> str:
+    return f"{status.get('status', 'error')}: {status.get('message', 'tool failed')}"
 
 
 def _generic_surface(status: Mapping[str, Any]) -> str:
-    status_value = _optional_string(status.get("status"))
-    if status_value is not None:
-        return status_value
-    if status.get("ok") is True:
-        return "ok"
-    return json.dumps(status, ensure_ascii=False, default=str)
+    return str(status["status"]) if status.get("status") is not None else "ok" if status.get("ok") is True else json.dumps(status, ensure_ascii=False, default=str)
+
+
+def _execution_number(status: Mapping[str, Any]) -> str:
+    return str(status.get("execution", "unknown"))
 
 
 def _optional_string(value: object) -> str | None:
-    if value is None:
-        return None
-    return str(value)
+    return str(value) if value is not None else None
 
 
-def _optional_int(value: object) -> int:
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            return 0
-    return 0
+def _number(value: object) -> int:
+    return int(value) if isinstance(value, int | float) and not isinstance(value, bool) else 0
 
 
-def _format_compact_value(value: object) -> str:
-    if value is None:
-        return "null"
-    if isinstance(value, str):
-        return value
-    return json.dumps(value, ensure_ascii=False, default=str)
+def _compact(value: object) -> str:
+    return "null" if value is None else value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)

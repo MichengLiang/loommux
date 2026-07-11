@@ -14,7 +14,9 @@ ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 @dataclass
 class Execution:
-    execution_id: str
+    """One accepted cell, addressed for the lifetime of this server process."""
+
+    execution: int
     code: str
     kernel_pid: int
     submitted_at: float = field(default_factory=time.time)
@@ -29,10 +31,7 @@ class Execution:
     msg_id: str | None = None
     interrupt_requested: bool = False
     done: threading.Event = field(default_factory=threading.Event, repr=False)
-    logs: ExecutionLogs = field(init=False)
-
-    def __post_init__(self) -> None:
-        self.logs = ExecutionLogs(self.execution_id)
+    logs: ExecutionLogs = field(default_factory=ExecutionLogs, init=False)
 
     def append_stdout(self, text: str) -> None:
         self.stdout += text
@@ -48,7 +47,7 @@ class Execution:
         if self.result_text:
             self.result_text += "\n"
         self.result_text += text
-        self.logs.append_result(text, self.execution_count_at_submit)
+        self.logs.append_result(text, self.execution)
         self.updated_at = time.time()
 
     def record_error(self, error: dict[str, Any]) -> None:
@@ -80,49 +79,45 @@ class Execution:
 
     def snapshot(self, output_line_limit: int | None = None) -> dict[str, Any]:
         output_total_lines = self.logs.combined.line_count
-        output_omitted_reason = self._output_omitted_reason(output_line_limit, output_total_lines)
-        output_omitted = output_omitted_reason is not None
-        snapshot = {
+        omission_reason = self._output_omitted_reason(output_line_limit, output_total_lines)
+        omitted = omission_reason is not None
+        result: dict[str, Any] = {
             "ok": self.status not in {"error", "killed"},
-            "execution_id": self.execution_id,
+            "execution": self.execution,
             "status": self.status,
-            "stdout": "" if output_omitted else self.stdout,
-            "stderr": "" if output_omitted else self.stderr,
-            "result_text": "" if output_omitted else self.result_text,
-            "error": self._status_error(),
-            "output_log": self.logs.output_log,
-            "output_omitted": output_omitted,
-            "output_omitted_reason": output_omitted_reason,
+            "stdout": "" if omitted else self.stdout,
+            "stderr": "" if omitted else self.stderr,
+            "result_text": "" if omitted else self.result_text,
+            "error": self._error_summary(),
+            "output_omitted": omitted,
+            "output_omitted_reason": omission_reason,
             "output_line_limit": output_line_limit,
             "output_total_lines": output_total_lines,
         }
-        if not output_omitted:
-            snapshot["output_text"] = self.logs.combined.text
-        return snapshot
+        if not omitted:
+            result["output_text"] = self.logs.combined.text
+        return result
 
     def status_snapshot(self, output_line_limit: int | None = None) -> dict[str, Any]:
         output_total_lines = self.logs.combined.line_count
         return {
             "ok": self.status not in {"error", "killed"},
-            "execution_id": self.execution_id,
+            "execution": self.execution,
             "status": self.status,
             "submitted_at": self.submitted_at,
             "updated_at": self.updated_at,
             "completed_at": self.completed_at,
             "kernel_pid": self.kernel_pid,
             "execution_count_at_submit": self.execution_count_at_submit,
-            "error": self._status_error(),
-            "output_log": self.logs.output_log,
+            "error": self._error_summary(),
             "output_total_lines": output_total_lines,
             "output_omitted_reason": self._output_omitted_reason(output_line_limit, output_total_lines),
         }
 
-    def _status_error(self) -> dict[str, Any] | None:
+    def _error_summary(self) -> dict[str, Any] | None:
         if self.error is None:
             return None
-        status_error = {key: self.error.get(key) for key in ("ename", "evalue") if key in self.error}
-        status_error["traceback_log"] = self.logs.handle("traceback")
-        return status_error
+        return {key: self.error.get(key) for key in ("ename", "evalue") if key in self.error}
 
     def _output_omitted_reason(self, output_line_limit: int | None, output_total_lines: int) -> str | None:
         if self.status == "running":
