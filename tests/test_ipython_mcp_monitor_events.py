@@ -40,7 +40,7 @@ def valid_workspace(tmp_path: Path) -> Path:
     workspace = tmp_path / "workspace"
     python_path = workspace / ".venv" / "bin" / "python"
     python_path.parent.mkdir(parents=True)
-    python_path.write_text(f"#!/bin/sh\nexec {sys.executable} \"$@\"\n")
+    python_path.write_text(f'#!/bin/sh\nexec {sys.executable} "$@"\n')
     python_path.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
     return workspace
 
@@ -55,7 +55,8 @@ def wait_for_event_count(publisher: RecordingMonitorPublisher, event_type: str, 
     return publisher.by_type(event_type)
 
 
-async def test_mcp_python_status_emits_tool_started_and_finished_events() -> None:
+async def test_mcp_python_status_emits_tool_started_and_finished_events(valid_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(valid_workspace)
     publisher = RecordingMonitorPublisher()
     async with Client(create_mcp(monitor_publisher=publisher)) as client:
         result = await client.call_tool("python_status", {})
@@ -63,7 +64,7 @@ async def test_mcp_python_status_emits_tool_started_and_finished_events() -> Non
     started = publisher.by_type("tool_call_started")
     finished = publisher.by_type("tool_call_finished")
 
-    assert result.data["kernel_started"] is False
+    assert result.data["kernel_started"] is True
     assert len(started) == 1
     assert len(finished) == 1
     assert started[0]["tool_name"] == "python_status"
@@ -73,12 +74,13 @@ async def test_mcp_python_status_emits_tool_started_and_finished_events() -> Non
     assert finished[0]["ok"] is True
     assert finished[0]["status"] == "ok"
     assert isinstance(finished[0]["duration_ms"], int | float)
-    assert "kernel_started=False" in finished[0]["result_summary"]
-    assert "kernel: not_started" in finished[0]["pretty_text_summary"]
+    assert "kernel_started=True" in finished[0]["result_summary"]
+    assert "kernel: idle" in finished[0]["pretty_text_summary"]
     assert publisher.closed is True
 
 
-async def test_content_only_server_records_tool_events_without_structured_response() -> None:
+async def test_content_only_server_records_tool_events_without_structured_response(valid_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(valid_workspace)
     publisher = RecordingMonitorPublisher()
     async with Client(create_content_mcp(monitor_publisher=publisher)) as client:
         result = await client.call_tool("python_status", {})
@@ -89,13 +91,13 @@ async def test_content_only_server_records_tool_events_without_structured_respon
     assert len(finished) == 1
     assert finished[0]["tool_name"] == "python_status"
     assert finished[0]["ok"] is True
-    assert "kernel: not_started" in finished[0]["pretty_text_summary"]
+    assert "kernel: idle" in finished[0]["pretty_text_summary"]
 
 
-async def test_run_python_emits_execution_lifecycle_and_output_events(valid_workspace: Path) -> None:
+async def test_run_python_emits_execution_lifecycle_and_output_events(valid_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(valid_workspace)
     publisher = RecordingMonitorPublisher()
     async with Client(create_mcp(monitor_publisher=publisher)) as client:
-        await client.call_tool("set_workspace", {"path": str(valid_workspace)})
         result = await client.call_tool("run_python", {"freeform": "import sys\nprint('stdout-event')\nprint('stderr-event', file=sys.stderr)\n'RESULT-EVENT'"})
 
     submitted = publisher.by_type("execution_submitted")
@@ -126,10 +128,10 @@ async def test_run_python_emits_execution_lifecycle_and_output_events(valid_work
     assert finished[0]["error"] is None
 
 
-async def test_traceback_output_stream_is_distinct(valid_workspace: Path) -> None:
+async def test_traceback_output_stream_is_distinct(valid_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(valid_workspace)
     publisher = RecordingMonitorPublisher()
     async with Client(create_mcp(monitor_publisher=publisher)) as client:
-        await client.call_tool("set_workspace", {"path": str(valid_workspace)})
         result = await client.call_tool("run_python", {"freeform": "1 / 0"})
 
     output = wait_for_event_count(publisher, "execution_output", 1)
@@ -143,10 +145,10 @@ async def test_traceback_output_stream_is_distinct(valid_workspace: Path) -> Non
     assert publisher.by_type("execution_finished")[0]["error"]["ename"] == "ZeroDivisionError"
 
 
-async def test_reset_emits_killed_execution_finished_event(valid_workspace: Path) -> None:
+async def test_reset_emits_killed_execution_finished_event(valid_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(valid_workspace)
     publisher = RecordingMonitorPublisher()
     async with Client(create_mcp(monitor_publisher=publisher)) as client:
-        await client.call_tool("set_workspace", {"path": str(valid_workspace)})
         running = await client.call_tool("run_python", {"freeform": "# loommux: timeout_seconds=0.1\nimport time\ntime.sleep(10)"})
         await client.call_tool("reset_python", {})
 
@@ -160,7 +162,7 @@ async def test_reset_emits_killed_execution_finished_event(valid_workspace: Path
 def test_noop_monitor_publisher_does_not_affect_run_python(valid_workspace: Path) -> None:
     adapter = IPythonMCPAdapter(monitor_publisher=NoopMonitorPublisher())
     try:
-        assert adapter.set_workspace(str(valid_workspace))["ok"] is True
+        assert adapter.start_workspace(valid_workspace, Path(sys.executable))["ok"] is True
         result = adapter.run_python("40 + 2")
 
         assert result["status"] == "completed"

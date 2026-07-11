@@ -14,7 +14,8 @@ from loommux.mcp_ipython_content_server import create_mcp as create_content_mcp
 
 
 @pytest.fixture
-async def content_client() -> AsyncIterator[Client[Any]]:
+async def content_client(valid_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Client[Any]]:
+    monkeypatch.chdir(valid_workspace)
     async with Client(create_content_mcp()) as mcp_client:
         yield mcp_client
 
@@ -24,7 +25,7 @@ def valid_workspace(tmp_path: Path) -> Path:
     workspace = tmp_path / "workspace"
     python_path = workspace / ".venv" / "bin" / "python"
     python_path.parent.mkdir(parents=True)
-    python_path.write_text(f"#!/bin/sh\nexec {sys.executable} \"$@\"\n")
+    python_path.write_text(f'#!/bin/sh\nexec {sys.executable} "$@"\n')
     python_path.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
     return workspace
 
@@ -140,7 +141,6 @@ async def test_content_run_python_docstring_only_teaches_canonical_directive(con
 
 
 async def test_freeform_valid_invalid_multiple_nonpersistent_and_no_runtime_injection(content_client: Client[Any], valid_workspace: Path) -> None:
-    await content_client.call_tool("set_workspace", {"path": str(valid_workspace)})
 
     valid = await content_client.call_tool("run_python", {"freeform": "# loommux: timeout_seconds=0.1\nimport time\ntime.sleep(0.5)\n'first'"})
     assert "running" in result_text(valid)

@@ -56,14 +56,15 @@ class IPythonMCPAdapter:
             kernel.shutdown()
         self.monitor_publisher.close()
 
-    def set_workspace(self, path: str) -> dict[str, Any]:
-        workspace = self._resolve_workspace(path)
+    def start_workspace(self, workspace: Path, python_path: Path) -> dict[str, Any]:
+        """Start the kernel selected before the server begins accepting tools."""
+        workspace = workspace.resolve(strict=False)
+        python_path = python_path.absolute()
         self._close_kernel_before_workspace_switch()
         if not workspace.exists():
-            return self._workspace_error("workspace_not_found", "workspace does not exist", workspace, workspace / ".venv" / "bin" / "python")
+            return self._workspace_error("workspace_not_found", "workspace does not exist", workspace, python_path)
         if not workspace.is_dir():
-            return self._workspace_error("workspace_not_directory", "workspace path is not a directory", workspace, workspace / ".venv" / "bin" / "python")
-        python_path = workspace / ".venv" / "bin" / "python"
+            return self._workspace_error("workspace_not_directory", "workspace path is not a directory", workspace, python_path)
         python_check = self._check_workspace_python(workspace, python_path)
         if python_check is not None:
             return python_check
@@ -381,13 +382,6 @@ class IPythonMCPAdapter:
         execution_id = f"exec-{self._next_execution_number:06d}"
         self._next_execution_number += 1
         return execution_id
-
-    @staticmethod
-    def _resolve_workspace(path: str) -> Path:
-        candidate = Path(path).expanduser()
-        if not candidate.is_absolute():
-            candidate = Path.cwd() / candidate
-        return candidate.resolve(strict=False)
 
     def _check_workspace_python(self, workspace: Path, python_path: Path) -> dict[str, Any] | None:
         if not python_path.exists():

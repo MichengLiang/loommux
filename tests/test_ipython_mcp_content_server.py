@@ -15,7 +15,6 @@ from loommux.mcp_ipython_server import create_mcp as create_standard_mcp
 from loommux.mcp_result_policy import make_tool_result
 
 EXPECTED_TOOLS = {
-    "set_workspace",
     "run_python",
     "python_status",
     "python_execution_status",
@@ -28,7 +27,8 @@ EXPECTED_TOOLS = {
 
 
 @pytest.fixture
-async def content_client() -> AsyncIterator[Client[Any]]:
+async def content_client(valid_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Client[Any]]:
+    monkeypatch.chdir(valid_workspace)
     async with Client(create_content_mcp()) as mcp_client:
         yield mcp_client
 
@@ -38,7 +38,7 @@ def valid_workspace(tmp_path: Path) -> Path:
     workspace = tmp_path / "workspace"
     python_path = workspace / ".venv" / "bin" / "python"
     python_path.parent.mkdir(parents=True)
-    python_path.write_text(f"#!/bin/sh\nexec {sys.executable} \"$@\"\n")
+    python_path.write_text(f'#!/bin/sh\nexec {sys.executable} "$@"\n')
     python_path.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
     return workspace
 
@@ -86,20 +86,14 @@ async def test_content_only_tools_match_standard_server_and_declare_no_output_sc
         assert tool.outputSchema is None
 
 
-async def test_content_only_python_status_returns_pretty_text_without_structured_channels(content_client: Client[Any]) -> None:
+async def test_content_only_python_status_returns_pretty_text_without_structured_channels(content_client: Client[Any], valid_workspace: Path) -> None:
     result = await content_client.call_tool("python_status", {})
 
-    assert assert_content_only_result(result) == "kernel: not_started\nworkspace: null\npython: null\nlast_execution_id: null"
-
-
-async def test_content_only_set_workspace_returns_only_presentation_text(content_client: Client[Any], valid_workspace: Path) -> None:
-    result = await content_client.call_tool("set_workspace", {"path": str(valid_workspace)})
-
-    assert assert_content_only_result(result) == "工作区：workspace 已设置，kernel 已启动。"
+    text = assert_content_only_result(result)
+    assert text.startswith(f"kernel: idle\nworkspace: {valid_workspace}\npython: ")
 
 
 async def test_content_only_run_python_preserves_output_first_pretty_text(content_client: Client[Any], valid_workspace: Path) -> None:
-    await content_client.call_tool("set_workspace", {"path": str(valid_workspace)})
     result = await content_client.call_tool("run_python", {"freeform": "print('hello-content-only')\n42"})
     text = assert_content_only_result(result)
 
@@ -112,7 +106,6 @@ async def test_content_only_run_python_preserves_output_first_pretty_text(conten
 
 
 async def test_content_only_error_execution_has_traceback_text_but_no_structured_channels(content_client: Client[Any], valid_workspace: Path) -> None:
-    await content_client.call_tool("set_workspace", {"path": str(valid_workspace)})
     result = await content_client.call_tool("run_python", {"freeform": "1 / 0"})
     text = assert_content_only_result(result)
 
@@ -122,7 +115,6 @@ async def test_content_only_error_execution_has_traceback_text_but_no_structured
 
 
 async def test_content_only_running_execution_omits_partial_body_and_structured_channels(content_client: Client[Any], valid_workspace: Path) -> None:
-    await content_client.call_tool("set_workspace", {"path": str(valid_workspace)})
     result = await content_client.call_tool("run_python", {"freeform": "# loommux: timeout_seconds=0.1\nimport time\nprint('partial-content-only', flush=True)\ntime.sleep(1)"})
 
     assert assert_content_only_result(result) == "[exec-000001 running | output omitted: running | 1 line available | log: python-output:exec-000001]"
@@ -133,7 +125,6 @@ async def test_content_only_running_execution_omits_partial_body_and_structured_
 async def test_content_only_all_tools_return_no_structured_channels(content_client: Client[Any], valid_workspace: Path) -> None:
     calls = [
         ("python_status", {}),
-        ("set_workspace", {"path": str(valid_workspace)}),
         ("run_python", {"freeform": "print('all-tools-content-only')"}),
         ("python_execution_status", {"execution_id": "exec-000001"}),
         ("read_python_output", {"output_log": "python-output:exec-000001", "stream": "stdout"}),
@@ -148,21 +139,22 @@ async def test_content_only_all_tools_return_no_structured_channels(content_clie
         result = await content_client.call_tool(name, arguments)
         texts.append(assert_content_only_result(result))
 
-    assert texts[0].startswith("kernel: not_started")
-    assert texts[2].startswith("all-tools-content-only")
-    assert texts[3].startswith("execution exec-000001: completed")
-    assert texts[4].startswith("all-tools-content-only")
-    assert texts[5].startswith("M 1 | all-tools-content-only")
-    assert texts[6].startswith("all-tools-content-only")
-    assert texts[7] == "中断：kernel 当前空闲，无需 interrupt。"
-    assert texts[8] == "重置：kernel 已重启。"
+    assert texts[0].startswith("kernel: idle")
+    assert texts[1].startswith("all-tools-content-only")
+    assert texts[2].startswith("execution exec-000001: completed")
+    assert texts[3].startswith("all-tools-content-only")
+    assert texts[4].startswith("M 1 | all-tools-content-only")
+    assert texts[5].startswith("all-tools-content-only")
+    assert texts[6] == "中断：kernel 当前空闲，无需 interrupt。"
+    assert texts[7] == "重置：kernel 已重启。"
 
 
-async def test_standard_server_still_returns_structured_content_and_data() -> None:
+async def test_standard_server_still_returns_structured_content_and_data(valid_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(valid_workspace)
     async with Client(create_standard_mcp()) as standard_client:
         result = await standard_client.call_tool("python_status", {})
 
     assert result.structured_content is not None
     assert result.data == result.structured_content
-    assert result.data["kernel_started"] is False
-    assert result_text(result) == "kernel: not_started\nworkspace: null\npython: null\nlast_execution_id: null"
+    assert result.data["kernel_started"] is True
+    assert result_text(result).startswith(f"kernel: idle\nworkspace: {valid_workspace}\npython: ")

@@ -9,6 +9,7 @@ from fastmcp import FastMCP
 from loommux.adapter import IPythonMCPAdapter
 from loommux.mcp_result_policy import make_tool_result
 from loommux.monitoring import MonitorPublisher, create_monitor_publisher, run_monitored_tool_call
+from loommux.workspace_config import resolve_workspace_launch
 
 
 def _tool_result(tool_name: str, raw_status: dict[str, Any]) -> dict[str, Any]:
@@ -31,27 +32,16 @@ def create_mcp(monitor_publisher: MonitorPublisher | None = None) -> FastMCP:
 
     @asynccontextmanager
     async def lifespan(_server: FastMCP) -> AsyncIterator[dict[str, Any]]:
+        workspace, python_path = resolve_workspace_launch()
+        startup = adapter.start_workspace(workspace, python_path)
+        if not startup["ok"]:
+            raise RuntimeError(f"loommux failed to start the configured workspace: {startup['message']}")
         try:
             yield {"adapter": adapter}
         finally:
             adapter.close()
 
     mcp = FastMCP("loommux IPython MCP adapter", lifespan=lifespan)
-
-    @mcp.tool
-    def set_workspace(path: str) -> dict[str, Any]:
-        """设置当前 `workspace`，并为该 `workspace` 启动 `kernel`。
-
-        Args:
-            path: `workspace` 目录路径。该路径可以是绝对路径、相对于
-                server 进程工作目录的相对路径，或使用 `~`。
-
-        Returns:
-            状态字典。返回内容包括解析后的 `workspace`、选定的 Python
-            解释器路径，以及 `kernel` 是否启动成功。失败返回包含 `status`
-            和 `message`。
-        """
-        return _tool_result("set_workspace", _call_tool("set_workspace", {"path": path}, lambda: adapter.set_workspace(path)))
 
     @mcp.tool
     def run_python(freeform: str) -> dict[str, Any]:
@@ -161,7 +151,14 @@ def create_mcp(monitor_publisher: MonitorPublisher | None = None) -> FastMCP:
             日志读取结果，包括 `output_log`、`stream`、`total_lines`、
             `returned_lines`、省略行数和 `text`。
         """
-        return _tool_result("read_python_output", _call_tool("read_python_output", {"execution_id": execution_id, "output_log": output_log, "stream": stream, "line_range": line_range, "show_line_numbers": show_line_numbers, "max_chars": max_chars}, lambda: adapter.read_python_output(execution_id=execution_id, output_log=output_log, stream=stream, line_range=line_range, show_line_numbers=show_line_numbers, max_chars=max_chars)))
+        return _tool_result(
+            "read_python_output",
+            _call_tool(
+                "read_python_output",
+                {"execution_id": execution_id, "output_log": output_log, "stream": stream, "line_range": line_range, "show_line_numbers": show_line_numbers, "max_chars": max_chars},
+                lambda: adapter.read_python_output(execution_id=execution_id, output_log=output_log, stream=stream, line_range=line_range, show_line_numbers=show_line_numbers, max_chars=max_chars),
+            ),
+        )
 
     @mcp.tool
     def search_python_output(query: str, execution_id: str | None = None, output_log: str | None = None, stream: str = "combined", query_mode: str = "auto", context_before: int = 0, context_after: int = 0, ignore_case: bool = False, max_chars: int | None = None) -> dict[str, Any]:
@@ -197,7 +194,14 @@ def create_mcp(monitor_publisher: MonitorPublisher | None = None) -> FastMCP:
             搜索结果，包括 `output_log`、`stream`、`query_interpretation`、
             `matched_lines`、`matches`、上下文设置和 `text`。
         """
-        return _tool_result("search_python_output", _call_tool("search_python_output", {"query": query, "execution_id": execution_id, "output_log": output_log, "stream": stream, "query_mode": query_mode, "context_before": context_before, "context_after": context_after, "ignore_case": ignore_case, "max_chars": max_chars}, lambda: adapter.search_python_output(query=query, execution_id=execution_id, output_log=output_log, stream=stream, query_mode=query_mode, context_before=context_before, context_after=context_after, ignore_case=ignore_case, max_chars=max_chars)))
+        return _tool_result(
+            "search_python_output",
+            _call_tool(
+                "search_python_output",
+                {"query": query, "execution_id": execution_id, "output_log": output_log, "stream": stream, "query_mode": query_mode, "context_before": context_before, "context_after": context_after, "ignore_case": ignore_case, "max_chars": max_chars},
+                lambda: adapter.search_python_output(query=query, execution_id=execution_id, output_log=output_log, stream=stream, query_mode=query_mode, context_before=context_before, context_after=context_after, ignore_case=ignore_case, max_chars=max_chars),
+            ),
+        )
 
     @mcp.tool
     def wait_python(execution_id: str | None = None, timeout_seconds: float = 30) -> dict[str, Any]:

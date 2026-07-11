@@ -22,8 +22,6 @@ def format_tool_result_text(tool_name: str, status: Mapping[str, Any]) -> str:
         return _interrupt_surface(status)
     if tool_name == "reset_python":
         return _reset_surface(status)
-    if tool_name == "set_workspace":
-        return _set_workspace_surface(status)
     return _generic_surface(status)
 
 
@@ -169,12 +167,6 @@ def _reset_surface(status: Mapping[str, Any]) -> str:
     if status.get("status") == "restarted":
         return "重置：kernel 已重启。"
     return _generic_surface(status)
-
-
-def _set_workspace_surface(status: Mapping[str, Any]) -> str:
-    if status.get("ok") is True:
-        return "工作区：workspace 已设置，kernel 已启动。"
-    return _failure_surface(status)
 
 
 def _generic_surface(status: Mapping[str, Any]) -> str:

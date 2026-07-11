@@ -104,7 +104,11 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
 asyncio_mode = "auto"
+timeout = 15
+timeout_method = "thread"
 addopts = [
+    "-n",
+    "4",
     "-v",              # verbose
     "--tb=short",
     "--cov=loommux",  # 修改为正确的模块路径
