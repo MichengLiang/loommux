@@ -31,13 +31,9 @@ from pathlib import Path
 def resolve_workspace(launch_cwd: Path) -> Path:
     # Any Python discovery rule is valid: parent, child, marker search, etc.
     return launch_cwd.parents[1] / "notebooks"
-
-
-# Optional. Relative paths are resolved from the selected workspace.
-PYTHON = ".venv/bin/python"
 ```
 
-`WORKSPACE = "..."` can replace `resolve_workspace`. For dynamic interpreter
-selection, define `resolve_python(launch_cwd, workspace)`. To use a config file
-outside this upward search, set `LOOMMUX_WORKSPACE_CONFIG`; relative values are
-resolved from the server cwd.
+`WORKSPACE = "..."` can replace `resolve_workspace`. The Python interpreter is
+not configurable here: loommux always starts the kernel with the interpreter
+that launched the MCP server. This preserves the environment that successfully
+imported loommux and avoids an additional, ambiguous Python-path contract.

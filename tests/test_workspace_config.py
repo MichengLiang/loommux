@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from loommux.workspace_config import CONFIG_PATH_ENVIRONMENT_VARIABLE, resolve_workspace_launch
+from loommux.workspace_config import resolve_workspace_launch
 
 PROJECT_CONFIG = Path(__file__).parents[1] / "loommux_workspace.py"
 
@@ -35,20 +35,6 @@ def test_workspace_config_found_in_parent_can_choose_a_child_directory(tmp_path:
 
     assert workspace == selected_workspace
     assert python_path == Path(sys.executable).absolute()
-
-
-def test_explicit_config_can_override_the_interpreter_relative_to_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    config_path = tmp_path / "custom_config.py"
-    config_path.write_text("WORKSPACE = 'workspace'\nPYTHON = '.venv/bin/python'\n", encoding="utf-8")
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv(CONFIG_PATH_ENVIRONMENT_VARIABLE, str(config_path))
-
-    selected_workspace, python_path = resolve_workspace_launch()
-
-    assert selected_workspace == workspace
-    assert python_path == workspace / ".venv" / "bin" / "python"
 
 
 def test_project_config_uses_nearest_codex_ancestor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

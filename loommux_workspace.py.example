@@ -12,13 +12,3 @@ from pathlib import Path
 def resolve_workspace(launch_cwd: Path) -> Path:
     # Default: run code in the directory from which the MCP server was started.
     return launch_cwd
-
-
-# Usually omitted: loommux uses the same interpreter that launched the server.
-# A relative value is resolved from the selected workspace.
-# PYTHON = ".venv/bin/python"
-
-
-# For non-standard environments this can compute a Python path dynamically.
-# def resolve_python(launch_cwd: Path, workspace: Path) -> Path:
-#     return workspace / ".venv" / "bin" / "python"

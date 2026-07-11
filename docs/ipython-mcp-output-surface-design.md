@@ -4,7 +4,7 @@
 
 本文档定义 `loommux` IPython MCP adapter 的工具说明、pretty text 展示面与结构化返回面。本文档只规定工具返回给 agent 阅读的表面，不重新定义 kernel 生命周期、workspace 解析、执行提交、IOPub 收集或进程控制。
 
-本文档是当前输出展示面、双通道返回、output log handle、日志读取、搜索和状态/日志分离规则的事实源。`docs/ipython-mcp-adapter-design.md` 定义 workspace、kernel 和 execution 生命周期；`docs/ipython-output-log-reader-design.md` 只保留 output log reader 的机制说明；`docs/双通道序列化最终设计.md` 只保留双通道设计的历史背景与当前引用。
+本文档是当前输出展示面、双通道返回、output log handle、日志读取、搜索和状态/日志分离规则的事实源。`docs/ipython-mcp-adapter-design.md` 定义 workspace、kernel 和 execution 生命周期；`docs/ipython-output-log-reader-design.md` 只保留 output log reader 的机制说明；双通道设计稿只保留历史背景。
 
 本文档的约束对象包括：
 

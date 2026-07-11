@@ -1,5 +1,8 @@
 # loommux IPython MCP 双 Server 通道策略正式设计
 
+> 历史设计材料。workspace、interpreter、工具集合和 kernel 生命周期以
+> `docs/ipython-mcp-adapter-design.md` 为当前契约。
+
 ## 1. 文档对象
 
 本文档定义 `loommux` 项目中 IPython MCP adapter 的双 server 通道策略。该策略的对象不是一个可动态切换行为的 server，也不是一组提示词约定，而是两个对外可配置、可审查、可测试的 MCP server entrypoint。两个 server 共享同一个 IPython runtime core，暴露同一组 MCP 工具，遵守同一套 workspace、kernel、execution 和 output log 语义，但在 MCP result 的输出通道上具有不同协议表面。

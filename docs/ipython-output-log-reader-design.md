@@ -49,7 +49,6 @@ python-output:<execution_id>/traceback
 状态与控制工具负责运行时状态、execution 状态和控制动作：
 
 ```text
-set_workspace(path)
 run_python(freeform)
 python_status()
 python_execution_status(execution_id=None)

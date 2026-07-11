@@ -4,7 +4,7 @@
 
 本文定义 `loommux` IPython MCP 适配层中 `run_python` 的 Codex freeform 输入契约。该契约面向支持 MCP freeform tool 投影的 Codex 宿主，使模型以原始 Python cell 文本调用 `run_python`，而不是把 Python 源码编码进 JSON string 参数。
 
-本文只定义 `run_python` 的模型可见输入形态、单次 timeout directive、默认等待时长、解析规则、执行语义、错误和回退表面、实现边界、测试规格与验收条件。本文不重新定义 workspace 选择、kernel 生命周期、execution 状态模型、output log、读取工具、搜索工具、中断工具或 reset 语义；这些对象仍以 `docs/ipython-mcp-adapter-design.md` 和 output surface 相关文档为事实源。
+本文只定义 `run_python` 的模型可见输入形态、单次 timeout directive、默认等待时长、解析规则、执行语义、错误和回退表面、实现边界、测试规格与验收条件。workspace 选择、kernel 生命周期、execution 状态模型、output log、读取工具、搜索工具、中断工具和 reset 语义以 `docs/ipython-mcp-adapter-design.md` 为事实源；工具展示面以 output surface 文档为事实源。
 
 本文中的 `run_python` freeform 契约适用于 `loommux` 当前 MCP entrypoint。`run_python` 的公开工具表面不保留结构化 `code` 或 `timeout_seconds` 参数。
 
@@ -356,7 +356,7 @@ docstring 不得描述运行时 `LOOMMUX_*` 变量。
 
 ### 8.1 测试环境
 
-测试在 Linux 下执行。测试 workspace 必须有可执行的 `<workspace>/.venv/bin/python`，且该 Python 能导入 `ipykernel`。
+测试在 Linux 下执行。测试以 workspace 作为 MCP server 进程 cwd，并使用启动 server 的 Python；该 Python 必须能导入 `ipykernel`。
 
 测试应优先通过 MCP client 调用 Codex freeform entrypoint。对 parser 的精确边界可以补充 adapter 单元测试。
 
@@ -403,7 +403,7 @@ docstring 不得描述运行时 `LOOMMUX_*` 变量。
 
 步骤：
 
-1. 调用 `set_workspace(valid_workspace)`。
+1. 以 `valid_workspace` 作为 server cwd 启动 MCP server。
 2. 调用 freeform `run_python`，输入：
 
 ```python
@@ -427,7 +427,7 @@ time.sleep(11)
 
 步骤：
 
-1. 调用 `set_workspace(valid_workspace)`。
+1. 以 `valid_workspace` 作为 server cwd 启动 MCP server。
 2. 调用 freeform `run_python`，输入：
 
 ```python
@@ -451,7 +451,7 @@ time.sleep(2)
 
 步骤：
 
-1. 调用 `set_workspace(valid_workspace)`。
+1. 以 `valid_workspace` 作为 server cwd 启动 MCP server。
 2. 调用 freeform `run_python`，输入：
 
 ```python
@@ -484,7 +484,7 @@ time.sleep(2)
 
 步骤：
 
-1. 调用 `set_workspace(valid_workspace)`。
+1. 以 `valid_workspace` 作为 server cwd 启动 MCP server。
 2. 调用 freeform `run_python`，输入：
 
 ```python
@@ -508,7 +508,7 @@ time.sleep(2)
 
 步骤：
 
-1. 调用 `set_workspace(valid_workspace)`。
+1. 以 `valid_workspace` 作为 server cwd 启动 MCP server。
 2. 调用 freeform `run_python`，输入：
 
 ```python
@@ -532,7 +532,7 @@ time.sleep(2)
 
 步骤：
 
-1. 调用 `set_workspace(valid_workspace)`。
+1. 以 `valid_workspace` 作为 server cwd 启动 MCP server。
 2. 调用 freeform `run_python`，输入：
 
 ```python
@@ -553,7 +553,7 @@ time.sleep(2)
 
 步骤：
 
-1. 调用 `set_workspace(valid_workspace)`。
+1. 以 `valid_workspace` 作为 server cwd 启动 MCP server。
 2. 调用 freeform `run_python`，输入：
 
 ```python
@@ -575,7 +575,7 @@ print("hello")
 
 步骤：
 
-1. 调用 `set_workspace(valid_workspace)`。
+1. 以 `valid_workspace` 作为 server cwd 启动 MCP server。
 2. 调用 freeform `run_python`，输入：
 
 ```python
@@ -603,7 +603,7 @@ for i in range(3):
 
 步骤：
 
-1. 调用 `set_workspace(valid_workspace)`。
+1. 以 `valid_workspace` 作为 server cwd 启动 MCP server。
 2. 调用 freeform `run_python`，输入：
 
 ```python
