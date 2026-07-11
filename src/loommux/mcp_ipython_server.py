@@ -13,5 +13,9 @@ def create_mcp(monitor_publisher: MonitorPublisher | None = None) -> FastMCP:
 mcp = create_mcp()
 
 
-if __name__ == "__main__":
+def main() -> None:
     mcp.run()
+
+
+if __name__ == "__main__":
+    main()

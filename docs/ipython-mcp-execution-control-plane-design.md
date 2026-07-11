@@ -9,8 +9,7 @@ result-channel entrypoints, and the monitor observation surface.
 
 The intended reader is an engineer who has the repository source but does not
 have any prior discussion context. The document defines the public objects and
-their rules before it assigns implementation work. `docs/001-raw.md` remains
-source material. It does not define the current runtime contract.
+their rules before it assigns implementation work.
 
 ## 2. Problem Domain
 
@@ -442,9 +441,9 @@ The current documentation set must have one authority for each subject:
 | --- | --- |
 | Execution identity, lifecycle, output streams, selection, result surfaces | This document. |
 | Freeform timeout directive grammar | `ipython-mcp-freeform-run-python-design.md`, which references this document for execution behavior. |
+| Full-output directive grammar and delivery behavior | `ipython-mcp-full-output-directive-design.md`, which references this document for execution behavior. |
 | Result-channel and entrypoint policy | This document or a focused server-channel document that references it. |
 | Monitor event and UI behavior | Monitor documentation that references this document for the execution field. |
-| Original discussion evidence | `001-raw.md`. |
 
 Documents that define removed resource-address fields are historical material,
 not current interface specifications. Their status must be made explicit or

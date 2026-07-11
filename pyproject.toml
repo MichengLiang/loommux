@@ -1,12 +1,48 @@
 [project]
 name = "loommux"
 version = "0.1.0"
-description = "loommux 初始化uv工作区模板"
+description = "Persistent IPython MCP server with inspectable execution output"
+readme = "README.md"
 requires-python = ">=3.13"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "MichengLiang" }]
+keywords = ["ipython", "jupyter", "mcp", "model-context-protocol", "python"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Interpreters",
+]
 dependencies = [
     "fastmcp>=3.2.4",
     "ipykernel>=7.2.0",
     "jupyter-client>=8.8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/MichengLiang/loommux"
+Repository = "https://github.com/MichengLiang/loommux"
+Issues = "https://github.com/MichengLiang/loommux/issues"
+
+[project.scripts]
+loommux = "loommux.mcp_ipython_server:main"
+loommux-content = "loommux.mcp_ipython_content_server:main"
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.34.0",
+    "pytest>=9.0.0",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.0.0",
+    "pytest-timeout>=2.4.0",
+    "ruff>=0.15.0",
+    "twine>=6.2.0",
 ]
 
 [build-system]

@@ -9,3 +9,5 @@ dist/
 build/
 *.egg-info/
 tmp/
+docs/001-raw.md
+docs/superpowers/

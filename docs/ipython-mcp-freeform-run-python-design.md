@@ -4,6 +4,8 @@ This document is the authority for the `run_python` freeform input and timeout
 directive grammar. Execution identity, lifecycle, output streams, result
 surfaces, and all follow-up tools are defined by
 [IPython MCP Execution Control Plane Design](ipython-mcp-execution-control-plane-design.md).
+The no-value full-output marker and its result-delivery behavior are defined by
+[IPython MCP Complete Output Directive Design](ipython-mcp-full-output-directive-design.md).
 
 ## Input
 
