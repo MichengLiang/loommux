@@ -66,18 +66,33 @@ it unsuitable as a public resource coordinate.
 
 ### 3.2 Public Sequence and IPython Presentation
 
-The loommux execution number authors the `Out[n]` label in loommux's combined
-result output. If execution `5` produces an `execute_result` or a
-`display_data` event with `text/plain`, the combined log contains:
+Every accepted execution result begins with an IPython input-history header
+using the loommux session coordinate:
 
 ```text
+In [5]:
+```
+
+The MCP tool call already carries the submitted source, so this header is a
+compact projection of the accepted cell rather than a second rendering of its
+code. It gives stdout-only, silent, errored, interrupted, and killed cells the
+same visible session coordinate without claiming that they produced a display
+result.
+
+The loommux execution number authors the `Out[n]` label only in combined
+output for an `execute_result` or a `display_data` event with `text/plain`.
+If execution `5` produces such a result, its complete model content is:
+
+```text
+In [5]:
 Out[5]: <text/plain>
 ```
 
 This is an IPython-style reading surface whose number is stable for the full
 loommux session. It is not a forwarding of the kernel's resettable display
 counter. After a kernel reset, the first result from the replacement kernel can
-therefore render as `Out[5]` when it belongs to loommux execution `5`.
+therefore render as `In [5]:` followed by `Out[5]` when it belongs to loommux
+execution `5`.
 
 The server may retain the kernel's actual count for diagnostics and monitor
 correlation. It must not use that count to address a record or to author the
@@ -279,34 +294,41 @@ The traceback remains readable through the same execution number with
 ### 6.2 Model Content
 
 Model content presents Python behavior and lifecycle state. It does not append
-private protocol markers or serialized state dictionaries.
+private protocol markers or serialized state dictionaries. Every accepted
+`run_python` or `wait_python` result begins with `In [execution]:`, which is
+the public session coordinate for the submitted cell.
 
-When a result stream exists, combined output authors its result line with the
-loommux session number:
+When a result stream exists, the header is followed by combined output's
+result line with the loommux session number:
 
 ```text
+In [5]:
 Out[5]: 42
 ```
 
-When a successful cell does not create a display result, content explicitly
-names the execution number because Python itself supplies no `Out[n]` anchor:
+When a successful cell does not create a display result, it still returns the
+input header and does not invent an `Out[n]` line:
 
 ```text
-Execution 5 completed without a display result.
+In [5]:
 ```
 
-For stdout-only success, the same completion line appears with the collected
-visible output. The exact ordering must be specified in `presentation.py` and
-tested consistently; the number must remain visible without relying on stdout
-content.
+For stdout-only success, collected visible output follows the header. For an
+error, the collected traceback likewise follows the header. The exact ordering
+is specified in `presentation.py`; the number remains visible without relying
+on stdout, a display result, or an exception body.
 
-Running, line-limited, and failed executions use concise state sentences that
-include the execution number and the next applicable action. Examples:
+Running and line-limited executions use concise control text below the same
+header because their full combined body is unavailable. A killed execution
+retains an explicit killed-state line because prior output cannot prove that it
+completed normally. Examples:
 
 ```text
-Python execution 5 is still running. Use wait_python() or read_python_output().
-Python execution 5 produced more than 300 lines. Use read_python_output().
-Python execution 5 failed with ZeroDivisionError: division by zero.
+In [5]:
+Running: use wait_python() or read_python_output().
+
+In [5]:
+Output: more than 300 lines; use read_python_output().
 ```
 
 `read_python_output` returns the selected log text. Empty reads return the
@@ -351,9 +373,9 @@ owns tool registration, lifespan setup, adapter construction, monitor call
 wrapping, and descriptions. Entry modules select a policy and transport
 configuration without duplicating tool bodies.
 
-The content-only policy requires sequence-bearing model text for every
-execution state whose Python output does not contain an authored `Out[n]`
-line. It cannot rely on a structured field to reveal that record number.
+The content-only policy receives the same `In [n]:` header as the dual-channel
+policy. It therefore retains the session coordinate even when the cell has no
+authored `Out[n]` line and cannot rely on a structured field.
 
 Transport is a separate configuration concern. If the two entrypoints require
 different transports, the configuration documentation names that difference
@@ -480,14 +502,16 @@ log behavior.
 
 ### 12.2 Output Presentation
 
-1. A display result from execution `5` renders `Out[5]:`.
-2. A successful assignment has a visible completion sentence containing its
-   execution number.
-3. A stdout-only success has both its stdout text and its execution number in
-   the documented content ordering.
-4. Running, line-limited, error, interrupted, and killed results expose their
-   execution number in the appropriate status result.
-5. Stream reads and searches preserve their text, line-range, search, context,
+1. Every accepted execution result begins with `In [execution]:`.
+2. A display result from execution `5` then renders its authored `Out[5]:`
+   line.
+3. A successful assignment returns only `In [execution]:`, with no completion
+   sentence or synthetic `Out` line.
+4. A stdout-only success has its header before stdout in the documented
+   content ordering.
+5. Running, line-limited, error, interrupted, and killed results expose their
+   execution number through the same header.
+6. Stream reads and searches preserve their text, line-range, search, context,
    and clipping semantics.
 
 ### 12.3 Reset and Session Scope

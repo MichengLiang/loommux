@@ -243,11 +243,14 @@ Each execution retains five append-only text projections:
 | `result` | `text/plain` from IPython execute-result and display-data events. |
 | `traceback` | Traceback text from Python error events. |
 
-Completed combined output of at most 300 lines is returned directly by
-`run_python` and `wait_python`. For an execution that is still running, or
-for an unmarked terminal execution whose combined output exceeds 300 lines,
-the response retains the record but omits the full body. The output is not
-discarded; read or search it through the output tools.
+Completed combined output of at most 300 lines is returned by `run_python` and
+`wait_python` beneath an `In [execution]:` header. A display result then keeps
+its IPython-style `Out[execution]:` line; a silent cell returns only the input
+header, and stdout or traceback remains in its original combined order. For an
+execution that is still running, or for an unmarked terminal execution whose
+combined output exceeds 300 lines, the response retains the record but omits
+the full body. The output is not discarded; read or search it through the
+output tools.
 
 `read_python_output` uses `start:stop` inclusive line coordinates. Positive
 endpoints are 1-indexed, endpoints may be omitted, and negative endpoints

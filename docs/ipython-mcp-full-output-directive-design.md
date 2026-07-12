@@ -132,11 +132,13 @@ combined 输出。
 ### 5.1 两个入口的一致内容
 
 完整输出标记不创建新的工具，也不改变八个既有工具的输入 schema。它只改变
-`run_python` 和 `wait_python` 对已选 execution 的正文交付规则。
+`run_python` 和 `wait_python` 对已选 execution 的正文交付规则。每个结果仍以
+`In [execution]:` 开始；该 input-history header 不属于 combined 流，但使完整
+输出结果与其他 execution result 使用同一公开坐标。
 
 `dual_channel` 与 `content_only` 两个入口必须提供相同的模型内容：带标记的
-终态 execution 在两个入口中都直接显示完整 combined 正文。两个入口继续只
-在 `structuredContent` 是否存在这一点上不同。
+终态 execution 在两个入口中都在 `In [execution]:` 后直接显示完整 combined
+正文。两个入口继续只在 `structuredContent` 是否存在这一点上不同。
 
 ### 5.2 执行编号与输出作者身份
 

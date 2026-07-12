@@ -110,7 +110,25 @@ async def test_result_policies_share_content_but_only_dual_exposes_structured_st
     assert dual.structured_content is not None
     assert dual.structured_content["execution"] == 1
     assert content.structured_content is None
-    assert dual.content[0].text == content.content[0].text == "Execution 1 completed without a display result."
+    assert dual.content[0].text == content.content[0].text == "In [1]:"
+
+
+async def test_mcp_content_projects_input_coordinate_display_result_and_traceback(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(workspace)
+    async with Client(create_standard_mcp()) as dual_client, Client(create_content_mcp()) as content_client:
+        dual_silent = await dual_client.call_tool("run_python", {"freeform": "value = 1"})
+        content_silent = await content_client.call_tool("run_python", {"freeform": "value = 1"})
+        dual_result = await dual_client.call_tool("run_python", {"freeform": "value"})
+        content_result = await content_client.call_tool("run_python", {"freeform": "value"})
+        dual_error = await dual_client.call_tool("run_python", {"freeform": "1 / 0"})
+        content_error = await content_client.call_tool("run_python", {"freeform": "1 / 0"})
+
+    assert dual_silent.content[0].text == content_silent.content[0].text == "In [1]:"
+    assert dual_result.content[0].text == content_result.content[0].text == "In [2]:\nOut[2]: 1\n"
+    assert dual_error.content[0].text.startswith("In [3]:\n")
+    assert content_error.content[0].text.startswith("In [3]:\n")
+    assert "ZeroDivisionError" in dual_error.content[0].text
+    assert "ZeroDivisionError" in content_error.content[0].text
 
 
 async def test_result_policies_share_marked_complete_long_output(content_client: Client[Any]) -> None:
@@ -119,7 +137,7 @@ async def test_result_policies_share_marked_complete_long_output(content_client:
         dual = await dual_client.call_tool("run_python", {"freeform": source})
     content = await content_client.call_tool("run_python", {"freeform": source})
 
-    expected = "\n".join(f"line-{number}" for number in range(301)) + "\n"
+    expected = "In [1]:\n" + "\n".join(f"line-{number}" for number in range(301)) + "\n"
     assert dual.content[0].text == content.content[0].text == expected
     assert dual.structured_content is not None
     assert dual.structured_content["output_omitted"] is False
@@ -143,7 +161,7 @@ async def test_shared_factory_binds_every_tool_to_the_integer_contract(content_c
     assert "execution 1: completed" in status.content[0].text
     assert read.content[0].text == "factory"
     assert "M 1 | factory" in search.content[0].text
-    assert "Execution 1 completed" in wait.content[0].text
+    assert wait.content[0].text == "In [1]:\nfactory\n"
     assert interrupt.content[0].text == "Python kernel is idle."
     assert "sequence is preserved" in reset.content[0].text
 
