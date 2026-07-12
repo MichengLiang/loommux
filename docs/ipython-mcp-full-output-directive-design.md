@@ -7,7 +7,7 @@
 结果，以及后续开发者必须验证的行为。
 
 执行编号、记录选择、kernel 生命周期、五个输出流和两个 MCP result channel
-由 [IPython MCP Execution Control Plane Design](ipython-mcp-execution-control-plane-design.md)
+由 [Coding Agent Control Plane Design](coding-agent-control-plane-design.md)
 定义。本文只为其中的输出交付规则增加一个 cell-level 标记；它不重新定义
 execution 身份、日志读取坐标或 Python 执行语义。
 
@@ -223,7 +223,7 @@ kernel-local execution count，也不改变 reset 后的编号连续性。
 
 | 主题 | 当前规范 |
 | --- | --- |
-| execution 身份、生命周期、流、选择和 result channel | `ipython-mcp-execution-control-plane-design.md` |
+| execution 身份、生命周期、流、选择和 result channel | `coding-agent-control-plane-design.md` |
 | timeout directive 的语法 | `ipython-mcp-freeform-run-python-design.md` |
 | 完整输出标记的语法与交付行为 | 本文 |
 | 已退休的 output handle 设计 | 标有 Historical Design Notice 的文档 |

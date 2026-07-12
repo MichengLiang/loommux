@@ -105,11 +105,14 @@ def create_mcp(policy: ResultChannelPolicy, monitor_publisher: MonitorPublisher 
         状态范围
         --------
 
-        返回 server 启动时解析的 workspace 与 Python 解释器、kernel PID、
-        kernel 是否已启动，以及 kernel 是否正忙。忙碌时 ``current_execution``
-        是正在运行的正整数执行编号；空闲时 ``recent_execution`` 是最近一次
-        被接受的执行编号。kernel-local execution count 只用于诊断，不能用来
-        选择 loommux execution。
+        返回 server 启动时解析的 workspace、其 ``workspace_resolution`` 来源
+        类别、Python 解释器、kernel PID、kernel 是否已启动，以及 kernel 是否
+        正忙。``workspace_resolution`` 只能是 ``launch_cwd`` 或
+        ``explicit_config``；它不公开 resolver 的路径或内容，也不公开 kernel
+        session 的 private runtime root。忙碌时 ``current_execution`` 是正在
+        运行的正整数执行编号；空闲时 ``recent_execution`` 是最近一次被接受的
+        执行编号。kernel-local execution count 只用于诊断，不能用来选择
+        loommux execution。
 
         Returns:
             当前 server 与 kernel 的状态快照。

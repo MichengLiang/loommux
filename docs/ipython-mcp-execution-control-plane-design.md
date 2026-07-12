@@ -1,3 +1,7 @@
+# Historical Design Notice
+
+> Superseded by [Coding Agent Control Plane Design](coding-agent-control-plane-design.md). This retained proposal predates the explicit workspace resolver, `KernelLaunch` bootstrap, and terminal-text authority; its `workspace_config.py` and implicit `loommux_workspace.py` behavior is not current.
+
 # IPython MCP Execution Control Plane Design
 
 ## 1. Purpose

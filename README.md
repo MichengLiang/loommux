@@ -25,6 +25,8 @@ search retained output, interrupt the active cell, or restart the kernel.
   `result`, and `traceback` streams.
 - IOPub-order `combined` output, including IPython-style `Out[execution]:`
   labels for display results.
+- Terminal-formatted IOPub text normalized into ordinary append-only text
+  transcripts before it reaches public output or monitor events.
 - A non-blocking execution model: a tool-call timeout ends only that MCP call;
   it does not terminate the Python cell.
 - Explicit interrupt and kernel-reset operations, with preserved historical
@@ -89,10 +91,9 @@ facts are that the host starts `loommux`, the process runs in the intended
 workspace, and the Python environment running `loommux` can import
 `ipykernel`.
 
-On startup, loommux resolves its workspace, verifies that its own Python
-interpreter can import `ipykernel`, and starts the kernel before accepting MCP
-tools. Server startup fails rather than exposing a partially configured
-execution service when these conditions are not met.
+On startup, loommux resolves its workspace, builds a kernel launch from the
+server interpreter, and starts the kernel before accepting MCP tools. Server
+startup fails rather than exposing a partially configured execution service.
 
 ## Content-Only HTTP Server
 
@@ -185,7 +186,7 @@ record, then the most recently accepted record. With neither, the tool returns
 | Tool | Purpose |
 | --- | --- |
 | `run_python(freeform)` | Submit one raw Python cell to the persistent kernel and wait for its initial result. |
-| `python_status()` | Inspect the workspace, interpreter, kernel PID, busy state, and current or recent execution. |
+| `python_status()` | Inspect the workspace, its authored source category, interpreter, kernel PID, busy state, and current or recent execution. |
 | `python_execution_status(execution=None)` | Inspect lifecycle and diagnostic metadata without returning the full output body. |
 | `read_python_output(...)` | Read a selected execution stream, optionally by line range and with per-line clipping. |
 | `search_python_output(...)` | Search a selected output stream using literal text or regular expressions. |
@@ -355,17 +356,23 @@ vulnerability in loommux itself, use the private reporting process in
 
 The runtime is deliberately divided into narrow responsibilities:
 
-- `execution.py` owns an execution record and its terminal state.
-- `output_log.py` owns the append-only stream logs, line ranges, clipping, and
-  search behavior.
-- `kernel_session.py` starts the IPython subprocess and collects IOPub events.
-- `adapter.py` owns kernel lifecycle, execution-number allocation, selection,
-  and control operations.
-- `presentation.py` turns public status into the model-readable text surface.
-- `mcp_server_factory.py` registers the shared tools; the two entry modules
-  select result-channel policy and transport.
-- `monitoring.py` publishes observation events without participating in
-  execution authority.
+- `host_workspace_config.py` and `workspace_resolver.py` own the MCP host's
+  explicit workspace authorization and its public source category.
+- `coding_agent_kernel.py` builds `KernelLaunch`: the server-interpreter
+  command, controlled child environment, and one private runtime root.
+- `kernel_session.py` owns that root for one kernel session, starts the
+  process, and receives IOPub events.
+- `terminal_text.py` normalizes terminal controls before public text is stored
+  or published.
+- `execution.py` and `output_log.py` own normalized execution records and the
+  append-only stream projections, line ranges, clipping, and search behavior.
+- `adapter.py` owns lifecycle, execution-number allocation, selection, and
+  control operations.
+- `presentation.py` projects public state into model-readable text.
+- `mcp_server_factory.py` registers the shared tools; entry modules select
+  result-channel policy and transport.
+- `monitoring.py` publishes normalized observation events without execution
+  authority.
 
 The current public contract is documented in [Coding Agent Control Plane
 Design](docs/coding-agent-control-plane-design.md).

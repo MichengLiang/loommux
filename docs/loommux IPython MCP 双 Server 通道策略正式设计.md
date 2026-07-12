@@ -1,11 +1,11 @@
 # Historical Design Notice
 
-> Superseded by [IPython MCP Execution Control Plane Design](ipython-mcp-execution-control-plane-design.md). Result-channel policies remain supported, but the old `execution_id`, output-address, and workspace-tool contract below is historical only.
+> Superseded by [Coding Agent Control Plane Design](coding-agent-control-plane-design.md). Result-channel policies remain supported, but the old `execution_id`, output-address, and workspace-tool contract below is historical only.
 
 # loommux IPython MCP 双 Server 通道策略正式设计
 
 > 历史设计材料。workspace、interpreter、工具集合和 kernel 生命周期以
-> `docs/ipython-mcp-adapter-design.md` 为当前契约。
+> `docs/coding-agent-control-plane-design.md` 为当前契约。
 
 ## 1. 文档对象
 

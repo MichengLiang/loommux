@@ -156,6 +156,12 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
     assert "当前\nrunning 记录" in status
     assert "正整数执行编号" in tools["python_execution_status"].inputSchema["properties"]["execution"]["description"]
 
+    python_status = tools["python_status"].description or ""
+    assert "workspace_resolution" in python_status
+    assert "launch_cwd" in python_status and "explicit_config" in python_status
+    assert "resolver 的路径或内容" in python_status
+    assert "private runtime root" in python_status
+
     read = tools["read_python_output"].description or ""
     assert "行坐标\n------" in read
     assert "``:10``" in read and "``-10:``" in read and "``3:3``" in read
@@ -251,6 +257,51 @@ async def test_shared_factory_binds_every_tool_to_the_integer_contract(content_c
     assert wait.content[0].text == "In [1]:\nfactory\n"
     assert interrupt.content[0].text == "Python kernel is idle."
     assert "sequence is preserved" in reset.content[0].text
+
+
+async def test_real_mcp_eight_tool_loop_preserves_public_sequence_across_reset(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(workspace)
+    async with Client(create_standard_mcp()) as client:
+        initial = await client.call_tool("python_status", {})
+        small = await client.call_tool("run_python", {"freeform": "print('small-output')"})
+        running = await client.call_tool(
+            "run_python",
+            {"freeform": "# loommux: timeout_seconds=0.1\nimport time\nprint('long-start', flush=True)\ntime.sleep(1.5)\nprint('long-finished', flush=True)"},
+        )
+        long_execution = running.data["execution"]
+        observed = await client.call_tool("python_execution_status", {"execution": long_execution})
+        partial = await client.call_tool("read_python_output", {"execution": long_execution, "stream": "stdout"})
+        found = await client.call_tool("search_python_output", {"execution": long_execution, "stream": "stdout", "query": "long-start", "query_mode": "literal"})
+        completed = await client.call_tool("wait_python", {"execution": long_execution, "timeout_seconds": 3})
+        interruptible = await client.call_tool(
+            "run_python",
+            {"freeform": "# loommux: timeout_seconds=0.1\nimport time\nprint('interrupt-ready', flush=True)\ntime.sleep(5)"},
+        )
+        interrupted_execution = interruptible.data["execution"]
+        interrupt = await client.call_tool("interrupt_python", {})
+        interrupted = await client.call_tool("wait_python", {"execution": interrupted_execution, "timeout_seconds": 3})
+        reset = await client.call_tool("reset_python", {})
+        old_record = await client.call_tool("read_python_output", {"execution": small.data["execution"], "stream": "stdout"})
+        after_reset = await client.call_tool("run_python", {"freeform": "print('after-reset')"})
+
+    assert initial.data["workspace"] == str(workspace)
+    assert initial.data["workspace_resolution"] == "launch_cwd"
+    assert small.data["execution"] == 1
+    assert long_execution == 2
+    assert running.data["status"] == "running"
+    assert observed.data["status"] == "running"
+    assert partial.content[0].text == "long-start"
+    assert "M 1 | long-start" in found.content[0].text
+    assert completed.data["status"] == "completed"
+    assert "long-finished" in completed.content[0].text
+    assert interrupted_execution == 3
+    assert interrupt.data["status"] == "interrupt_sent"
+    assert interrupt.data["execution"] == interrupted_execution
+    assert interrupted.data["status"] == "interrupted"
+    assert reset.data["status"] == "restarted"
+    assert old_record.content[0].text == "small-output"
+    assert after_reset.data["execution"] == 4
+    assert after_reset.content[0].text == "In [4]:\nafter-reset\n"
 
 
 def test_mcp_result_policy_only_changes_structured_channel() -> None:

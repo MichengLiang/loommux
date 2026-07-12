@@ -1,6 +1,6 @@
 # Historical Design Notice
 
-> Superseded by [IPython MCP Execution Control Plane Design](ipython-mcp-execution-control-plane-design.md). The handle-based output surface below is retained as historical material only and must not be implemented or documented as current behavior.
+> Superseded by [Coding Agent Control Plane Design](coding-agent-control-plane-design.md). The handle-based output surface below is retained as historical material only and must not be implemented or documented as current behavior.
 
 # IPython MCP Output Surface 最终设计
 

@@ -1,6 +1,6 @@
 # Historical Design Notice
 
-> Superseded by [IPython MCP Execution Control Plane Design](ipython-mcp-execution-control-plane-design.md). This retained design records the former string-handle implementation and is not a current public interface specification.
+> Superseded by [Coding Agent Control Plane Design](coding-agent-control-plane-design.md). This retained design records the former implicit workspace and string-handle implementation; it is not a current public interface specification.
 
 # IPython MCP Adapter 运行时契约
 
