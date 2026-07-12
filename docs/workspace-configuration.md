@@ -17,5 +17,11 @@ only and have effect solely when their absolute path is explicitly configured.
 The Codex example returns the parent of the nearest `.codex` directory, or the
 launch cwd when there is no marker.
 
+The manually started `loommux-content` entrypoint is an explicit host
+composition: when this environment variable is unset, its `main()` selects the
+bundled Codex resolver before the MCP server starts. A host-provided value still
+has priority. This does not change the default for `create_mcp()` or the
+standard `loommux` entrypoint.
+
 The kernel always uses the Python interpreter that started `loommux`; workspace
 configuration cannot select another interpreter.

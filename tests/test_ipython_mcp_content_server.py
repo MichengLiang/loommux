@@ -8,9 +8,12 @@ from typing import Any
 import pytest
 from fastmcp import Client
 
+import loommux.mcp_ipython_content_server as content_server
+from loommux.codex_workspace_resolver import resolve_workspace as resolve_codex_workspace
 from loommux.mcp_ipython_content_server import create_mcp as create_content_mcp
 from loommux.mcp_ipython_server import create_mcp as create_standard_mcp
 from loommux.mcp_result_policy import make_tool_result
+from loommux.workspace_resolver import resolve_workspace_launch
 
 WORKSPACE_CONFIG_ENV = "LOOMMUX_WORKSPACE_CONFIG"
 
@@ -63,6 +66,44 @@ async def test_default_workspace_ignores_legacy_files_and_exposes_launch_source(
     assert status.data["workspace_resolution"] == "launch_cwd"
     assert cwd.content[0].text == f"In [1]:\n{launch_cwd}\n"
     assert not marker.exists()
+
+
+def test_manual_content_entrypoint_selects_the_bundled_codex_resolver(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = tmp_path / "project"
+    launch_cwd = project / "nested" / "launch"
+    (project / ".codex").mkdir(parents=True)
+    launch_cwd.mkdir(parents=True)
+    monkeypatch.chdir(launch_cwd)
+    environment: dict[str, str] = {}
+
+    content_server.configure_manual_content_workspace(environment)
+    monkeypatch.setenv(WORKSPACE_CONFIG_ENV, environment[WORKSPACE_CONFIG_ENV])
+    resolution = resolve_workspace_launch()
+
+    assert resolve_codex_workspace(launch_cwd) == project
+    assert resolution.workspace == project
+    assert resolution.workspace_resolution == "explicit_config"
+    assert Path(environment[WORKSPACE_CONFIG_ENV]).resolve() == Path(content_server.__file__).with_name("codex_workspace_resolver.py").resolve()
+
+
+def test_manual_content_entrypoint_preserves_a_host_supplied_resolver(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    resolver = tmp_path / "host-resolver.py"
+    resolver.write_text("def resolve_workspace(launch_cwd):\n    return launch_cwd\n", encoding="utf-8")
+    environment = {WORKSPACE_CONFIG_ENV: str(resolver)}
+
+    content_server.configure_manual_content_workspace(environment)
+
+    assert environment[WORKSPACE_CONFIG_ENV] == str(resolver)
+
+
+def test_manual_content_main_configures_workspace_before_starting_fastmcp(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(content_server, "configure_manual_content_workspace", lambda: calls.append("configure"))
+    monkeypatch.setattr(content_server.mcp, "run", lambda **_kwargs: calls.append("run"))
+
+    content_server.main()
+
+    assert calls == ["configure", "run"]
 
 
 async def test_explicit_resolver_controls_server_workspace_and_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

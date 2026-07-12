@@ -109,6 +109,13 @@ cd /absolute/path/to/your/workspace
 loommux-content
 ```
 
+For this manually started host entrypoint, an unset
+`LOOMMUX_WORKSPACE_CONFIG` selects the bundled Codex resolver, which uses the
+parent of the nearest `.codex` directory as the workspace. An explicitly set
+`LOOMMUX_WORKSPACE_CONFIG` always wins. This convenience is specific to the
+`loommux-content` command; direct `create_mcp()` use and the standard entrypoint
+retain the launch-cwd default described below.
+
 It runs FastMCP's streamable-HTTP transport on port `8801` and binds to
 `0.0.0.0`; clients normally connect to FastMCP's streamable MCP endpoint on
 that service. This is a deployment boundary, not a different execution model:
