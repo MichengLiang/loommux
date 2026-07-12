@@ -102,6 +102,7 @@ def _python_status_surface(status: Mapping[str, Any]) -> str:
     else:
         lines.append(f"recent_execution: {_compact(status.get('recent_execution'))}")
     lines.append(f"workspace: {_compact(status.get('workspace'))}")
+    lines.append(f"workspace_resolution: {_compact(status.get('workspace_resolution'))}")
     return "\n".join(lines)
 
 

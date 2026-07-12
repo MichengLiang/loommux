@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import math
-import os
 import re
-import subprocess
+import sys
 import threading
 from contextvars import ContextVar, Token
 from pathlib import Path
@@ -35,6 +34,7 @@ class IPythonMCPAdapter:
 
     def __init__(self, monitor_publisher: MonitorPublisher | None = None) -> None:
         self.workspace: Path | None = None
+        self.workspace_resolution: str | None = None
         self.python_path: Path | None = None
         self.kernel: KernelSession | None = None
         self.monitor_publisher = monitor_publisher or NoopMonitorPublisher()
@@ -53,17 +53,15 @@ class IPythonMCPAdapter:
             kernel.shutdown()
         self.monitor_publisher.close()
 
-    def start_workspace(self, workspace: Path, python_path: Path) -> dict[str, Any]:
+    def start_workspace(self, workspace: Path, workspace_resolution: str) -> dict[str, Any]:
         """Start the configured kernel at server lifespan start."""
         workspace = workspace.resolve(strict=False)
-        python_path = python_path.absolute()
+        python_path = Path(sys.executable).absolute()
         self._close_kernel()
         if not workspace.exists():
             return self._workspace_error("workspace_not_found", "workspace does not exist", workspace, python_path)
         if not workspace.is_dir():
             return self._workspace_error("workspace_not_directory", "workspace path is not a directory", workspace, python_path)
-        if (error := self._check_workspace_python(workspace, python_path)) is not None:
-            return error
         kernel: KernelSession | None = None
         start_error: Exception | None = None
         # A kernel can miss its first readiness handshake while its ZMQ channels
@@ -83,7 +81,7 @@ class IPythonMCPAdapter:
                 return self._workspace_error("kernel_start_timeout", "kernel did not become ready before timeout", workspace, python_path)
             return self._workspace_error("kernel_start_failed", f"kernel failed to start: {start_error}", workspace, python_path)
         with self._lock:
-            self.workspace, self.python_path, self.kernel = workspace, python_path, kernel
+            self.workspace, self.workspace_resolution, self.python_path, self.kernel = workspace, workspace_resolution, python_path, kernel
             # A server lifespan has one session. This path is startup only; reset_python
             # deliberately does not pass here so it cannot discard existing records.
             self.executions.clear()
@@ -138,6 +136,7 @@ class IPythonMCPAdapter:
             return {
                 "ok": True,
                 "workspace": str(self.workspace) if self.workspace is not None else None,
+                "workspace_resolution": self.workspace_resolution,
                 "python": str(self.python_path) if self.python_path is not None else None,
                 "kernel_started": kernel is not None,
                 "kernel_pid": kernel.pid if kernel is not None else None,
@@ -217,7 +216,7 @@ class IPythonMCPAdapter:
             return self._workspace_error("kernel_start_failed", f"kernel failed to restart: {exc}", workspace, python_path)
         with self._lock:
             self.kernel = kernel
-        return {"ok": True, "status": "restarted", "workspace": str(workspace), "python": str(python_path), "kernel_started": True, "kernel_pid": kernel.pid, "busy": False, "current_execution": None, "recent_execution": self.recent_execution}
+        return {"ok": True, "status": "restarted", "workspace": str(workspace), "workspace_resolution": self.workspace_resolution, "python": str(python_path), "kernel_started": True, "kernel_pid": kernel.pid, "busy": False, "current_execution": None, "recent_execution": self.recent_execution}
 
     def set_active_call_id(self, call_id: str | None) -> Token[str | None]:
         return self._active_call_id.set(call_id)
@@ -277,19 +276,6 @@ class IPythonMCPAdapter:
 
     def _publish_execution_finished(self, record: Execution) -> None:
         safe_publish(self.monitor_publisher, {"type": "execution_finished", "execution": record.execution, "status": record.status, "output_total_lines": record.logs.combined.line_count, "error": record.status_snapshot().get("error"), "timestamp": record.completed_at or record.updated_at})
-
-    def _check_workspace_python(self, workspace: Path, python_path: Path) -> dict[str, Any] | None:
-        if not python_path.exists():
-            return self._workspace_error("python_not_found", "workspace Python does not exist", workspace, python_path)
-        if not os.access(python_path, os.X_OK):
-            return self._workspace_error("python_not_executable", "workspace Python is not executable", workspace, python_path)
-        try:
-            result = subprocess.run([str(python_path), "-c", "import ipykernel"], cwd=str(workspace), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, check=False)
-        except subprocess.TimeoutExpired:
-            return self._workspace_error("ipykernel_missing", "workspace Python timed out while importing ipykernel", workspace, python_path)
-        except OSError as exc:
-            return self._workspace_error("python_not_executable", f"workspace Python cannot be executed: {exc}", workspace, python_path)
-        return None if result.returncode == 0 else self._workspace_error("ipykernel_missing", "workspace Python cannot import ipykernel", workspace, python_path)
 
     @staticmethod
     def _validate_timeout(timeout_seconds: float) -> dict[str, Any] | None:

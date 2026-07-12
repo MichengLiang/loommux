@@ -8,9 +8,10 @@ from fastmcp import FastMCP
 from fastmcp.tools import ToolResult
 
 from loommux.adapter import IPythonMCPAdapter
+from loommux.host_workspace_config import WorkspaceConfigError
 from loommux.mcp_result_policy import ResultChannelPolicy, make_tool_result
 from loommux.monitoring import MonitorPublisher, create_monitor_publisher, run_monitored_tool_call
-from loommux.workspace_config import resolve_workspace_launch
+from loommux.workspace_resolver import resolve_workspace_launch
 
 
 def create_mcp(policy: ResultChannelPolicy, monitor_publisher: MonitorPublisher | None = None) -> FastMCP:
@@ -29,9 +30,14 @@ def create_mcp(policy: ResultChannelPolicy, monitor_publisher: MonitorPublisher 
 
     @asynccontextmanager
     async def lifespan(_server: FastMCP) -> AsyncIterator[dict[str, Any]]:
-        workspace, python_path = resolve_workspace_launch()
-        startup = adapter.start_workspace(workspace, python_path)
+        try:
+            resolution = resolve_workspace_launch()
+        except WorkspaceConfigError as exc:
+            adapter.close()
+            raise RuntimeError(f"loommux workspace initialization failed: {exc.status}") from exc
+        startup = adapter.start_workspace(resolution.workspace, resolution.workspace_resolution)
         if not startup["ok"]:
+            adapter.close()
             raise RuntimeError(f"loommux failed to start the configured workspace: {startup['message']}")
         try:
             yield {"adapter": adapter}

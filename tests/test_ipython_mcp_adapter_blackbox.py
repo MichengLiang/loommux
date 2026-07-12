@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import stat
-import sys
 import time
 from pathlib import Path
 
@@ -13,12 +11,9 @@ from loommux.adapter import IPythonMCPAdapter
 @pytest.fixture
 def adapter(tmp_path: Path) -> IPythonMCPAdapter:
     workspace = tmp_path / "workspace"
-    python = workspace / ".venv" / "bin" / "python"
-    python.parent.mkdir(parents=True)
-    python.write_text(f'#!/bin/sh\nexec {sys.executable} "$@"\n')
-    python.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+    workspace.mkdir()
     value = IPythonMCPAdapter()
-    assert value.start_workspace(workspace, python)["ok"] is True
+    assert value.start_workspace(workspace, "launch_cwd")["ok"] is True
     yield value
     value.close()
 
@@ -40,11 +35,8 @@ def test_omitted_selection_uses_current_then_recent_and_empty_adapter_is_not_fou
     assert adapter.python_execution_status()["status"] == "execution_not_found"
     try:
         workspace = tmp_path / "workspace"
-        python = workspace / ".venv" / "bin" / "python"
-        python.parent.mkdir(parents=True)
-        python.write_text(f'#!/bin/sh\nexec {sys.executable} "$@"\n')
-        python.chmod(0o700)
-        adapter.start_workspace(workspace, python)
+        workspace.mkdir()
+        adapter.start_workspace(workspace, "launch_cwd")
         completed = adapter.run_python("'last'")
         assert adapter.wait_python()["execution"] == completed["execution"]
         assert adapter.read_python_output()["execution"] == completed["execution"]
@@ -54,10 +46,7 @@ def test_omitted_selection_uses_current_then_recent_and_empty_adapter_is_not_fou
 
 def test_workspace_start_retries_one_transient_kernel_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     workspace = tmp_path / "workspace"
-    python = workspace / ".venv" / "bin" / "python"
-    python.parent.mkdir(parents=True)
-    python.write_text(f'#!/bin/sh\nexec {sys.executable} "$@"\n')
-    python.chmod(0o700)
+    workspace.mkdir()
 
     class ControlledKernel:
         def __init__(self, should_fail: bool) -> None:
@@ -82,7 +71,7 @@ def test_workspace_start_retries_one_transient_kernel_failure(tmp_path: Path, mo
     kernels = [ControlledKernel(True), ControlledKernel(False)]
     monkeypatch.setattr(adapter, "_new_kernel_session", lambda *_args: kernels.pop(0))
     try:
-        started = adapter.start_workspace(workspace, python)
+        started = adapter.start_workspace(workspace, "launch_cwd")
         assert started["ok"] is True
         assert not kernels
     finally:
@@ -210,10 +199,6 @@ def test_adapter_reports_invalid_operations_and_idle_interrupt(adapter: IPythonM
     invalid = IPythonMCPAdapter()
     try:
         missing = tmp_path / "missing"
-        assert invalid.start_workspace(missing, Path(sys.executable))["status"] == "workspace_not_found"
-        not_python = tmp_path / "not-python"
-        not_python.write_text("no")
-        not_python.chmod(0o600)
-        assert invalid.start_workspace(tmp_path, not_python)["status"] == "python_not_executable"
+        assert invalid.start_workspace(missing, "launch_cwd")["status"] == "workspace_not_found"
     finally:
         invalid.close()

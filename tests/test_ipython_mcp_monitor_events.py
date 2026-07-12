@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import stat
-import sys
 import threading
 from pathlib import Path
 from typing import Any
@@ -32,10 +30,7 @@ class RecordingPublisher:
 @pytest.fixture
 def workspace(tmp_path: Path) -> Path:
     value = tmp_path / "workspace"
-    python = value / ".venv" / "bin" / "python"
-    python.parent.mkdir(parents=True)
-    python.write_text(f'#!/bin/sh\nexec {sys.executable} "$@"\n')
-    python.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+    value.mkdir()
     return value
 
 

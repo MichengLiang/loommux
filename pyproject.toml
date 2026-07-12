@@ -65,8 +65,7 @@ include = [
     "/CONTRIBUTING.md",
     "/CODE_OF_CONDUCT.md",
     "/SECURITY.md",
-    "/loommux_workspace.py",
-    "/loommux_workspace.py.example",
+    "/examples",
     "/mcp_ipython_client.py",
 ]
 

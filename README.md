@@ -129,25 +129,18 @@ interpreter that launched `loommux` launches the kernel. This preserves the
 same virtual environment that imported loommux and avoids an ambiguous second
 Python-selection mechanism.
 
-For a custom discovery rule, place `loommux_workspace.py` in the launch
-directory or one of its parents. The nearest file found while walking upward
-is loaded as Python. It may define `resolve_workspace(launch_cwd)` or a
-`WORKSPACE` value. Relative returned paths are interpreted relative to the
-launch directory.
+`LOOMMUX_WORKSPACE_CONFIG` is the only optional workspace configuration
+entrance. Set it to the absolute path of a trusted Python resolver defining
+`resolve_workspace(launch_cwd: Path) -> Path | str`. loommux never searches or
+executes `loommux_workspace.py`, `.codex`, or any other workspace-tree file or
+marker. Resolver failures prevent startup before tools are available.
 
-```python
-from pathlib import Path
-
-
-def resolve_workspace(launch_cwd: Path) -> Path:
-    return launch_cwd.parents[1] / "notebooks"
-```
-
-The repository includes [`loommux_workspace.py.example`](loommux_workspace.py.example).
-Its project-local [`loommux_workspace.py`](loommux_workspace.py) chooses the
-nearest ancestor that contains `.codex`, otherwise retaining the launch
-directory. See [workspace configuration](docs/workspace-configuration.md) for
-the complete contract.
+The [generic](examples/workspace-resolvers/generic.py) and
+[Codex](examples/workspace-resolvers/codex.py) resolver examples are inert
+until explicitly selected through that environment variable. See [workspace
+configuration](docs/workspace-configuration.md) and the canonical [Coding
+Agent Control Plane Design](docs/coding-agent-control-plane-design.md#5-host-workspace-resolver)
+for the complete contract.
 
 ## Execution Model
 
@@ -374,8 +367,8 @@ The runtime is deliberately divided into narrow responsibilities:
 - `monitoring.py` publishes observation events without participating in
   execution authority.
 
-The current public contract is documented in
-[IPython MCP Execution Control Plane Design](docs/ipython-mcp-execution-control-plane-design.md).
+The current public contract is documented in [Coding Agent Control Plane
+Design](docs/coding-agent-control-plane-design.md).
 Focused references cover the [freeform timeout directive](docs/ipython-mcp-freeform-run-python-design.md),
 the [complete-output directive](docs/ipython-mcp-full-output-directive-design.md),
 and [workspace configuration](docs/workspace-configuration.md). Some files in

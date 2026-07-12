@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import stat
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -13,14 +12,13 @@ from loommux.mcp_ipython_content_server import create_mcp as create_content_mcp
 from loommux.mcp_ipython_server import create_mcp as create_standard_mcp
 from loommux.mcp_result_policy import make_tool_result
 
+WORKSPACE_CONFIG_ENV = "LOOMMUX_WORKSPACE_CONFIG"
+
 
 @pytest.fixture
 def workspace(tmp_path: Path) -> Path:
     value = tmp_path / "workspace"
-    python = value / ".venv" / "bin" / "python"
-    python.parent.mkdir(parents=True)
-    python.write_text(f'#!/bin/sh\nexec {sys.executable} "$@"\n')
-    python.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+    value.mkdir()
     return value
 
 
@@ -45,6 +43,95 @@ async def test_entrypoints_have_identical_eight_tool_schemas_and_descriptions(wo
     schema = dual_tools["read_python_output"].inputSchema["properties"]
     assert set(schema) == {"execution", "stream", "line_range", "show_line_numbers", "max_chars"}
     assert schema["execution"]["anyOf"][0]["type"] == "integer"
+
+
+async def test_default_workspace_ignores_legacy_files_and_exposes_launch_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = tmp_path / "project"
+    launch_cwd = project / "nested" / "launch"
+    marker = tmp_path / "legacy-executed"
+    launch_cwd.mkdir(parents=True)
+    (project / "loommux_workspace.py").write_text(f"from pathlib import Path\nPath({str(marker)!r}).touch()\n", encoding="utf-8")
+    (launch_cwd / "loommux_workspace.py").write_text(f"from pathlib import Path\nPath({str(marker)!r}).touch()\n", encoding="utf-8")
+    monkeypatch.chdir(launch_cwd)
+    monkeypatch.delenv(WORKSPACE_CONFIG_ENV, raising=False)
+
+    async with Client(create_standard_mcp()) as client:
+        status = await client.call_tool("python_status", {})
+        cwd = await client.call_tool("run_python", {"freeform": "import os\nprint(os.getcwd())"})
+
+    assert status.data["workspace"] == str(launch_cwd)
+    assert status.data["workspace_resolution"] == "launch_cwd"
+    assert cwd.content[0].text == f"In [1]:\n{launch_cwd}\n"
+    assert not marker.exists()
+
+
+async def test_explicit_resolver_controls_server_workspace_and_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    launch_cwd = tmp_path / "launch"
+    workspace = tmp_path / "workspace"
+    resolver = tmp_path / "resolver.py"
+    launch_cwd.mkdir()
+    workspace.mkdir()
+    resolver.write_text("def resolve_workspace(launch_cwd):\n    return launch_cwd.parent / 'workspace'\n", encoding="utf-8")
+    monkeypatch.chdir(launch_cwd)
+    monkeypatch.setenv(WORKSPACE_CONFIG_ENV, str(resolver))
+
+    async with Client(create_standard_mcp()) as client:
+        status = await client.call_tool("python_status", {})
+        cwd = await client.call_tool("run_python", {"freeform": "import os\nprint(os.getcwd())"})
+
+    assert status.data["workspace"] == str(workspace)
+    assert status.data["workspace_resolution"] == "explicit_config"
+    assert cwd.content[0].text == f"In [1]:\n{workspace}\n"
+
+
+@pytest.mark.parametrize("factory", [create_standard_mcp, create_content_mcp])
+async def test_configured_resolution_errors_prevent_each_entrypoint_from_starting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, factory: Any) -> None:
+    launch_cwd = tmp_path / "launch"
+    launch_cwd.mkdir()
+    resolver_directory = tmp_path / "resolver-directory"
+    resolver_directory.mkdir()
+    (launch_cwd / "workspace-file").write_text("not a directory", encoding="utf-8")
+    cases = [
+        ("relative.py", "workspace_config_not_absolute"),
+        (str(tmp_path / "missing.py"), "workspace_config_not_found"),
+        (str(resolver_directory), "workspace_config_not_file"),
+    ]
+    for filename, source, status in [
+        ("load-error.py", "raise RuntimeError('private resolver source')\n", "workspace_config_load_failed"),
+        ("missing-resolver.py", "PRIVATE_RESOLVER_CONTENT = 'private resolver source'\n", "workspace_config_load_failed"),
+        ("invalid-return.py", "def resolve_workspace(launch_cwd):\n    return 3\n", "workspace_config_invalid_return"),
+        ("missing-workspace.py", "def resolve_workspace(launch_cwd):\n    return 'missing'\n", "workspace_not_found"),
+        ("file-workspace.py", "def resolve_workspace(launch_cwd):\n    return 'workspace-file'\n", "workspace_not_directory"),
+    ]:
+        resolver = tmp_path / filename
+        resolver.write_text(source, encoding="utf-8")
+        cases.append((str(resolver), status))
+    monkeypatch.chdir(launch_cwd)
+
+    for configured_path, expected_status in cases:
+        monkeypatch.setenv(WORKSPACE_CONFIG_ENV, configured_path)
+        with pytest.raises(RuntimeError, match=expected_status) as error:
+            async with Client(factory()):
+                pytest.fail("MCP tools must not become usable after resolver failure")
+        assert "private resolver source" not in str(error.value)
+
+
+async def test_both_entrypoints_use_the_server_interpreter_and_preserve_workspace_resolution(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(workspace)
+    expected_python = str(Path(sys.executable).absolute())
+    async with Client(create_standard_mcp()) as dual, Client(create_content_mcp()) as content:
+        dual_status = await dual.call_tool("python_status", {})
+        content_status = await content.call_tool("python_status", {})
+        dual_python = await dual.call_tool("run_python", {"freeform": "import sys\nprint(sys.executable)"})
+        content_python = await content.call_tool("run_python", {"freeform": "import sys\nprint(sys.executable)"})
+        reset = await dual.call_tool("reset_python", {})
+
+    assert dual_status.data["python"] == expected_python
+    assert dual_status.data["workspace_resolution"] == "launch_cwd"
+    assert "workspace_resolution: launch_cwd" in content_status.content[0].text
+    assert expected_python in dual_python.content[0].text
+    assert expected_python in content_python.content[0].text
+    assert reset.data["workspace_resolution"] == "launch_cwd"
 
 
 async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:

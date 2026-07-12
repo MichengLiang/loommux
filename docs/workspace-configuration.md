@@ -1,39 +1,21 @@
 # Workspace configuration
 
-`loommux` does not expose a runtime workspace-switching tool. The MCP client
-launches the server process, and that process cwd is the default workspace.
-The persistent IPython kernel starts before MCP tools are accepted and runs in
-that directory. Its default Python interpreter is the one that launched the
-server.
+The canonical contract is [Coding Agent Control Plane Design, Section 5](coding-agent-control-plane-design.md#5-host-workspace-resolver).
+`loommux` does not expose runtime workspace switching. By default, the MCP
+host's launch cwd is the kernel workspace.
 
-This keeps workspace selection at the process boundary where the MCP client
-already controls it. For stdio clients, set the server command's `cwd` to the
-directory that should be used as the workspace.
+To authorize a dynamic rule, set `LOOMMUX_WORKSPACE_CONFIG` to the absolute
+path of a trusted Python file defining `resolve_workspace(launch_cwd: Path) ->
+Path | str`. Relative returns are resolved from the launch cwd. Invalid
+configuration prevents server startup before tools are exposed; it never falls
+back to the launch cwd.
 
-## Optional Python configuration
+`loommux` never searches for or executes `loommux_workspace.py`, `.codex`, or
+any other workspace-tree marker. The bundled [generic](../examples/workspace-resolvers/generic.py)
+and [Codex](../examples/workspace-resolvers/codex.py) resolvers are examples
+only and have effect solely when their absolute path is explicitly configured.
+The Codex example returns the parent of the nearest `.codex` directory, or the
+launch cwd when there is no marker.
 
-This project ships [loommux_workspace.py](../loommux_workspace.py). When the
-server starts from this project or one of its descendants, it walks upward from
-the server cwd and uses the nearest directory containing `.codex` as the
-workspace root. This is the normal configuration for a Codex-launched MCP
-server, because Codex creates that hidden directory at its workspace root.
-
-For a different project-discovery rule, copy
-[`loommux_workspace.py.example`](../loommux_workspace.py.example) to
-`loommux_workspace.py` in the server cwd or any parent directory and replace
-the project file's rule. The first such file found while walking upward is
-loaded as Python. It may define:
-
-```python
-from pathlib import Path
-
-
-def resolve_workspace(launch_cwd: Path) -> Path:
-    # Any Python discovery rule is valid: parent, child, marker search, etc.
-    return launch_cwd.parents[1] / "notebooks"
-```
-
-`WORKSPACE = "..."` can replace `resolve_workspace`. The Python interpreter is
-not configurable here: loommux always starts the kernel with the interpreter
-that launched the MCP server. This preserves the environment that successfully
-imported loommux and avoids an additional, ambiguous Python-path contract.
+The kernel always uses the Python interpreter that started `loommux`; workspace
+configuration cannot select another interpreter.
