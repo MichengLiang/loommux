@@ -92,15 +92,18 @@ class ExecutionLogs:
         self.combined.append(text)
 
     def append_result(self, text: str, execution: int) -> None:
+        if not text:
+            return
         value = text if text.endswith("\n") else f"{text}\n"
         self.result.append(value)
         self.combined.append(_prefix_first_line(value, f"Out[{execution}]: "))
 
-    def append_traceback(self, lines: list[str]) -> None:
+    def append_traceback(self, lines: list[str]) -> str:
         value = "\n".join(lines)
         value = value if not value or value.endswith("\n") else f"{value}\n"
         self.traceback.append(value)
         self.combined.append(value)
+        return value
 
 
 def _resolve_line_range(line_range: str | None, total_lines: int) -> ResolvedLineRange | dict[str, object]:

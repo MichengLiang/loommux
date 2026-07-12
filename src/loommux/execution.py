@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import re
 import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from loommux.output_log import ExecutionLogs
+from loommux.terminal_text import TerminalTextNormalizer
 
 ExecutionStatus = Literal["running", "completed", "error", "interrupted", "killed"]
-ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 @dataclass
@@ -33,31 +32,50 @@ class Execution:
     interrupt_requested: bool = False
     done: threading.Event = field(default_factory=threading.Event, repr=False)
     logs: ExecutionLogs = field(default_factory=ExecutionLogs, init=False)
+    _stdout_normalizer: TerminalTextNormalizer = field(default_factory=TerminalTextNormalizer, init=False, repr=False)
+    _stderr_normalizer: TerminalTextNormalizer = field(default_factory=TerminalTextNormalizer, init=False, repr=False)
+    _result_normalizer: TerminalTextNormalizer = field(default_factory=TerminalTextNormalizer, init=False, repr=False)
+    _traceback_normalizer: TerminalTextNormalizer = field(default_factory=TerminalTextNormalizer, init=False, repr=False)
 
-    def append_stdout(self, text: str) -> None:
-        self.stdout += text
-        self.logs.append_stdout(text)
+    def append_stdout(self, text: str) -> str:
+        normalized = self._stdout_normalizer.normalize(text)
+        self.stdout += normalized
+        self.logs.append_stdout(normalized)
         self.updated_at = time.time()
+        return normalized
 
-    def append_stderr(self, text: str) -> None:
-        self.stderr += text
-        self.logs.append_stderr(text)
+    def append_stderr(self, text: str) -> str:
+        normalized = self._stderr_normalizer.normalize(text)
+        self.stderr += normalized
+        self.logs.append_stderr(normalized)
         self.updated_at = time.time()
+        return normalized
 
-    def append_result_text(self, text: str) -> None:
-        if self.result_text:
+    def append_result_text(self, text: str) -> str:
+        normalized = self._result_normalizer.normalize(text)
+        if normalized and self.result_text:
             self.result_text += "\n"
-        self.result_text += text
-        self.logs.append_result(text, self.execution)
+        if normalized:
+            self.result_text += normalized
+        self.logs.append_result(normalized, self.execution)
         self.updated_at = time.time()
+        return normalized
 
-    def record_error(self, error: dict[str, Any]) -> None:
-        self.error = error
-        traceback = error.get("traceback")
+    def record_error(self, error: dict[str, Any]) -> str:
+        normalized_error = dict(error)
+        for key in ("ename", "evalue"):
+            if key in normalized_error:
+                normalized_error[key] = self._traceback_normalizer.normalize(str(normalized_error[key]))
+        traceback = normalized_error.get("traceback")
+        output = ""
         if isinstance(traceback, list):
-            self.logs.append_traceback([_strip_ansi(str(line)) for line in traceback])
+            normalized_traceback = [self._traceback_normalizer.normalize(str(line)) for line in traceback]
+            normalized_error["traceback"] = normalized_traceback
+            output = self.logs.append_traceback(normalized_traceback)
+        self.error = normalized_error
         self.status = "error"
         self.updated_at = time.time()
+        return output
 
     def finish(self) -> None:
         if self.status == "running":
@@ -130,7 +148,3 @@ class Execution:
         if output_line_limit is not None and output_total_lines > output_line_limit:
             return "line_limit_exceeded"
         return None
-
-
-def _strip_ansi(text: str) -> str:
-    return ANSI_ESCAPE_RE.sub("", text)

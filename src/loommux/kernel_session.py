@@ -158,27 +158,24 @@ class KernelSession:
             elif msg_type == "stream":
                 text = str(content.get("text", ""))
                 if content.get("name") == "stdout":
-                    execution.append_stdout(text)
-                    self._on_output(execution, "stdout", text)
+                    self._on_output(execution, "stdout", execution.append_stdout(text))
                 elif content.get("name") == "stderr":
-                    execution.append_stderr(text)
-                    self._on_output(execution, "stderr", text)
+                    self._on_output(execution, "stderr", execution.append_stderr(text))
             elif msg_type in {"execute_result", "display_data"}:
                 data = content.get("data", {})
                 if isinstance(data, dict) and "text/plain" in data:
                     text = str(data["text/plain"])
-                    execution.append_result_text(text)
-                    self._on_output(execution, "result", text)
+                    self._on_output(execution, "result", execution.append_result_text(text))
             elif msg_type == "error":
                 traceback = content.get("traceback", [])
-                execution.record_error(
+                output = execution.record_error(
                     {
                         "ename": content.get("ename"),
                         "evalue": content.get("evalue"),
                         "traceback": traceback if isinstance(traceback, list) else [str(traceback)],
                     }
                 )
-                self._on_output(execution, "traceback", execution.logs.traceback.text)
+                self._on_output(execution, "traceback", output)
             elif msg_type == "status" and content.get("execution_state") == "idle":
                 execution.finish()
                 self.current_execution = None

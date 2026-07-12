@@ -55,3 +55,21 @@ def test_execution_tracks_error_interrupt_and_omitted_snapshots() -> None:
     assert record.logs.traceback.text == "trace\n"
     assert record.snapshot(1)["output_omitted_reason"] == "line_limit_exceeded"
     assert record.status_snapshot()["error"] == {"ename": "KeyboardInterrupt", "evalue": ""}
+
+
+def test_execution_normalizes_every_stream_projection_before_logging() -> None:
+    record = Execution(execution=4, code="x", kernel_pid=12)
+
+    first_stdout = record.append_stdout("stdout \x1b[3")
+    second_stdout = record.append_stdout("1mvisible\x1b[0m\n")
+    stderr = record.append_stderr("\x1b]0;title\x07stderr\n")
+    result = record.append_result_text("\x1b[35mresult\x1b[0m")
+    traceback = record.record_error({"ename": "RuntimeError", "evalue": "\x1b[31mbad\x1b[0m", "traceback": ["\x1b[31mtrace", "back\x1b[0m"]})
+
+    assert first_stdout == "stdout "
+    assert second_stdout == "visible\n"
+    assert stderr == "stderr\n"
+    assert result == "result"
+    assert traceback == "trace\nback\n"
+    assert "\x1b" not in record.logs.combined.text
+    assert record.error == {"ename": "RuntimeError", "evalue": "bad", "traceback": ["trace", "back"]}
