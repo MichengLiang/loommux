@@ -51,6 +51,7 @@ async def test_execution_monitor_events_use_integer_coordinate(workspace: Path, 
     assert "execution_id" not in submitted
     assert "execution_id" not in finished
     assert "output_log" not in finished
+    assert all("runtime_root" not in event for event in publisher.events)
     assert publisher.closed is True
 
 

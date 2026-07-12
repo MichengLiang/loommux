@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import contextlib
 import os
+import shutil
 import signal
 import subprocess
-import tempfile
 import threading
 import time
 from collections.abc import Callable
@@ -14,6 +14,7 @@ from typing import Any
 from jupyter_client.blocking.client import BlockingKernelClient
 from jupyter_client.connect import write_connection_file
 
+from loommux.coding_agent_kernel import KernelLaunch
 from loommux.execution import Execution
 
 
@@ -24,6 +25,7 @@ class KernelSession:
         self._on_idle = on_idle
         self._on_output: Callable[[Execution, str, str], None] = _ignore_output
         self._on_finished: Callable[[Execution], None] = _ignore_finished
+        self.launch: KernelLaunch | None = None
         self.connection_file: str | None = None
         self.process: subprocess.Popen[str] | None = None
         self.client: BlockingKernelClient | None = None
@@ -42,24 +44,24 @@ class KernelSession:
         return self.process.pid if self.process is not None else None
 
     def start(self, timeout_seconds: float = 10.0) -> None:
-        connection_handle = tempfile.NamedTemporaryFile(prefix="loommux-kernel-", suffix=".json", delete=False)
-        connection_handle.close()
-        self.connection_file, _ = write_connection_file(fname=connection_handle.name)
-        command = [str(self.python_path), "-m", "ipykernel_launcher", "-f", self.connection_file]
-        self.process = subprocess.Popen(
-            command,
-            cwd=str(self.workspace),
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            start_new_session=True,
-        )
-        client = BlockingKernelClient(connection_file=self.connection_file)
-        self.client = client
-        client.load_connection_file()
-        client.start_channels()
+        launch = KernelLaunch.create(self.python_path, self.workspace)
+        self.launch = launch
         try:
+            self.connection_file, _ = write_connection_file(fname=str(launch.connection_file))
+            self.process = subprocess.Popen(
+                launch.command,
+                cwd=str(self.workspace),
+                env=launch.environment,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                start_new_session=True,
+            )
+            client = BlockingKernelClient(connection_file=self.connection_file)
+            self.client = client
+            client.load_connection_file()
+            client.start_channels()
             client.wait_for_ready(timeout=timeout_seconds)
         except Exception:
             self.shutdown(mark_execution_killed=False)
@@ -91,6 +93,7 @@ class KernelSession:
             client = self.client
             process = self.process
             connection_file = self.connection_file
+            launch = self.launch
 
         if process is not None and process.poll() is None:
             self._terminate_process_group(process)
@@ -107,10 +110,14 @@ class KernelSession:
 
         if connection_file is not None:
             Path(connection_file).unlink(missing_ok=True)
+        if launch is not None:
+            # The session, rather than KernelLaunch, owns removal of its root.
+            shutil.rmtree(launch.runtime_root, ignore_errors=True)
 
         self.client = None
         self.process = None
         self.connection_file = None
+        self.launch = None
 
     def is_alive(self) -> bool:
         return self.process is not None and self.process.poll() is None

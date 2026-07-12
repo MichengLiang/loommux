@@ -53,13 +53,14 @@ def test_workspace_start_retries_one_transient_kernel_failure(tmp_path: Path, mo
             self.should_fail = should_fail
             self.pid = 123
             self.latest_execution_count = 0
+            self.shutdown_calls = 0
 
         def start(self) -> None:
             if self.should_fail:
                 raise RuntimeError("transient startup failure")
 
-        def shutdown(self) -> None:
-            pass
+        def shutdown(self, *, mark_execution_killed: bool = True) -> None:
+            self.shutdown_calls += 1
 
         def is_alive(self) -> bool:
             return True
@@ -68,12 +69,15 @@ def test_workspace_start_retries_one_transient_kernel_failure(tmp_path: Path, mo
             pass
 
     adapter = IPythonMCPAdapter()
-    kernels = [ControlledKernel(True), ControlledKernel(False)]
+    failed_kernel = ControlledKernel(True)
+    started_kernel = ControlledKernel(False)
+    kernels = [failed_kernel, started_kernel]
     monkeypatch.setattr(adapter, "_new_kernel_session", lambda *_args: kernels.pop(0))
     try:
         started = adapter.start_workspace(workspace, "launch_cwd")
         assert started["ok"] is True
         assert not kernels
+        assert failed_kernel.shutdown_calls == 1
     finally:
         adapter.close()
 

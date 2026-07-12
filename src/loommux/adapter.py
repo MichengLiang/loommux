@@ -73,6 +73,8 @@ class IPythonMCPAdapter:
                 candidate.start()
             except Exception as exc:
                 start_error = exc
+                # A retry must never retain the failed session's private root.
+                candidate.shutdown(mark_execution_killed=False)
             else:
                 kernel = candidate
                 break
@@ -213,6 +215,7 @@ class IPythonMCPAdapter:
         try:
             kernel.start()
         except Exception as exc:
+            kernel.shutdown(mark_execution_killed=False)
             return self._workspace_error("kernel_start_failed", f"kernel failed to restart: {exc}", workspace, python_path)
         with self._lock:
             self.kernel = kernel
