@@ -71,9 +71,7 @@ def create_mcp(policy: ResultChannelPolicy, monitor_publisher: MonitorPublisher 
             # loommux: full_output
 
         该标记只作用于本次 execution，且保留在原始 cell 中作为 Python
-        注释执行。它不改变仍在运行时的响应：此时仍返回 running 与
-        ``execution``，后续 ``wait_python`` 在终态时继续完整交付。没有
-        该标记时，默认 300 行规则以及读取、搜索工具的使用方式不变。
+        注释执行。在明确需要完整阅读某些信息，例如阅读某些文件，资料……使用本标记以避免无意义的反复阅读开销。
 
         执行编号与后续操作
         --------------------
