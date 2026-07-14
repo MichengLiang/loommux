@@ -9,7 +9,7 @@ import urllib.request
 import uuid
 from collections import deque
 from collections.abc import Callable, Mapping
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeAlias
 
 from loommux.presentation import format_tool_result_text
 
@@ -22,8 +22,8 @@ DEFAULT_RETRY_DELAY_SECONDS = 0.25
 MonitorEvent = dict[str, Any]
 MonitorSender = Callable[[str, Mapping[str, Any], float], None]
 MonitoredToolOperation = Callable[[str], dict[str, Any]]
-type MonitorScalar = str | int | float | bool | None
-type SanitizedValue = MonitorScalar | list[SanitizedValue] | dict[str, SanitizedValue]
+MonitorScalar: TypeAlias = str | int | float | bool | None
+SanitizedValue: TypeAlias = MonitorScalar | list["SanitizedValue"] | dict[str, "SanitizedValue"]
 
 
 class MonitorPublisher(Protocol):

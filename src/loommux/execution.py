@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, TypeAlias
 
 from loommux.output_log import ExecutionLogs
 from loommux.terminal_text import TerminalTextNormalizer
@@ -35,7 +35,7 @@ class PresentationFailure:
     message: str
 
 
-type PresentationElement = PresentationText | PresentationImage | PresentationFailure
+PresentationElement: TypeAlias = PresentationText | PresentationImage | PresentationFailure
 IMAGE_MIME_PREFERENCE = ("image/png", "image/jpeg", "image/webp", "image/gif")
 
 

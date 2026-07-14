@@ -154,7 +154,12 @@ def _assert_kernel_policy(adapter: IPythonMCPAdapter, launch: KernelLaunch) -> N
     )
 
     assert response["status"] == "completed"
-    assert response["stdout"].splitlines() == [str(launch.ipython_dir), str(launch.jupyter_config_dir), "False", "0", "nocolor", "preserved"]
+    lines = response["stdout"].splitlines()
+    assert lines[:4] == [str(launch.ipython_dir), str(launch.jupyter_config_dir), "False", "0"]
+    # IPython 8 reports the same no-colour policy as ``NoColor`` while newer
+    # versions preserve the kernel trait spelling ``nocolor``.
+    assert lines[4].lower() == "nocolor"
+    assert lines[5] == "preserved"
 
 
 def _assert_hostile_user_state_is_untouched(profile_marker: Path, jupyter_marker: Path, python_startup_marker: Path, history_database: Path, original_mtime_ns: int) -> None:

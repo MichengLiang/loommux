@@ -42,7 +42,7 @@ belong to the lifetime of the server process.
 
 ## Requirements And Installation
 
-loommux requires Python 3.13 or newer. The installed package brings the
+loommux requires Python 3.10 or newer. The installed package brings the
 runtime dependencies needed to launch an IPython kernel.
 
 ```bash
