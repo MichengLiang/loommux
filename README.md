@@ -49,12 +49,19 @@ runtime dependencies needed to launch an IPython kernel.
 python -m pip install loommux
 ```
 
-The package installs two console commands:
+The package installs two console commands. Their defaults remain convenient,
+but `--transport` and `--result-mode` can be selected independently on either
+command:
 
 ```text
-loommux          Standard MCP server over stdio
-loommux-content  Content-only MCP server over streamable HTTP
+loommux          structured results over stdio
+loommux-content  content-only results over Streamable HTTP
 ```
+
+`--transport stdio` uses an MCP host's child process. `--transport
+streamable-http` starts a service with configurable `--host`, `--port`, and
+`--path`. `--result-mode structured` returns both `content` and
+`structuredContent`; `--result-mode content` returns only `content`.
 
 For development, use [uv](https://docs.astral.sh/uv/):
 
@@ -66,10 +73,9 @@ uv sync --group dev
 
 ## Standard MCP Server
 
-`loommux` is the standard entrypoint. It uses MCP stdio transport and returns
-both model-oriented text content and a structured public status object. This
-is the appropriate entrypoint for an MCP host that supports normal
-`structuredContent` handling.
+`loommux` defaults to MCP stdio transport and returns both model-oriented text
+content and a structured public status object. This is the appropriate default
+for an MCP host that supports normal `structuredContent` handling.
 
 The server process's working directory is the default kernel workspace. A
 generic MCP configuration therefore assigns the desired project directory as
@@ -95,32 +101,47 @@ On startup, loommux resolves its workspace, builds a kernel launch from the
 server interpreter, and starts the kernel before accepting MCP tools. Server
 startup fails rather than exposing a partially configured execution service.
 
-## Content-Only HTTP Server
+## Configurable HTTP And Content-Only Modes
 
 `loommux-content` exposes the same tools, input schemas, execution behavior,
 and model-readable text as the standard server. Its results deliberately omit
 `structuredContent`. Use it for a client that cannot consume structured MCP
-results correctly or must only receive text content.
+results correctly or must only receive text content. The result policy and
+transport are independent, so either installed command accepts both options.
 
-Start it from the workspace you want the kernel to use:
+Start a loopback-only structured HTTP service from the workspace you want the
+kernel to use:
 
 ```bash
 cd /absolute/path/to/your/workspace
-loommux-content
+loommux --transport streamable-http --result-mode structured --host 127.0.0.1 --port 8801 --path /mcp
 ```
+
+Its MCP endpoint is `http://127.0.0.1:8801/mcp`. A content-only HTTP service
+can use a different port without changing its transport:
+
+```bash
+loommux --transport streamable-http --result-mode content --host 127.0.0.1 --port 8802 --path /mcp
+```
+
+MCP Studio, Inspector, and other Streamable HTTP clients use the same endpoint
+URL. There is no separate Studio protocol. The complete matrix, subprocess
+configuration examples, and security guidance are in
+[MCP Connection Guide](docs/mcp-connections.md).
 
 For this manually started host entrypoint, an unset
 `LOOMMUX_WORKSPACE_CONFIG` selects the bundled Codex resolver, which uses the
 parent of the nearest `.codex` directory as the workspace. An explicitly set
 `LOOMMUX_WORKSPACE_CONFIG` always wins. This convenience is specific to the
-`loommux-content` command; direct `create_mcp()` use and the standard entrypoint
-retain the launch-cwd default described below.
+`loommux-content` command, even when its transport or result mode is overridden;
+direct `create_mcp()` use and the standard entrypoint retain the launch-cwd
+default described below.
 
-It runs FastMCP's streamable-HTTP transport on port `8801` and binds to
-`0.0.0.0`; clients normally connect to FastMCP's streamable MCP endpoint on
-that service. This is a deployment boundary, not a different execution model:
-the `execution` sequence, tools, output streams, and presentation rules are
-the same as the stdio server.
+For compatibility, `loommux-content` with no arguments still binds
+`0.0.0.0:8801` and serves `/mcp`. Override this with `--host`, `--port`, and
+`--path` whenever the service is started deliberately. HTTP is a deployment
+boundary, not a different execution model: the `execution` sequence, tools,
+output streams, and presentation rules are the same as the stdio server.
 
 Because this entrypoint executes arbitrary Python and listens on all
 interfaces, do not expose it directly to untrusted networks. Put it behind

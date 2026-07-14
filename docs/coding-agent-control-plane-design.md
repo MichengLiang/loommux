@@ -91,6 +91,23 @@ coding agent control plane 必须满足下列状态。
 数据库、动态 workspace 切换或宿主插件框架。图像展示的 MCP 交付由
 `ipython-mcp-multimodal-output-design.md` 定义。它们不是八工具闭环成立的条件。
 
+### 3.3 Transport 与结果通道选择
+
+启动 entrypoint 接受两个相互独立的 host 选择。`--transport stdio` 使用 host
+启动的子进程标准输入输出；`--transport streamable-http` 在指定 host、port 与 path
+上提供远程 MCP endpoint。transport 只改变 MCP message 的承载方式，不改变一个
+server process 只拥有一个 kernel 的边界，也不改变八工具、workspace、execution、
+日志或图像投影。
+
+`--result-mode structured` 返回 `content` 与 `structuredContent`；
+`--result-mode content` 只返回 `content`。该选择只改变调用方可观察的结果通道，
+不改变同一 execution 的模型可读文本或图像 content。server 不自动推断客户端能力；
+host 必须显式选择适合其客户端的模式。
+
+`loommux` 的无参数默认值是 structured stdio。`loommux-content` 的无参数默认值
+是 content-only Streamable HTTP，并保留该 explicit host composition 的 Codex
+workspace resolver。两个 executable 都可以显式覆盖 transport 与结果通道。
+
 ## 4. 控制面结构
 
 控制面由三个输入层和一个输出层组成。
