@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from fastmcp import FastMCP
 
 from loommux.mcp_server_factory import create_mcp as create_server
 from loommux.monitoring import MonitorPublisher
+from loommux.server_entrypoints import run_entrypoint
 
 
 def create_mcp(monitor_publisher: MonitorPublisher | None = None) -> FastMCP:
@@ -13,8 +16,8 @@ def create_mcp(monitor_publisher: MonitorPublisher | None = None) -> FastMCP:
 mcp = create_mcp()
 
 
-def main() -> None:
-    mcp.run()
+def main(argv: Sequence[str] | None = None) -> None:
+    run_entrypoint(lambda policy: create_server(policy), "dual_channel", "stdio", argv=argv)
 
 
 if __name__ == "__main__":

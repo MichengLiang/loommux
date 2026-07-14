@@ -96,14 +96,21 @@ def test_manual_content_entrypoint_preserves_a_host_supplied_resolver(tmp_path: 
     assert environment[WORKSPACE_CONFIG_ENV] == str(resolver)
 
 
-def test_manual_content_main_configures_workspace_before_starting_fastmcp(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[str] = []
-    monkeypatch.setattr(content_server, "configure_manual_content_workspace", lambda: calls.append("configure"))
-    monkeypatch.setattr(content_server.mcp, "run", lambda **_kwargs: calls.append("run"))
+def test_manual_content_main_uses_content_http_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
 
-    content_server.main()
+    def run_entrypoint(*args: object, **kwargs: object) -> None:
+        captured["args"] = args
+        captured.update(kwargs)
 
-    assert calls == ["configure", "run"]
+    monkeypatch.setattr(content_server, "run_entrypoint", run_entrypoint)
+
+    content_server.main([])
+
+    assert captured["args"][1:3] == ("content_only", "streamable-http")
+    assert captured["default_host"] == "0.0.0.0"
+    assert captured["configure_workspace"] is content_server.configure_manual_content_workspace
+    assert captured["argv"] == []
 
 
 async def test_explicit_resolver_controls_server_workspace_and_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
