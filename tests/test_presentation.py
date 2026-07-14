@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from mcp.types import ImageContent, TextContent
+
+from loommux.execution import PresentationImage, PresentationText
+from loommux.mcp_result_policy import ImageDeliveryLimits, make_tool_result
 from loommux.presentation import format_tool_result_text
 
 
@@ -77,3 +81,114 @@ def test_presentation_handles_remaining_lifecycle_and_status_cases() -> None:
     assert format_tool_result_text("interrupt_python", {"ok": True, "status": "idle"}) == "Python kernel is idle."
     assert format_tool_result_text("reset_python", {"ok": True, "status": "restarted"}).startswith("Python kernel restarted")
     assert format_tool_result_text("python_execution_status", {"ok": False, "execution": 8, "status": "error", "error": {"ename": "NameError"}}).startswith("execution 8: error\nPython execution 8 failed with NameError")
+
+
+def test_rich_execution_content_preserves_text_image_text_order_and_detail() -> None:
+    result = make_tool_result(
+        "run_python",
+        {
+            "ok": True,
+            "execution": 12,
+            "status": "completed",
+            "_presentation": (
+                PresentationText("before image\n"),
+                PresentationImage("eA==", "image/png", "low", 1),
+                PresentationText("after image\n"),
+                PresentationImage("eQ==", "image/jpeg", None, 2),
+            ),
+        },
+        "dual_channel",
+    )
+
+    assert [block.type for block in result.content] == ["text", "image", "text", "image"]
+    assert isinstance(result.content[1], ImageContent)
+    assert result.content[1].meta == {"detail": "low", "execution": 12, "display_ordinal": 1}
+    assert isinstance(result.content[3], ImageContent)
+    assert result.content[3].meta == {"detail": "high", "execution": 12, "display_ordinal": 2}
+    assert result.structured_content is not None
+    assert "_presentation" not in result.structured_content
+
+
+def test_rich_execution_content_keeps_neighbors_when_an_image_is_rejected() -> None:
+    result = make_tool_result(
+        "wait_python",
+        {
+            "ok": True,
+            "execution": 3,
+            "status": "completed",
+            "_presentation": (
+                PresentationText("before\n"),
+                PresentationImage("not-base64", "image/png", "original", 2),
+                PresentationText("after\n"),
+                PresentationImage("eA==", "image/png", "wrong", 3),
+            ),
+        },
+        "content_only",
+    )
+
+    assert [block.type for block in result.content] == ["text", "text", "text", "text"]
+    assert [block.text for block in result.content if isinstance(block, TextContent)] == [
+        "before\n",
+        "Image delivery failed for execution 3 display 2: invalid Base64 image data.",
+        "after\n",
+        "Image delivery failed for execution 3 display 3: detail must be low, high, or original; received 'wrong'.",
+    ]
+
+
+def test_rich_execution_content_enforces_image_delivery_limits() -> None:
+    result = make_tool_result(
+        "run_python",
+        {
+            "ok": True,
+            "execution": 4,
+            "status": "completed",
+            "_presentation": (PresentationImage("eA==", "image/png", None, 1),),
+        },
+        "content_only",
+        ImageDeliveryLimits(max_image_bytes=0, max_images=1, max_total_image_bytes=1),
+    )
+
+    assert len(result.content) == 1
+    assert isinstance(result.content[0], TextContent)
+    assert "0-byte limit" in result.content[0].text
+
+
+def test_rich_execution_keeps_images_but_omits_line_limited_text() -> None:
+    result = make_tool_result(
+        "run_python",
+        {
+            "ok": True,
+            "execution": 5,
+            "status": "completed",
+            "output_omitted_reason": "line_limit_exceeded",
+            "output_line_limit": 300,
+            "_presentation": (
+                PresentationText("\n".join(f"line-{number}" for number in range(301))),
+                PresentationImage("eA==", "image/png", None, 1),
+                PresentationText("after image"),
+            ),
+        },
+        "content_only",
+    )
+
+    assert [block.type for block in result.content] == ["text", "image"]
+    assert isinstance(result.content[0], TextContent)
+    assert "exceeds 300 lines" in result.content[0].text
+    assert "line-0" not in result.content[0].text
+
+
+def test_rich_execution_rejects_malformed_gif_data() -> None:
+    result = make_tool_result(
+        "run_python",
+        {
+            "ok": True,
+            "execution": 6,
+            "status": "completed",
+            "_presentation": (PresentationImage("eA==", "image/gif", None, 1),),
+        },
+        "content_only",
+    )
+
+    assert len(result.content) == 1
+    assert isinstance(result.content[0], TextContent)
+    assert "invalid GIF data" in result.content[0].text

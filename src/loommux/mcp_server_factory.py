@@ -50,12 +50,12 @@ def create_mcp(policy: ResultChannelPolicy, monitor_publisher: MonitorPublisher 
     def run_python(freeform: str) -> ToolResult:
         """向持久 IPython kernel 提交一个原始 Python cell。
 
+        请你使用 IPython 的思想来优雅使用本系列工具。
+
         输入
         ----
 
-        ``freeform`` 是完整的 Python cell 源码。文本会原样提交给当前
-        kernel；变量、导入和其他 namespace 状态会与同一服务器会话中的
-        后续 cell 共享。
+        接受1段 Python cell 源码。文本会原样提交给当前kernel；变量、导入和其他 namespace 状态会与同一服务器会话中的后续 cell 共享。
 
         等待上限
         --------
@@ -78,6 +78,15 @@ def create_mcp(policy: ResultChannelPolicy, monitor_publisher: MonitorPublisher 
 
         该标记只作用于本次 execution，且保留在原始 cell 中作为 Python
         注释执行。在明确需要完整阅读某些信息，例如阅读某些文件，资料……使用本标记以避免无意义的反复阅读开销。
+
+        图像展示
+        --------
+
+        IPython ``display()`` 产生的 PNG、JPEG、WEBP 或单帧 GIF 图像会按输出
+        顺序直接交付给agent。普通 ``display(image)`` 使用高视觉细节；本次展示
+        需要整体确认或密集文字时，分别书写 ``display(image,
+        metadata={"detail": "low"})`` 或 ``display(image, metadata={"detail":
+        "original"})``。``detail`` 只作用于这一处 ``display()`` 调用。
 
         执行编号与后续操作
         --------------------
@@ -113,6 +122,16 @@ def create_mcp(policy: ResultChannelPolicy, monitor_publisher: MonitorPublisher 
         运行的正整数执行编号；空闲时 ``recent_execution`` 是最近一次被接受的
         执行编号。kernel-local execution count 只用于诊断，不能用来选择
         loommux execution。
+
+        .. code-block:: text
+
+            可见标签 In [N]
+                    =
+            loommux execution N
+                    !=
+            IPython kernel-local execution_count
+
+        IPython 通过原生 ZMQ 协议连接，拥有完整能力。
 
         Returns:
             当前 server 与 kernel 的状态快照。

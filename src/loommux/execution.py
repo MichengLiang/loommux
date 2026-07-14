@@ -11,6 +11,34 @@ from loommux.terminal_text import TerminalTextNormalizer
 ExecutionStatus = Literal["running", "completed", "error", "interrupted", "killed"]
 
 
+@dataclass(frozen=True)
+class PresentationText:
+    """A normalized visible text fragment at its IOPub arrival position."""
+
+    text: str
+
+
+@dataclass(frozen=True)
+class PresentationImage:
+    """One display-data image before MCP transport validation."""
+
+    data: object
+    mime_type: str
+    detail: object
+    display_ordinal: int
+
+
+@dataclass(frozen=True)
+class PresentationFailure:
+    """A visible diagnostic occupying the position of an undeliverable image."""
+
+    message: str
+
+
+type PresentationElement = PresentationText | PresentationImage | PresentationFailure
+IMAGE_MIME_PREFERENCE = ("image/png", "image/jpeg", "image/webp", "image/gif")
+
+
 @dataclass
 class Execution:
     """One accepted cell, addressed for the lifetime of this server process."""
@@ -32,6 +60,8 @@ class Execution:
     interrupt_requested: bool = False
     done: threading.Event = field(default_factory=threading.Event, repr=False)
     logs: ExecutionLogs = field(default_factory=ExecutionLogs, init=False)
+    presentation: list[PresentationElement] = field(default_factory=list, init=False)
+    _next_display_ordinal: int = field(default=1, init=False, repr=False)
     _stdout_normalizer: TerminalTextNormalizer = field(default_factory=TerminalTextNormalizer, init=False, repr=False)
     _stderr_normalizer: TerminalTextNormalizer = field(default_factory=TerminalTextNormalizer, init=False, repr=False)
     _result_normalizer: TerminalTextNormalizer = field(default_factory=TerminalTextNormalizer, init=False, repr=False)
@@ -41,6 +71,7 @@ class Execution:
         normalized = self._stdout_normalizer.normalize(text)
         self.stdout += normalized
         self.logs.append_stdout(normalized)
+        self._append_presentation_text(normalized)
         self.updated_at = time.time()
         return normalized
 
@@ -48,6 +79,7 @@ class Execution:
         normalized = self._stderr_normalizer.normalize(text)
         self.stderr += normalized
         self.logs.append_stderr(normalized)
+        self._append_presentation_text(normalized)
         self.updated_at = time.time()
         return normalized
 
@@ -58,6 +90,7 @@ class Execution:
         if normalized:
             self.result_text += normalized
         self.logs.append_result(normalized, self.execution)
+        self._append_presentation_text(normalized)
         self.updated_at = time.time()
         return normalized
 
@@ -72,10 +105,54 @@ class Execution:
             normalized_traceback = [self._traceback_normalizer.normalize(str(line)) for line in traceback]
             normalized_error["traceback"] = normalized_traceback
             output = self.logs.append_traceback(normalized_traceback)
+            self._append_presentation_text(output)
         self.error = normalized_error
         self.status = "error"
         self.updated_at = time.time()
         return output
+
+    def append_display_data(self, data: object, metadata: object) -> None:
+        """Record one rich display event after its text/plain projection.
+
+        The data bundle is retained as supplied because its Base64 and detail fields
+        must be diagnosed at the MCP boundary, where delivery limits are known.
+        """
+        ordinal = self._next_display_ordinal
+        self._next_display_ordinal += 1
+        if not isinstance(data, dict):
+            return
+
+        for mime_type in IMAGE_MIME_PREFERENCE:
+            if mime_type in data:
+                detail = metadata.get("detail") if isinstance(metadata, dict) else None
+                self.presentation.append(
+                    PresentationImage(data[mime_type], mime_type, detail, ordinal)
+                )
+                return
+
+        unsupported = next(
+            (
+                mime_type
+                for mime_type in data
+                if isinstance(mime_type, str) and mime_type.startswith("image/")
+            ),
+            None,
+        )
+        if unsupported is not None:
+            self.presentation.append(
+                PresentationFailure(
+                    f"Image delivery failed for execution {self.execution} display "
+                    f"{ordinal}: unsupported MIME type {unsupported}."
+                )
+            )
+
+    @property
+    def has_rich_presentation(self) -> bool:
+        return any(not isinstance(element, PresentationText) for element in self.presentation)
+
+    def _append_presentation_text(self, text: str) -> None:
+        if text:
+            self.presentation.append(PresentationText(text))
 
     def finish(self) -> None:
         if self.status == "running":

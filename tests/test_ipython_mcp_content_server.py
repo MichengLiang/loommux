@@ -189,6 +189,11 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
     assert "# loommux: full_output" in run_python
     assert "300 行" in run_python
     assert "wait_python" in run_python
+    assert "图像展示\n--------" in run_python
+    assert "IPython ``display()``" in run_python
+    assert 'metadata={"detail": "low"}' in run_python
+    assert '"original"})``' in run_python
+    assert "只作用于这一处 ``display()`` 调用" in run_python
     assert "execution_id" not in run_python and "output_log" not in run_python
     assert "原始 Python cell 源码文本" in tools["run_python"].inputSchema["properties"]["freeform"]["description"]
 
@@ -263,6 +268,36 @@ async def test_mcp_content_projects_input_coordinate_display_result_and_tracebac
     assert content_error.content[0].text.startswith("In [3]:\n")
     assert "ZeroDivisionError" in dual_error.content[0].text
     assert "ZeroDivisionError" in content_error.content[0].text
+
+
+async def test_mcp_projects_real_display_images_in_iopub_order_with_detail(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(workspace)
+    source = """import base64
+from IPython.display import Image, display
+png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL9ZwAAAABJRU5ErkJggg==')
+print('before-image', flush=True)
+display(Image(data=png, format='png'), metadata={'detail': 'low'})
+print('between-images', flush=True)
+display(Image(data=png, format='png'), metadata={'detail': 'original'})
+print('after-image', flush=True)
+"""
+    async with Client(create_standard_mcp()) as client:
+        response = await client.call_tool("run_python", {"freeform": source})
+
+    assert [block.type for block in response.content] == ["text", "text", "image", "text", "text", "image", "text"]
+    texts = [block.text for block in response.content if block.type == "text"]
+    assert texts == [
+        "before-image\n",
+        "<IPython.core.display.Image object>",
+        "between-images\n",
+        "<IPython.core.display.Image object>",
+        "after-image\n",
+    ]
+    images = [block for block in response.content if block.type == "image"]
+    assert [image.mimeType for image in images] == ["image/png", "image/png"]
+    assert [image.meta["detail"] for image in images] == ["low", "original"]
+    assert response.structured_content is not None
+    assert "iVBOR" not in str(response.structured_content)
 
 
 async def test_result_policies_share_marked_complete_long_output(content_client: Client[Any]) -> None:

@@ -166,6 +166,7 @@ class KernelSession:
                 if isinstance(data, dict) and "text/plain" in data:
                     text = str(data["text/plain"])
                     self._on_output(execution, "result", execution.append_result_text(text))
+                execution.append_display_data(data, content.get("metadata", {}))
             elif msg_type == "error":
                 traceback = content.get("traceback", [])
                 output = execution.record_error(

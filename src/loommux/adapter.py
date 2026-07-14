@@ -254,6 +254,10 @@ class IPythonMCPAdapter:
 
     def _execution_response(self, record: Execution) -> dict[str, Any]:
         result = record.snapshot(output_line_limit=DEFAULT_OUTPUT_LINE_LIMIT)
+        if not record.is_running and record.has_rich_presentation:
+            # This is consumed by mcp_result_policy only. Keeping it private prevents
+            # Base64 payloads from leaking into status JSON or text logs.
+            result["_presentation"] = tuple(record.presentation)
         result["kernel"] = self._kernel_status()
         return result
 
