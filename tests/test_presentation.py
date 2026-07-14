@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import pytest
 from mcp.types import ImageContent, TextContent
 
-from loommux.execution import PresentationImage, PresentationText
+from loommux.execution import PresentationFailure, PresentationImage, PresentationText
 from loommux.mcp_result_policy import ImageDeliveryLimits, make_tool_result
 from loommux.presentation import format_tool_result_text
 
@@ -192,3 +193,68 @@ def test_rich_execution_rejects_malformed_gif_data() -> None:
     assert len(result.content) == 1
     assert isinstance(result.content[0], TextContent)
     assert "invalid GIF data" in result.content[0].text
+
+
+def test_rich_execution_keeps_explicit_failures_and_rejects_invalid_image_shapes() -> None:
+    result = make_tool_result(
+        "run_python",
+        {
+            "ok": True,
+            "execution": 7,
+            "status": "completed",
+            "_presentation": (
+                PresentationFailure("Image delivery failed for execution 7 display 1: source unavailable."),
+                PresentationImage("eA==", "image/svg+xml", None, 2),
+                PresentationImage(b"x", "image/png", None, 3),
+            ),
+        },
+        "content_only",
+    )
+
+    assert [block.text for block in result.content if isinstance(block, TextContent)] == [
+        "Image delivery failed for execution 7 display 1: source unavailable.",
+        "Image delivery failed for execution 7 display 2: unsupported MIME type image/svg+xml.",
+        "Image delivery failed for execution 7 display 3: image data must be Base64 text.",
+    ]
+
+
+def test_rich_execution_enforces_image_count_and_total_byte_limits() -> None:
+    images = (PresentationImage("eA==", "image/png", None, 1), PresentationImage("eQ==", "image/png", None, 2))
+    count_limited = make_tool_result(
+        "run_python",
+        {"ok": True, "execution": 8, "status": "completed", "_presentation": images},
+        "content_only",
+        ImageDeliveryLimits(max_image_bytes=1, max_images=1, max_total_image_bytes=2),
+    )
+    total_limited = make_tool_result(
+        "run_python",
+        {"ok": True, "execution": 8, "status": "completed", "_presentation": images},
+        "content_only",
+        ImageDeliveryLimits(max_image_bytes=1, max_images=2, max_total_image_bytes=1),
+    )
+
+    assert isinstance(count_limited.content[1], TextContent)
+    assert "1-image limit" in count_limited.content[1].text
+    assert isinstance(total_limited.content[1], TextContent)
+    assert "total image bytes exceed the 1-byte limit" in total_limited.content[1].text
+
+
+def test_rich_execution_accepts_a_single_frame_gif() -> None:
+    result = make_tool_result(
+        "wait_python",
+        {
+            "ok": True,
+            "execution": 9,
+            "status": "completed",
+            "_presentation": (PresentationImage("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==", "image/gif", None, 1),),
+        },
+        "content_only",
+    )
+
+    assert isinstance(result.content[0], ImageContent)
+    assert result.content[0].mimeType == "image/gif"
+
+
+def test_make_tool_result_rejects_an_unknown_result_policy() -> None:
+    with pytest.raises(ValueError, match="unknown result channel policy"):
+        make_tool_result("python_status", {"ok": True}, "unknown")  # type: ignore[arg-type]
