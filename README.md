@@ -285,6 +285,10 @@ count from the end of the selected stream:
 3:3    only line 3
 ```
 
+When the caller has determined that the selected stream must be consumed in
+full, omit `line_range`. `read_python_output` returns all of its lines in one
+response, so there is no need to divide the read into consecutive small ranges.
+
 `max_chars` clips each returned line without changing stored text or line
 coordinates. `search_python_output` supports `literal`, `regex`, and `auto`
 matching. In `auto` mode, loommux treats the query as a regular expression

@@ -37,13 +37,13 @@ def _execution_surface(status: Mapping[str, Any]) -> str:
     state = str(status.get("status", "unknown"))
     output = _optional_string(status.get("output_text")) or ""
     if state == "running":
-        return _with_execution_input(execution, "Running: use wait_python() or read_python_output().")
+        return _with_execution_input(execution, "Running: use wait_python() for completion, read_python_output() for collected output, or search_python_output() to locate text.")
     if state == "error":
         return _with_execution_input(execution, output or _error_detail(status))
     if state == "interrupted":
         return _with_execution_input(
             execution,
-            output or "Interrupted: use read_python_output() to inspect its output.",
+            output or "Interrupted: use read_python_output() to read its output or search_python_output() to locate text.",
         )
     if state == "killed":
         body = _append_control_line(output, "Killed: reset_python() stopped this execution.")
@@ -51,7 +51,7 @@ def _execution_surface(status: Mapping[str, Any]) -> str:
     if status.get("output_omitted_reason") == "line_limit_exceeded":
         return _with_execution_input(
             execution,
-            f"Output: more than {status.get('output_line_limit')} lines; use read_python_output().",
+            f"Output: more than {status.get('output_line_limit')} lines; use read_python_output() to read all lines or search_python_output() to locate text.",
         )
     return _with_execution_input(execution, output)
 
@@ -62,7 +62,7 @@ def _error_sentence(execution: str, status: Mapping[str, Any]) -> str:
         name = str(error.get("ename") or "Error")
         value = str(error.get("evalue") or "")
         return f"Python execution {execution} failed with {name}{': ' + value if value else ''}."
-    return f"Python execution {execution} failed. Use read_python_output() to inspect its traceback."
+    return f"Python execution {execution} failed. Use read_python_output() to inspect its traceback or search_python_output() to locate text."
 
 
 def _error_detail(status: Mapping[str, Any]) -> str:
@@ -71,7 +71,7 @@ def _error_detail(status: Mapping[str, Any]) -> str:
         name = str(error.get("ename") or "Error")
         value = str(error.get("evalue") or "")
         return f"Error: {name}{': ' + value if value else ''}"
-    return "Error: use read_python_output() to inspect its traceback."
+    return "Error: use read_python_output() to inspect its traceback or search_python_output() to locate text."
 
 
 def _with_execution_input(execution: str, body: str) -> str:

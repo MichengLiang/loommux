@@ -177,12 +177,19 @@ def create_mcp(policy: ResultChannelPolicy, monitor_publisher: MonitorPublisher 
         ``stop`` 包含在范围内；端点可省略，负数端点从所选流尾部计数。``:10``
         读取前十行，``-10:`` 读取后十行，``3:3`` 只读取第三行。
 
+        完整读取
+        --------
+
+        调用者已确定需要完整消费所选流时，省略 ``line_range``。工具会在一次响应
+        中返回全部行，无需把阅读拆成连续小范围。
+
         Args:
             execution: 要读取的正整数执行编号。省略时使用当前记录，随后
                 使用最近记录。
             stream: 输出流；默认 ``combined``，其余值为 ``stdout``、``stderr``、
                 ``result`` 与 ``traceback``。
-            line_range: ``start:stop`` 行范围；省略时读取所选流的全部行。
+            line_range: ``start:stop`` 行范围；已确定需要完整消费所选流时省略，
+                工具会一次返回全部行，无需拆分为多个小范围。
             show_line_numbers: 为 true 时，在每个返回行前加其从 1 开始的
                 所选流行号。
             max_chars: 每个返回行允许显示的最大字符数；必须为正数。超出

@@ -218,8 +218,11 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
     read = tools["read_python_output"].description or ""
     assert "行坐标\n------" in read
     assert "``:10``" in read and "``-10:``" in read and "``3:3``" in read
+    assert "完整读取\n--------" in read
+    assert "无需把阅读拆成连续小范围" in read
     read_parameters = tools["read_python_output"].inputSchema["properties"]
     assert "省略时使用当前记录" in read_parameters["execution"]["description"]
+    assert "已确定需要完整消费所选流时省略" in read_parameters["line_range"]["description"]
     assert "从 1 开始的" in read_parameters["show_line_numbers"]["description"]
     assert "必须为正数" in read_parameters["max_chars"]["description"]
 

@@ -119,6 +119,8 @@ cell 的默认输出规则。
 `python_execution_status` 继续返回状态与元数据，不因完整输出标记而返回正文。
 `read_python_output` 与 `search_python_output` 的输入、行坐标、stream 选择、
 裁切和搜索语义完全不变；它们继续用于默认省略的记录、局部阅读与检索。
+调用者已确定需要完整消费所选流时，省略 `read_python_output` 的 `line_range`；该
+调用一次返回所选流的全部行，无需拆分为多个连续小范围。
 
 `interrupt_python` 继续只发送中断信号。带标记的 execution 在 kernel 到达终态
 后，可由 `wait_python` 返回截至终态所收集的完整 combined 输出。

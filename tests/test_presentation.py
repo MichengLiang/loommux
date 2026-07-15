@@ -24,8 +24,8 @@ def test_execution_states_name_the_integer_coordinate() -> None:
     error = {"ok": False, "execution": 5, "status": "error", "error": {"ename": "ZeroDivisionError", "evalue": "division by zero"}}
     killed = {"ok": False, "execution": 5, "status": "killed"}
 
-    assert format_tool_result_text("run_python", running) == "In [5]:\nRunning: use wait_python() or read_python_output()."
-    assert format_tool_result_text("wait_python", large) == "In [5]:\nOutput: more than 300 lines; use read_python_output()."
+    assert format_tool_result_text("run_python", running) == "In [5]:\nRunning: use wait_python() for completion, read_python_output() for collected output, or search_python_output() to locate text."
+    assert format_tool_result_text("wait_python", large) == "In [5]:\nOutput: more than 300 lines; use read_python_output() to read all lines or search_python_output() to locate text."
     assert format_tool_result_text("run_python", error) == "In [5]:\nError: ZeroDivisionError: division by zero"
     assert format_tool_result_text("wait_python", killed) == "In [5]:\nKilled: reset_python() stopped this execution."
 
@@ -175,6 +175,7 @@ def test_rich_execution_keeps_images_but_omits_line_limited_text() -> None:
     assert [block.type for block in result.content] == ["text", "image"]
     assert isinstance(result.content[0], TextContent)
     assert "exceeds 300 lines" in result.content[0].text
+    assert "read_python_output() to read all lines or search_python_output()" in result.content[0].text
     assert "line-0" not in result.content[0].text
 
 

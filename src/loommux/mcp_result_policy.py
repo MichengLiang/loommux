@@ -67,7 +67,7 @@ def _rich_execution_content(
                 type="text",
                 text=(
                     f"Text output omitted because it exceeds {status.get('output_line_limit')} lines; "
-                    "use read_python_output() to inspect it."
+                    "use read_python_output() to read all lines or search_python_output() to locate text."
                 ),
             )
         )
