@@ -46,6 +46,9 @@ class Execution:
     execution: int
     code: str
     kernel_pid: int
+    author_source: str | None = None
+    submitted_source: str | None = None
+    protection_transform: dict[str, Any] | None = None
     submitted_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     status: ExecutionStatus = "running"
@@ -66,6 +69,25 @@ class Execution:
     _stderr_normalizer: TerminalTextNormalizer = field(default_factory=TerminalTextNormalizer, init=False, repr=False)
     _result_normalizer: TerminalTextNormalizer = field(default_factory=TerminalTextNormalizer, init=False, repr=False)
     _traceback_normalizer: TerminalTextNormalizer = field(default_factory=TerminalTextNormalizer, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        # code predates protected cells. Keep it as the submitted-source alias
+        # for in-process callers while retaining author text for observability.
+        if self.author_source is None:
+            self.author_source = self.code
+        if self.submitted_source is None:
+            self.submitted_source = self.code
+        if self.protection_transform is None:
+            self.protection_transform = {
+                "author_source": self.author_source,
+                "submitted_source": self.submitted_source,
+                "applied": False,
+                "literal_count": 0,
+                "author_ranges": [],
+                "submitted_ranges": [],
+                "line_map": [],
+            }
+        self.code = self.submitted_source
 
     def append_stdout(self, text: str) -> str:
         normalized = self._stdout_normalizer.normalize(text)

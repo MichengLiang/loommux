@@ -1,17 +1,27 @@
 # `run_python` Freeform Input Contract
 
 This document is the authority for the `run_python` freeform input and timeout
-directive grammar. Execution identity, lifecycle, output streams, result
-surfaces, and all follow-up tools are defined by
+directive grammar. Protected multiline raw-string syntax, source conversion,
+and directive regions are defined by
+[IPython MCP Protected Multiline Raw String Design](ipython-mcp-protected-multiline-string-design.md).
+Execution identity, lifecycle, output streams, result surfaces, and all
+follow-up tools are defined by
 [Coding Agent Control Plane Design](coding-agent-control-plane-design.md).
 The no-value full-output marker and its result-delivery behavior are defined by
 [IPython MCP Complete Output Directive Design](ipython-mcp-full-output-directive-design.md).
 
 ## Input
 
-`run_python(freeform)` accepts one raw Python cell as its only input. The text
-is submitted unchanged to the persistent IPython kernel. It does not accept a
-structured `code` field or a `timeout_seconds` field.
+`run_python(freeform)` accepts one loommux Python cell as its only input.
+Ordinary cell source is submitted to the persistent IPython kernel; complete
+protected multiline raw strings are converted to equivalent Python `str`
+expressions before submission. It does not accept a structured `code` field or
+a `timeout_seconds` field.
+
+Protected strings use `*** Begin...` and `*** End...` lines at physical column
+zero. Their complete syntax, raw-value semantics, and relationship to the
+directives in this document are defined by the protected multiline string
+design.
 
 ## Timeout Directive
 
@@ -43,6 +53,7 @@ log-address parameter or alternate execution identifier.
 
 ## Verification
 
-Tests must cover exact directive recognition, default fallback, raw source
-submission, non-persistence, continued running after timeout, and the integer
-execution coordinate exposed at the real MCP boundary.
+Tests must cover exact directive recognition, protected-string directive
+regions, default fallback, source conversion, non-persistence, continued
+running after timeout, and the integer execution coordinate exposed at the real
+MCP boundary.

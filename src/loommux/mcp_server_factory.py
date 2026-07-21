@@ -55,7 +55,9 @@ def create_mcp(policy: ResultChannelPolicy, monitor_publisher: MonitorPublisher 
         输入
         ----
 
-        接受1段 Python cell 源码。文本会原样提交给当前kernel；变量、导入和其他 namespace 状态会与同一服务器会话中的后续 cell 共享。
+        接受一段 loommux Python cell 源码。普通 Python 文本会提交给当前
+        kernel；变量、导入和其他 namespace 状态会与同一服务器会话中的后续
+        cell 共享。
 
         等待上限
         --------

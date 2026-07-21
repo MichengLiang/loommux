@@ -11,6 +11,7 @@ from typing import Any
 from loommux.execution import Execution
 from loommux.kernel_session import KernelSession
 from loommux.monitoring import MonitorPublisher, NoopMonitorPublisher, safe_publish
+from loommux.source_transform import prepare_protected_multiline_strings
 
 DEFAULT_OUTPUT_LINE_LIMIT = 300
 DEFAULT_RUN_PYTHON_TIMEOUT_SECONDS = 10.0
@@ -20,13 +21,20 @@ RUN_PYTHON_TIMEOUT_DIRECTIVE_RE = re.compile(r"^# loommux: timeout_seconds=([1-9
 RUN_PYTHON_FULL_OUTPUT_DIRECTIVE_RE = re.compile(r"^# loommux: full_output$")
 
 
-def parse_run_python_freeform_timeout(freeform: str) -> tuple[float, str]:
-    matches = [float(match.group(1)) for line in freeform.splitlines() if (match := RUN_PYTHON_TIMEOUT_DIRECTIVE_RE.fullmatch(line)) and math.isfinite(float(match.group(1))) and float(match.group(1)) > 0]
+def parse_run_python_freeform_timeout(freeform: str, protected_line_numbers: frozenset[int] = frozenset()) -> tuple[float, str]:
+    matches = [
+        float(match.group(1))
+        for line_number, line in enumerate(freeform.splitlines())
+        if line_number not in protected_line_numbers
+        and (match := RUN_PYTHON_TIMEOUT_DIRECTIVE_RE.fullmatch(line))
+        and math.isfinite(float(match.group(1)))
+        and float(match.group(1)) > 0
+    ]
     return (matches[0], "directive") if len(matches) == 1 else (DEFAULT_RUN_PYTHON_TIMEOUT_SECONDS, "default")
 
 
-def parse_run_python_full_output(freeform: str) -> bool:
-    return any(RUN_PYTHON_FULL_OUTPUT_DIRECTIVE_RE.fullmatch(line) for line in freeform.splitlines())
+def parse_run_python_full_output(freeform: str, protected_line_numbers: frozenset[int] = frozenset()) -> bool:
+    return any(line_number not in protected_line_numbers and RUN_PYTHON_FULL_OUTPUT_DIRECTIVE_RE.fullmatch(line) for line_number, line in enumerate(freeform.splitlines()))
 
 
 class IPythonMCPAdapter:
@@ -43,6 +51,7 @@ class IPythonMCPAdapter:
         self.recent_execution: int | None = None
         self._next_execution = 1
         self._active_call_id: ContextVar[str | None] = ContextVar("loommux_monitor_call_id", default=None)
+        self._pending_execution_input: ContextVar[tuple[str, dict[str, Any]] | None] = ContextVar("loommux_pending_execution_input", default=None)
         self._lock = threading.RLock()
 
     def close(self) -> None:
@@ -95,8 +104,17 @@ class IPythonMCPAdapter:
     def run_python(self, freeform: str) -> dict[str, Any]:
         if not isinstance(freeform, str):
             return {"ok": False, "status": "invalid_code", "message": "freeform must be a string"}
-        timeout_seconds, _source = parse_run_python_freeform_timeout(freeform)
-        return self._submit_python_cell(freeform, timeout_seconds, parse_run_python_full_output(freeform))
+        protection_transform = prepare_protected_multiline_strings(freeform)
+        timeout_seconds, _source = parse_run_python_freeform_timeout(freeform, protection_transform.protected_line_numbers)
+        token = self._pending_execution_input.set((freeform, protection_transform.as_dict()))
+        try:
+            return self._submit_python_cell(
+                protection_transform.submitted_source,
+                timeout_seconds,
+                parse_run_python_full_output(freeform, protection_transform.protected_line_numbers),
+            )
+        finally:
+            self._pending_execution_input.reset(token)
 
     def _submit_python_cell(self, code: str, timeout_seconds: float, full_output_requested: bool = False) -> dict[str, Any]:
         if not isinstance(code, str):
@@ -111,7 +129,16 @@ class IPythonMCPAdapter:
                 return {"ok": False, "status": "kernel_not_started", "message": "kernel is not started"}
             if self.current_execution is not None:
                 return {"ok": False, "status": "busy", "execution": self.current_execution, "message": "kernel is already executing code"}
-            execution = Execution(execution=self._next_execution, code=code, kernel_pid=kernel.pid or 0, full_output_requested=full_output_requested)
+            author_source, protection_transform = self._pending_execution_input.get() or (code, None)
+            execution = Execution(
+                execution=self._next_execution,
+                code=code,
+                kernel_pid=kernel.pid or 0,
+                full_output_requested=full_output_requested,
+                author_source=author_source,
+                submitted_source=code,
+                protection_transform=protection_transform,
+            )
             self._next_execution += 1
             self.executions[execution.execution] = execution
             self.current_execution = execution.execution
@@ -276,7 +303,23 @@ class IPythonMCPAdapter:
         return kernel
 
     def _publish_execution_submitted(self, record: Execution, timeout_seconds: float) -> None:
-        safe_publish(self.monitor_publisher, {"type": "execution_submitted", "execution": record.execution, "call_id": self._active_call_id.get(), "workspace": str(self.workspace) if self.workspace else None, "kernel_pid": record.kernel_pid, "code": record.code, "timeout_seconds": timeout_seconds, "timestamp": record.submitted_at})
+        safe_publish(
+            self.monitor_publisher,
+            {
+                "type": "execution_submitted",
+                "execution": record.execution,
+                "call_id": self._active_call_id.get(),
+                "workspace": str(self.workspace) if self.workspace else None,
+                "kernel_pid": record.kernel_pid,
+                # code remains the monitor's author-facing compatibility field.
+                "code": record.author_source,
+                "author_source": record.author_source,
+                "submitted_source": record.submitted_source,
+                "protection_transform": record.protection_transform,
+                "timeout_seconds": timeout_seconds,
+                "timestamp": record.submitted_at,
+            },
+        )
 
     def _publish_execution_output(self, record: Execution, stream: str, text: str) -> None:
         safe_publish(self.monitor_publisher, {"type": "execution_output", "execution": record.execution, "stream": stream, "text": text, "kernel_execution_count": record.execution_count_at_submit, "timestamp": record.updated_at})

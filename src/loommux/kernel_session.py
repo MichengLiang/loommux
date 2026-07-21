@@ -73,7 +73,7 @@ class KernelSession:
         with self._lock:
             if self.client is None:
                 raise RuntimeError("kernel client is not started")
-            execution.msg_id = self.client.execute(execution.code)
+            execution.msg_id = self.client.execute(execution.submitted_source or execution.code)
             self.current_execution = execution
 
     def interrupt(self) -> None:

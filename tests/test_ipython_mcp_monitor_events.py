@@ -55,6 +55,31 @@ async def test_execution_monitor_events_use_integer_coordinate(workspace: Path, 
     assert publisher.closed is True
 
 
+async def test_protected_source_monitor_event_preserves_author_and_submission_facts(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(workspace)
+    publisher = RecordingPublisher()
+    source = '''payload = """
+*** Begin Patch
+value = """
+quoted
+"""
+*** End Patch
+"""
+'''
+    async with Client(create_mcp(publisher)) as client:
+        result = await client.call_tool("run_python", {"freeform": source})
+
+    submitted = publisher.events_of("execution_submitted")[0]
+    assert result.data["status"] == "completed"
+    assert submitted["code"] == source
+    assert submitted["author_source"] == source
+    assert submitted["submitted_source"] != source
+    assert submitted["protection_transform"]["applied"] is True
+    assert submitted["protection_transform"]["literal_count"] == 1
+    assert submitted["protection_transform"]["author_source"] == source
+    assert submitted["protection_transform"]["submitted_source"] == submitted["submitted_source"]
+
+
 async def test_reset_publishes_killed_integer_record(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(workspace)
     publisher = RecordingPublisher()

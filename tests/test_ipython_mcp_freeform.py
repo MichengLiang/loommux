@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from loommux.adapter import IPythonMCPAdapter, parse_run_python_freeform_timeout, parse_run_python_full_output
+from loommux.source_transform import prepare_protected_multiline_strings
 
 
 @pytest.mark.parametrize(
@@ -51,3 +52,33 @@ def test_run_python_passes_original_freeform_source_to_submission() -> None:
     source = "# loommux: timeout_seconds=2\n# loommux: full_output\nprint('unchanged')"
     assert adapter.run_python(source)["status"] == "captured"
     assert adapter.calls == [(source, 2.0, True)]
+
+
+def test_directives_inside_complete_protected_strings_do_not_control_execution() -> None:
+    source = '''payload = """
+*** Begin
+# loommux: timeout_seconds=120
+# loommux: full_output
+*** End
+"""
+'''
+    transform = prepare_protected_multiline_strings(source)
+
+    assert parse_run_python_freeform_timeout(source, transform.protected_line_numbers) == (10.0, "default")
+    assert parse_run_python_full_output(source, transform.protected_line_numbers) is False
+
+
+def test_directives_outside_complete_protected_strings_remain_effective() -> None:
+    source = '''# loommux: timeout_seconds=2
+# loommux: full_output
+payload = """
+*** Begin
+# loommux: timeout_seconds=120
+# loommux: full_output
+*** End
+"""
+'''
+    transform = prepare_protected_multiline_strings(source)
+
+    assert parse_run_python_freeform_timeout(source, transform.protected_line_numbers) == (2.0, "directive")
+    assert parse_run_python_full_output(source, transform.protected_line_numbers) is True

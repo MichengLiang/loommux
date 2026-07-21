@@ -133,9 +133,11 @@ documentation must not describe a nonexistent workspace-setting operation.
 
 ### 4.2 Submission
 
-`run_python(freeform)` accepts one raw Python cell. The adapter validates the
-input, rejects a new submission while another record is `running`, allocates
-the next execution number, saves the record, and submits the original cell to
+`run_python(freeform)` accepts one loommux Python cell. The adapter prepares
+protected multiline raw strings according to
+[IPython MCP Protected Multiline Raw String Design](ipython-mcp-protected-multiline-string-design.md),
+rejects a new submission while another record is `running`, allocates the next
+execution number, saves the record, and submits the prepared Python source to
 the kernel. A busy kernel returns `status="busy"` and the current execution
 number. It never queues a second cell.
 

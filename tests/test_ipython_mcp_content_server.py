@@ -191,6 +191,8 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
     assert "向持久 IPython kernel 提交一个原始 Python cell。" in run_python
     assert "输入\n----" in run_python
     assert "等待上限\n--------" in run_python
+    assert "受保护多行原始文本" in run_python
+    assert "完整保护字符串内的 timeout 与 full_output" in run_python
     assert "执行编号与后续操作\n--------------------" in run_python
     assert "# loommux: timeout_seconds=120" in run_python
     assert "# loommux: full_output" in run_python

@@ -155,6 +155,59 @@ def test_full_output_directive_remains_a_kernel_comment(adapter: IPythonMCPAdapt
     assert "Out[2]: (False, 'unchanged')" in namespace["output_text"]
 
 
+def test_protected_multiline_string_preserves_raw_value_and_execution_inputs(adapter: IPythonMCPAdapter) -> None:
+    source = '''name = "Ada"
+payload = f"""
+*** Begin Patch suffix
+message = r"""
+C:\new\temp {name}
+"""
+# loommux: timeout_seconds=120
+# loommux: full_output
+*** End Patch suffix
+"""
+'''
+
+    submitted = adapter.run_python(source)
+    inspected = adapter.run_python("payload")
+    record = adapter.executions[submitted["execution"]]
+
+    assert submitted["status"] == "completed"
+    assert submitted["full_output_requested"] is False
+    assert "C:\\new\\temp {name}" in inspected["output_text"]
+    assert "*** Begin Patch suffix" in inspected["output_text"]
+    assert record.author_source == source
+    assert record.submitted_source != source
+    assert record.protection_transform is not None
+    assert record.protection_transform["applied"] is True
+    assert record.protection_transform["literal_count"] == 1
+    assert record.protection_transform["line_map"][-1] == {"author_line": 10, "submitted_line": 10}
+
+
+def test_protected_multiline_string_is_a_function_argument_and_keeps_later_traceback_lines(adapter: IPythonMCPAdapter) -> None:
+    source = '''received = None
+def capture(value):
+    global received
+    received = value
+capture(r"""
+*** Begin
+inside = """
+quoted
+"""
+*** End
+""")
+raise RuntimeError("mapped")
+'''
+
+    failed = adapter.run_python(source)
+    received = adapter.run_python("received")
+
+    assert failed["status"] == "error"
+    assert "line 12" in failed["output_text"]
+    assert received["status"] == "completed"
+    assert "*** Begin" in received["output_text"]
+
+
 def test_reset_preserves_records_and_sequence_and_reauthors_out_label(adapter: IPythonMCPAdapter) -> None:
     first = adapter.run_python("'before reset'")
     reset = adapter.reset_python()

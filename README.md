@@ -213,7 +213,7 @@ record, then the most recently accepted record. With neither, the tool returns
 
 | Tool | Purpose |
 | --- | --- |
-| `run_python(freeform)` | Submit one raw Python cell to the persistent kernel and wait for its initial result. |
+| `run_python(freeform)` | Submit one loommux Python cell to the persistent kernel and wait for its initial result. |
 | `python_status()` | Inspect the workspace, its authored source category, interpreter, kernel PID, busy state, and current or recent execution. |
 | `python_execution_status(execution=None)` | Inspect lifecycle and diagnostic metadata without returning the full output body. |
 | `read_python_output(...)` | Read a selected execution stream, optionally by line range and with per-line clipping. |
@@ -224,15 +224,41 @@ record, then the most recently accepted record. With neither, the tool returns
 
 ### Submitting A Cell
 
-`run_python` accepts a raw `freeform` Python cell. The source is submitted
-unchanged, so variables and imports are immediately available to later cells
-in the same server process.
+`run_python` accepts one `freeform` loommux Python cell. Ordinary source and
+the resulting Python values of protected multiline strings are available to
+later cells in the same persistent server process.
 
 ```python
 import math
 radius = 3
 math.pi * radius**2
 ```
+
+### Protected Multiline Raw Strings
+
+Use an outer triple-double-quoted literal with `*** Begin...` and `*** End...`
+at physical column zero to pass long raw text through a Python cell. The Begin
+and End lines remain part of the resulting Python `str`; text inside the block
+is preserved literally, including triple quotes, backslashes, braces, and
+`# loommux:` text.
+
+````python
+patch = f"""
+*** Begin Patch
+*** Update File: example.py
+@@
+message = r"""
+hello
+"""
+*** End Patch
+"""
+````
+
+`patch` contains the complete Begin/End text. The outer `r` and `f` prefixes do
+not apply raw-string or f-string interpretation to protected text. loommux
+recognizes timeout and complete-output directives only outside a complete
+protected string. See [Protected Multiline Raw String Design](docs/ipython-mcp-protected-multiline-string-design.md)
+for the full contract and acceptance rules.
 
 The default wait for this one MCP call is 10 seconds. A cell can request a
 different positive wait time by containing exactly one complete directive
