@@ -71,7 +71,14 @@ class _WindowsKernelContainment(_KernelContainment):
     def close(self) -> None:
         job, self._job = self._job, None
         if job is not None:
-            job.Close()
+            # KILL_ON_JOB_CLOSE is a last-resort guard for abnormal process
+            # termination. Explicitly terminate here so reset has a bounded,
+            # observable child-process cleanup point before Jupyter closes its
+            # own kernel handle.
+            try:
+                self._win32job.TerminateJobObject(job, 1)
+            finally:
+                job.Close()
 
 
 class KernelRuntime:
@@ -139,6 +146,9 @@ class KernelRuntime:
         launch, self.launch = self.launch, None
         self._pid = None
         try:
+            if containment is not None:
+                with contextlib.suppress(Exception):
+                    containment.close()
             if manager is not None:
                 with contextlib.suppress(Exception):
                     manager.shutdown_kernel(now=True)
@@ -146,9 +156,6 @@ class KernelRuntime:
             if client is not None:
                 with contextlib.suppress(Exception):
                     client.stop_channels()
-            if containment is not None:
-                with contextlib.suppress(Exception):
-                    containment.close()
             if launch is not None:
                 _remove_launch_root(launch)
 
@@ -158,7 +165,10 @@ def _kernel_spec(launch: KernelLaunch) -> KernelSpec:
         argv=list(launch.command),
         display_name="loommux private IPython kernel",
         language="python",
-        interrupt_mode="signal",
+        # Windows console control events can be missed while a kernel is
+        # moving from message receipt into cell execution. IPykernel's control
+        # message path is reliable on both supported Windows versions.
+        interrupt_mode="message" if sys.platform == "win32" else "signal",
         resource_dir=str(launch.runtime_root),
     )
 

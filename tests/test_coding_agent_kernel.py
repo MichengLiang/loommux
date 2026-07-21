@@ -9,7 +9,7 @@ import pytest
 
 from loommux.adapter import IPythonMCPAdapter
 from loommux.coding_agent_kernel import KernelLaunch
-from loommux.kernel_runtime import KernelRuntime
+from loommux.kernel_runtime import KernelRuntime, _kernel_spec, _KernelContainment
 
 
 def test_kernel_launch_builds_the_required_command_and_controlled_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -116,6 +116,7 @@ def test_kernel_runtime_closes_channels_when_readiness_fails(tmp_path: Path, mon
             assert now is True
 
     monkeypatch.setattr("loommux.kernel_runtime._LoommuxKernelManager", FailingManager)
+    monkeypatch.setattr("loommux.kernel_runtime._create_containment", _KernelContainment)
     runtime = KernelRuntime(workspace, Path(sys.executable).absolute())
 
     with pytest.raises(RuntimeError, match="kernel readiness failed"):
@@ -124,6 +125,17 @@ def test_kernel_runtime_closes_channels_when_readiness_fails(tmp_path: Path, mon
     assert FailingManager.client_instance.channels_started is True
     assert FailingManager.client_instance.channels_stopped is True
     assert runtime.launch is None
+
+
+def test_kernel_spec_uses_control_messages_for_windows_interrupts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    launch = KernelLaunch.create(Path(sys.executable).absolute(), workspace)
+    try:
+        monkeypatch.setattr("loommux.kernel_runtime.sys.platform", "win32")
+        assert _kernel_spec(launch).interrupt_mode == "message"
+    finally:
+        shutil.rmtree(launch.runtime_root, ignore_errors=True)
 
 
 def test_kernel_launch_allows_the_platform_temp_directory_inside_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
