@@ -49,6 +49,39 @@ runtime dependencies needed to launch an IPython kernel.
 python -m pip install loommux
 ```
 
+### Windows
+
+Native Windows support covers Windows 10 and Windows 11 with CPython 3.10 or
+newer. Install into the interpreter that the MCP host will use:
+
+```powershell
+py -m pip install loommux
+```
+
+The installed command is `loommux.exe`. Point an MCP host directly at that
+executable rather than through a shell wrapper, and use an absolute Windows
+workspace path for `cwd`:
+
+```json
+{
+  "mcpServers": {
+    "loommux": {
+      "command": "C:\\workspace\\.venv\\Scripts\\loommux.exe",
+      "args": ["--transport", "stdio", "--result-mode", "structured"],
+      "cwd": "C:\\workspace"
+    }
+  }
+}
+```
+
+loommux launches the kernel with the same interpreter as `loommux.exe`, keeps
+its IPython and Jupyter state in a private temporary directory, and uses a
+Windows Job Object so `reset_python` and server shutdown also end child
+processes launched by the kernel. A submitted cell remains arbitrary Python:
+commands inside that cell must target the operating system on which the kernel
+is running. WSL is a separate Linux deployment, not a substitute for native
+Windows coverage.
+
 The package installs two console commands. Their defaults remain convenient,
 but `--transport` and `--result-mode` can be selected independently on either
 command:
@@ -418,8 +451,11 @@ The runtime is deliberately divided into narrow responsibilities:
   explicit workspace authorization and its public source category.
 - `coding_agent_kernel.py` builds `KernelLaunch`: the server-interpreter
   command, controlled child environment, and one private runtime root.
-- `kernel_session.py` owns that root for one kernel session, starts the
-  process, and receives IOPub events.
+- `kernel_runtime.py` owns the private root and delegates platform-specific
+  kernel lifecycle operations to Jupyter's `KernelManager`; Windows child
+  process containment is isolated there.
+- `kernel_session.py` owns IOPub collection and execution correlation without
+  invoking operating-system process APIs.
 - `terminal_text.py` normalizes terminal controls before public text is stored
   or published.
 - `execution.py` and `output_log.py` own normalized execution records and the

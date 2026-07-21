@@ -11,9 +11,6 @@ _REMOVED_ENVIRONMENT_VARIABLES = ("IPYTHONDIR", "JUPYTER_CONFIG_DIR", "CLICOLOR"
 _CONTROLLED_ENVIRONMENT = {
     "NO_COLOR": "1",
     "PY_COLORS": "0",
-    "PAGER": "cat",
-    "GIT_PAGER": "cat",
-    "SYSTEMD_PAGER": "cat",
 }
 
 
@@ -60,11 +57,17 @@ class KernelLaunch:
 
 def _create_runtime_root(workspace: Path) -> Path:
     runtime_parent = Path(tempfile.gettempdir()).resolve()
-    home = Path.home().resolve()
     workspace = workspace.resolve()
-    if _is_within(runtime_parent, workspace) or _is_within(runtime_parent, home):
-        raise RuntimeError("system temporary directory must be outside the workspace and user home")
-    return Path(tempfile.mkdtemp(prefix="loommux-kernel-", dir=runtime_parent))
+    if _is_within(runtime_parent, workspace):
+        raise RuntimeError("system temporary directory must be outside the workspace")
+    runtime_root = Path(tempfile.mkdtemp(prefix="loommux-kernel-", dir=runtime_parent))
+    # Windows places the standard per-user temporary directory under home.
+    # The randomized private child, not the parent location, isolates Jupyter state.
+    try:
+        runtime_root.chmod(0o700)
+    except OSError:
+        pass
+    return runtime_root
 
 
 def _is_within(path: Path, parent: Path) -> bool:

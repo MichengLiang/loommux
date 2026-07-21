@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import shutil
 import sys
+import time
 from pathlib import Path
 
 import pytest
 
 from loommux.adapter import IPythonMCPAdapter
 from loommux.coding_agent_kernel import KernelLaunch
-from loommux.kernel_session import KernelSession
+from loommux.kernel_runtime import KernelRuntime
 
 
 def test_kernel_launch_builds_the_required_command_and_controlled_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -45,20 +46,16 @@ def test_kernel_launch_builds_the_required_command_and_controlled_environment(tm
         assert launch.environment["LOOMMUX_TEST_PRESERVED"] == "preserved"
         for name in ("CLICOLOR", "CLICOLOR_FORCE", "FORCE_COLOR"):
             assert name not in launch.environment
-        assert {name: launch.environment[name] for name in ("NO_COLOR", "PY_COLORS", "PAGER", "GIT_PAGER", "SYSTEMD_PAGER")} == {
+        assert {name: launch.environment[name] for name in ("NO_COLOR", "PY_COLORS")} == {
             "NO_COLOR": "1",
             "PY_COLORS": "0",
-            "PAGER": "cat",
-            "GIT_PAGER": "cat",
-            "SYSTEMD_PAGER": "cat",
         }
         assert not _is_within(launch.runtime_root, workspace)
-        assert not _is_within(launch.runtime_root, home)
     finally:
         shutil.rmtree(launch.runtime_root, ignore_errors=True)
 
 
-def test_kernel_session_start_failure_cleans_its_private_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_kernel_runtime_start_failure_cleans_its_private_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     launches: list[KernelLaunch] = []
@@ -69,20 +66,80 @@ def test_kernel_session_start_failure_cleans_its_private_root(tmp_path: Path, mo
         launches.append(launch)
         return launch
 
-    def fail_popen(*_args: object, **_kwargs: object) -> object:
+    def fail_start_kernel(*_args: object, **_kwargs: object) -> None:
         raise OSError("kernel process did not start")
 
-    monkeypatch.setattr("loommux.kernel_session.KernelLaunch.create", record_launch)
-    monkeypatch.setattr("loommux.kernel_session.subprocess.Popen", fail_popen)
-    session = KernelSession(workspace, Path(sys.executable).absolute(), lambda _execution: None)
+    monkeypatch.setattr("loommux.kernel_runtime.KernelLaunch.create", record_launch)
+    monkeypatch.setattr("loommux.kernel_runtime._LoommuxKernelManager.start_kernel", fail_start_kernel)
+    runtime = KernelRuntime(workspace, Path(sys.executable).absolute())
 
     with pytest.raises(OSError, match="kernel process did not start"):
-        session.start()
+        runtime.start(10)
 
     assert len(launches) == 1
     assert not launches[0].runtime_root.exists()
-    assert session.launch is None
-    session.shutdown()
+    assert runtime.launch is None
+    runtime.shutdown()
+
+
+def test_kernel_runtime_closes_channels_when_readiness_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    class FailingClient:
+        channels_started = False
+        channels_stopped = False
+
+        def start_channels(self) -> None:
+            self.channels_started = True
+
+        def wait_for_ready(self, *, timeout: float) -> None:
+            assert timeout == 10
+            raise RuntimeError("kernel readiness failed")
+
+        def stop_channels(self) -> None:
+            self.channels_stopped = True
+
+    class FailingManager:
+        client_instance = FailingClient()
+
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            self.provisioner = type("Provisioner", (), {"pid": 123})()
+
+        def start_kernel(self, **_kwargs: object) -> None:
+            pass
+
+        def client(self) -> FailingClient:
+            return self.client_instance
+
+        def shutdown_kernel(self, *, now: bool) -> None:
+            assert now is True
+
+    monkeypatch.setattr("loommux.kernel_runtime._LoommuxKernelManager", FailingManager)
+    runtime = KernelRuntime(workspace, Path(sys.executable).absolute())
+
+    with pytest.raises(RuntimeError, match="kernel readiness failed"):
+        runtime.start(10)
+
+    assert FailingManager.client_instance.channels_started is True
+    assert FailingManager.client_instance.channels_stopped is True
+    assert runtime.launch is None
+
+
+def test_kernel_launch_allows_the_platform_temp_directory_inside_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    workspace = tmp_path / "workspace"
+    home = tmp_path / "home"
+    temp_directory = home / "Temp"
+    workspace.mkdir()
+    temp_directory.mkdir(parents=True)
+    monkeypatch.setattr("loommux.coding_agent_kernel.tempfile.gettempdir", lambda: str(temp_directory))
+
+    launch = KernelLaunch.create(Path(sys.executable).absolute(), workspace)
+    try:
+        assert _is_within(launch.runtime_root, home)
+        assert not _is_within(launch.runtime_root, workspace)
+    finally:
+        shutil.rmtree(launch.runtime_root, ignore_errors=True)
 
 
 def test_kernel_ignores_hostile_user_state_and_reset_replaces_its_private_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -140,6 +197,38 @@ def test_kernel_ignores_hostile_user_state_and_reset_replaces_its_private_root(t
     assert not second_root.exists()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows Job Object containment is Windows-specific")
+def test_reset_kills_windows_kernel_descendants(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    adapter = IPythonMCPAdapter()
+    assert adapter.start_workspace(workspace, "launch_cwd")["ok"] is True
+    try:
+        running = adapter.run_python(
+            "# loommux: timeout_seconds=0.1\n"
+            "import subprocess\n"
+            "import sys\n"
+            "import time\n"
+            "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+            "print(child.pid, flush=True)\n"
+            "time.sleep(30)"
+        )
+        deadline = time.monotonic() + 3
+        child_pid: int | None = None
+        while time.monotonic() < deadline:
+            text = str(adapter.read_python_output(running["execution"], "stdout")["text"])
+            if text.strip().isdigit():
+                child_pid = int(text.strip())
+                break
+            time.sleep(0.05)
+        assert child_pid is not None
+
+        assert adapter.reset_python()["status"] == "restarted"
+        assert _wait_for_windows_process_exit(child_pid)
+    finally:
+        adapter.close()
+
+
 def _assert_kernel_policy(adapter: IPythonMCPAdapter, launch: KernelLaunch) -> None:
     response = adapter.run_python(
         "import os\n"
@@ -182,3 +271,19 @@ def _is_within(path: Path, parent: Path) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _wait_for_windows_process_exit(pid: int) -> bool:
+    import pywintypes
+    import win32api
+    import win32con
+
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        try:
+            process = win32api.OpenProcess(win32con.PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        except pywintypes.error:
+            return True
+        process.Close()
+        time.sleep(0.05)
+    return False

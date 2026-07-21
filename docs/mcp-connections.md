@@ -35,6 +35,22 @@ The host's working directory is the default kernel workspace.
 }
 ```
 
+On Windows, configure the MCP host with the installed `.exe` and escaped
+absolute paths. Do not route the server through `cmd.exe`, PowerShell, or a
+Unix compatibility shell:
+
+```json
+{
+  "mcpServers": {
+    "loommux": {
+      "command": "C:\\workspace\\.venv\\Scripts\\loommux.exe",
+      "args": ["--transport", "stdio", "--result-mode", "structured"],
+      "cwd": "C:\\workspace"
+    }
+  }
+}
+```
+
 For a host that must not receive `structuredContent`, use the same subprocess
 transport with content-only results:
 
@@ -73,6 +89,13 @@ loommux --transport streamable-http --result-mode content --host 127.0.0.1 --por
 
 Its endpoint is `http://127.0.0.1:8802/mcp`. `--path /tools` would instead
 produce `http://127.0.0.1:8802/tools`.
+
+PowerShell starts the same loopback-only endpoint on native Windows:
+
+```powershell
+Set-Location C:\workspace
+loommux.exe --transport streamable-http --result-mode structured --host 127.0.0.1 --port 8801 --path /mcp
+```
 
 `loommux-content` remains available as a compatibility shortcut. With no
 arguments it starts content-only Streamable HTTP on `0.0.0.0:8801/mcp`; it also

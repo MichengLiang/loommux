@@ -93,6 +93,18 @@ def test_busy_submission_reports_running_integer_without_queueing(adapter: IPyth
     assert len(adapter.executions) == 1
 
 
+def test_interrupts_a_running_kernel_cell_through_the_managed_runtime(adapter: IPythonMCPAdapter) -> None:
+    running = adapter.run_python("# loommux: timeout_seconds=0.1\nimport time\nprint('started', flush=True)\ntime.sleep(30)")
+
+    interrupted = adapter.interrupt_python()
+    completed = adapter.wait_python(running["execution"], 3)
+
+    assert running["status"] == "running"
+    assert interrupted["status"] == "interrupt_sent"
+    assert completed["status"] == "interrupted"
+    assert completed["error"] == {"ename": "KeyboardInterrupt", "evalue": ""}
+
+
 def test_full_output_directive_returns_complete_long_combined_output(adapter: IPythonMCPAdapter) -> None:
     response = adapter.run_python("# loommux: full_output\nprint('\\n'.join(f'line-{number}' for number in range(301)))")
 
