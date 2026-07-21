@@ -95,11 +95,15 @@ def test_busy_submission_reports_running_integer_without_queueing(adapter: IPyth
 
 def test_interrupts_a_running_kernel_cell_through_the_managed_runtime(adapter: IPythonMCPAdapter) -> None:
     running = adapter.run_python("# loommux: timeout_seconds=0.1\nimport time\nprint('started', flush=True)\ntime.sleep(30)")
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline and "started" not in str(adapter.read_python_output(running["execution"], "stdout")["text"]):
+        time.sleep(0.05)
 
     interrupted = adapter.interrupt_python()
     completed = adapter.wait_python(running["execution"], 3)
 
     assert running["status"] == "running"
+    assert "started" in str(adapter.read_python_output(running["execution"], "stdout")["text"])
     assert interrupted["status"] == "interrupt_sent"
     assert completed["status"] == "interrupted"
     assert completed["error"] == {"ename": "KeyboardInterrupt", "evalue": ""}

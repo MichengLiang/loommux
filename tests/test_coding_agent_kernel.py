@@ -127,13 +127,12 @@ def test_kernel_runtime_closes_channels_when_readiness_fails(tmp_path: Path, mon
     assert runtime.launch is None
 
 
-def test_kernel_spec_uses_control_messages_for_windows_interrupts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_kernel_spec_uses_signal_interrupts(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     launch = KernelLaunch.create(Path(sys.executable).absolute(), workspace)
     try:
-        monkeypatch.setattr("loommux.kernel_runtime.sys.platform", "win32")
-        assert _kernel_spec(launch).interrupt_mode == "message"
+        assert _kernel_spec(launch).interrupt_mode == "signal"
     finally:
         shutil.rmtree(launch.runtime_root, ignore_errors=True)
 

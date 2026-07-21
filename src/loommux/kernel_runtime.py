@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import shutil
+import subprocess
 import sys
 from importlib import import_module
 from pathlib import Path
@@ -52,6 +53,7 @@ class _WindowsKernelContainment(_KernelContainment):
         self._win32con: Any = import_module("win32con")
         self._win32job: Any = import_module("win32job")
         self._job: Any = None
+        self._pid: int | None = None
 
     def attach(self, pid: int) -> None:
         job: Any = self._win32job.CreateJobObject(None, "")
@@ -67,14 +69,23 @@ class _WindowsKernelContainment(_KernelContainment):
         finally:
             process.Close()
         self._job = job
+        self._pid = pid
 
     def close(self) -> None:
         job, self._job = self._job, None
+        pid, self._pid = self._pid, None
+        if pid is not None:
+            # A host may already place loommux in a Job Object without nested
+            # membership. taskkill owns the Windows process tree regardless of
+            # that outer-job policy, so use it before releasing our own job.
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
         if job is not None:
-            # KILL_ON_JOB_CLOSE is a last-resort guard for abnormal process
-            # termination. Explicitly terminate here so reset has a bounded,
-            # observable child-process cleanup point before Jupyter closes its
-            # own kernel handle.
             try:
                 self._win32job.TerminateJobObject(job, 1)
             finally:
@@ -165,10 +176,7 @@ def _kernel_spec(launch: KernelLaunch) -> KernelSpec:
         argv=list(launch.command),
         display_name="loommux private IPython kernel",
         language="python",
-        # Windows console control events can be missed while a kernel is
-        # moving from message receipt into cell execution. IPykernel's control
-        # message path is reliable on both supported Windows versions.
-        interrupt_mode="message" if sys.platform == "win32" else "signal",
+        interrupt_mode="signal",
         resource_dir=str(launch.runtime_root),
     )
 

@@ -364,6 +364,7 @@ async def test_real_mcp_eight_tool_loop_preserves_public_sequence_across_reset(w
             {"freeform": "# loommux: timeout_seconds=0.1\nimport time\nprint('interrupt-ready', flush=True)\ntime.sleep(5)"},
         )
         interrupted_execution = interruptible.data["execution"]
+        interrupt_ready = await client.call_tool("read_python_output", {"execution": interrupted_execution, "stream": "stdout"})
         interrupt = await client.call_tool("interrupt_python", {})
         interrupted = await client.call_tool("wait_python", {"execution": interrupted_execution, "timeout_seconds": 3})
         reset = await client.call_tool("reset_python", {})
@@ -381,6 +382,7 @@ async def test_real_mcp_eight_tool_loop_preserves_public_sequence_across_reset(w
     assert completed.data["status"] == "completed"
     assert "long-finished" in completed.content[0].text
     assert interrupted_execution == 3
+    assert interrupt_ready.content[0].text == "interrupt-ready"
     assert interrupt.data["status"] == "interrupt_sent"
     assert interrupt.data["execution"] == interrupted_execution
     assert interrupted.data["status"] == "interrupted"
