@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import shutil
+import signal
 import subprocess
 import sys
 from importlib import import_module
@@ -114,7 +115,9 @@ class KernelRuntime:
         containment: _KernelContainment | None = None
         client: BlockingKernelClient | None = None
         try:
-            manager.start_kernel(cwd=str(self.workspace), env=launch.environment)
+            # Windows needs a private console process group so CTRL_C_EVENT can
+            # target only the kernel. Containment owns cleanup in that mode.
+            manager.start_kernel(cwd=str(self.workspace), env=launch.environment, independent=sys.platform == "win32")
             pid = _kernel_pid(manager)
             containment = _create_containment()
             containment.attach(pid)
@@ -143,6 +146,9 @@ class KernelRuntime:
     def interrupt(self) -> None:
         manager = self.manager
         if manager is None or not manager.is_alive():
+            return
+        if sys.platform == "win32":
+            manager.signal_kernel(getattr(signal, "CTRL_C_EVENT", signal.SIGINT))
             return
         manager.interrupt_kernel()
 
