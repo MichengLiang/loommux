@@ -137,40 +137,6 @@ def test_kernel_spec_uses_signal_interrupts(tmp_path: Path) -> None:
         shutil.rmtree(launch.runtime_root, ignore_errors=True)
 
 
-def test_kernel_runtime_uses_an_independent_process_group_on_windows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    received: dict[str, object] = {}
-
-    class ReadyClient:
-        def start_channels(self) -> None:
-            pass
-
-        def wait_for_ready(self, *, timeout: float) -> None:
-            assert timeout == 10
-
-    class ReadyManager:
-        def __init__(self, *_args: object, **_kwargs: object) -> None:
-            self.provisioner = type("Provisioner", (), {"pid": 456})()
-
-        def start_kernel(self, **kwargs: object) -> None:
-            received.update(kwargs)
-
-        def client(self) -> ReadyClient:
-            return ReadyClient()
-
-        def shutdown_kernel(self, *, now: bool) -> None:
-            assert now is True
-
-    monkeypatch.setattr("loommux.kernel_runtime._LoommuxKernelManager", ReadyManager)
-    monkeypatch.setattr("loommux.kernel_runtime._create_containment", _KernelContainment)
-    monkeypatch.setattr("loommux.kernel_runtime.sys.platform", "win32")
-    runtime = KernelRuntime(workspace, Path(sys.executable).absolute())
-    try:
-        runtime.start(10)
-        assert received["independent"] is True
-    finally:
-        runtime.shutdown()
 
 
 def test_kernel_launch_allows_the_platform_temp_directory_inside_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

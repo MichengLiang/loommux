@@ -80,7 +80,9 @@ Windows Job Object so `reset_python` and server shutdown also end child
 processes launched by the kernel. A submitted cell remains arbitrary Python:
 commands inside that cell must target the operating system on which the kernel
 is running. WSL is a separate Linux deployment, not a substitute for native
-Windows coverage.
+Windows coverage. Because IPython kernels do not accept Ctrl+C through this
+entry point on Windows, `interrupt_python` replaces the private kernel after
+marking the active cell `interrupted`; later cells use the fresh kernel.
 
 The package installs two console commands. Their defaults remain convenient,
 but `--transport` and `--result-mode` can be selected independently on either

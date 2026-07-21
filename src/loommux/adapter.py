@@ -222,7 +222,31 @@ class IPythonMCPAdapter:
                 return {"ok": True, "status": "idle", "kernel_pid": kernel.pid}
             record = self.executions[self.current_execution]
             record.interrupt_requested = True
+        if sys.platform == "win32":
+            return self._restart_after_windows_interrupt(kernel, record)
         kernel.interrupt()
+        return {"ok": True, "status": "interrupt_sent", "execution": record.execution, "kernel_pid": kernel.pid}
+
+    def _restart_after_windows_interrupt(self, old_kernel: KernelSession, record: Execution) -> dict[str, Any]:
+        """Replace a Windows kernel because ipykernel cannot receive Ctrl+C there."""
+        with self._lock:
+            if self.workspace is None or self.python_path is None or self.kernel is not old_kernel:
+                return {"ok": False, "status": "kernel_not_started", "message": "kernel is not started"}
+            self.kernel = None
+            self.current_execution = None
+            record.record_error({"ename": "KeyboardInterrupt", "evalue": "", "traceback": []})
+            record.finish()
+            self._publish_execution_finished(record)
+            workspace, python_path = self.workspace, self.python_path
+        old_kernel.shutdown(mark_execution_killed=False)
+        kernel = self._new_kernel_session(workspace, python_path)
+        try:
+            kernel.start()
+        except Exception as exc:
+            kernel.shutdown(mark_execution_killed=False)
+            return self._workspace_error("kernel_start_failed", f"kernel failed to restart after interrupt: {exc}", workspace, python_path)
+        with self._lock:
+            self.kernel = kernel
         return {"ok": True, "status": "interrupt_sent", "execution": record.execution, "kernel_pid": kernel.pid}
 
     def reset_python(self) -> dict[str, Any]:
