@@ -162,7 +162,7 @@ def create_mcp(policy: ResultChannelPolicy, monitor_publisher: MonitorPublisher 
         return call("python_execution_status", {"execution": execution}, lambda: adapter.python_execution_status(execution))
 
     @mcp.tool(output_schema=None)
-    def read_python_output(execution: int | None = None, stream: str = "combined", line_range: str | None = None, show_line_numbers: bool = False, max_chars: int | None = None) -> ToolResult:
+    def read_python_output(execution: int | None = None, stream: str = "combined", line_range: str | None = None, max_chars: int | None = None) -> ToolResult:
         """读取一个 execution 的指定输出流。
 
         选择与流
@@ -192,16 +192,14 @@ def create_mcp(policy: ResultChannelPolicy, monitor_publisher: MonitorPublisher 
                 ``result`` 与 ``traceback``。
             line_range: ``start:stop`` 行范围；已确定需要完整消费所选流时省略，
                 工具会一次返回全部行，无需拆分为多个小范围。
-            show_line_numbers: 为 true 时，在每个返回行前加其从 1 开始的
-                所选流行号。
             max_chars: 每个返回行允许显示的最大字符数；必须为正数。超出
                 部分只在响应中裁切，不改变已保存文本或行坐标。
 
         Returns:
             所选流的文本、总行数、返回行数及范围外省略行数。
         """
-        arguments = {"execution": execution, "stream": stream, "line_range": line_range, "show_line_numbers": show_line_numbers, "max_chars": max_chars}
-        return call("read_python_output", arguments, lambda: adapter.read_python_output(execution, stream, line_range, show_line_numbers, max_chars))
+        arguments = {"execution": execution, "stream": stream, "line_range": line_range, "max_chars": max_chars}
+        return call("read_python_output", arguments, lambda: adapter.read_python_output(execution, stream, line_range, max_chars))
 
     @mcp.tool(output_schema=None)
     def search_python_output(query: str, execution: int | None = None, stream: str = "combined", query_mode: str = "auto", context_before: int = 0, context_after: int = 0, ignore_case: bool = False, max_chars: int | None = None) -> ToolResult:

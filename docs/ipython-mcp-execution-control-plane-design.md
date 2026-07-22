@@ -180,7 +180,7 @@ run_python(freeform)
 python_status()
 python_execution_status(execution: int | null = null)
 read_python_output(execution: int | null = null, stream="combined",
-                   line_range=null, show_line_numbers=false, max_chars=null)
+                   line_range=null, max_chars=null)
 search_python_output(query, execution: int | null = null, stream="combined",
                      query_mode="auto", context_before=0, context_after=0,
                      ignore_case=false, max_chars=null)
@@ -239,9 +239,8 @@ Examples:
 3:3    line 3
 ```
 
-`show_line_numbers=true` prefixes returned lines with their 1-indexed stream
-line number. `max_chars` limits each returned line independently and does not
-change the stored text or line coordinate. A non-positive value is invalid.
+`max_chars` limits each returned line independently and does not change the
+stored text or line coordinate. A non-positive value is invalid.
 
 ### 5.5 `search_python_output`
 
@@ -356,7 +355,7 @@ The following facts belong in descriptions because they change a model action:
 | --- | --- |
 | `run_python` | Raw Python cell input, timeout directive, 10-second default, session execution number, and follow-up actions for running or large output. |
 | `python_execution_status` | Integer execution selection and current-or-last default. |
-| `read_python_output` | Integer execution selection, stream values, line range coordinate, line numbering, and per-line clipping. |
+| `read_python_output` | Integer execution selection, stream values, line range coordinate, and per-line clipping. |
 | `search_python_output` | Integer execution selection, stream values, query modes, context, case behavior, and per-line clipping. |
 | `wait_python` | Integer execution selection, current-or-last default, and wait duration. |
 | `python_status` | Kernel state and current/recent execution observation. |

@@ -44,7 +44,7 @@ async def test_entrypoints_have_identical_eight_tool_schemas_and_descriptions(wo
         assert dual_tools[name].inputSchema == content_tools[name].inputSchema
         assert dual_tools[name].description == content_tools[name].description
     schema = dual_tools["read_python_output"].inputSchema["properties"]
-    assert set(schema) == {"execution", "stream", "line_range", "show_line_numbers", "max_chars"}
+    assert set(schema) == {"execution", "stream", "line_range", "max_chars"}
     assert schema["execution"]["anyOf"][0]["type"] == "integer"
 
 
@@ -223,7 +223,6 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
     read_parameters = tools["read_python_output"].inputSchema["properties"]
     assert "省略时使用当前记录" in read_parameters["execution"]["description"]
     assert "已确定需要完整消费所选流时省略" in read_parameters["line_range"]["description"]
-    assert "从 1 开始的" in read_parameters["show_line_numbers"]["description"]
     assert "必须为正数" in read_parameters["max_chars"]["description"]
 
     search = tools["search_python_output"].description or ""

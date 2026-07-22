@@ -72,7 +72,7 @@ reset_python()
 日志工具负责 output log 文本：
 
 ```text
-read_python_output(execution_id=None, output_log=None, stream="combined", line_range=None, show_line_numbers=False, max_chars=None)
+read_python_output(execution_id=None, output_log=None, stream="combined", line_range=None, max_chars=None)
 search_python_output(query, execution_id=None, output_log=None, stream="combined", query_mode="auto", context_before=0, context_after=0, ignore_case=False, max_chars=None)
 ```
 
@@ -167,7 +167,6 @@ read_python_output(
   output_log: str | null = null,
   stream: "combined" | "stdout" | "stderr" | "result" | "traceback" = "combined",
   line_range: str | null = null,
-  show_line_numbers: bool = false,
   max_chars: int | null = null
 )
 ```
@@ -219,11 +218,9 @@ read_python_output(
   "returned_lines": 10,
   "omitted_before": 90,
   "omitted_after": 0,
-  "text": "91 | ...\n92 | ..."
+  "text": "...\n..."
 }
 ```
-
-`show_line_numbers == false` 时，`text` 不含行号前缀。
 
 ## 7. 日志搜索语义
 
@@ -325,7 +322,7 @@ traceback
 
 ```text
 append(text)
-read(line_range, show_line_numbers, max_chars)
+read(line_range, max_chars)
 search(query, query_mode, context_before, context_after, ignore_case, max_chars)
 ```
 

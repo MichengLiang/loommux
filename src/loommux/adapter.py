@@ -179,14 +179,14 @@ class IPythonMCPAdapter:
         record = self._select_execution(execution)
         return {"ok": False, "status": "execution_not_found", "message": "execution was not found"} if record is None else self._status_response(record)
 
-    def read_python_output(self, execution: int | None = None, stream: str = "combined", line_range: str | None = None, show_line_numbers: bool = False, max_chars: int | None = None) -> dict[str, Any]:
+    def read_python_output(self, execution: int | None = None, stream: str = "combined", line_range: str | None = None, max_chars: int | None = None) -> dict[str, Any]:
         record, error = self._select_stream(execution, stream)
         if error is not None:
             return error
         assert record is not None
         line_log = record.logs.get(stream)
         assert line_log is not None
-        result = line_log.read(line_range, show_line_numbers=show_line_numbers, max_chars=max_chars)
+        result = line_log.read(line_range, max_chars=max_chars)
         if result.get("ok") is not False:
             result.update({"execution": record.execution, "stream": stream})
         return result

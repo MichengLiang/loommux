@@ -168,7 +168,7 @@ def run_python(freeform: str) -> dict[str, Any]:
 
 ### 4.2 `read_python_output` Docstring
 
-`read_python_output` 的 docstring 必须说明目标选择、行范围、行号和横向裁切规则：
+`read_python_output` 的 docstring 必须说明目标选择、行范围和横向裁切规则：
 
 `read_python_output` docstring 必须使用以下内容：
 
@@ -178,7 +178,6 @@ def read_python_output(
     output_log: str | None = None,
     stream: str = "combined",
     line_range: str | None = None,
-    show_line_numbers: bool = False,
     max_chars: int | None = None,
 ) -> dict[str, Any]:
     """读取 execution output log 的文本行。
@@ -204,7 +203,6 @@ def read_python_output(
             number 解释；端点可省略；负数端点按从日志尾部相对定位解释；
             stop 为包含端点。`:10` 读取前 10 行，`-10:` 读取后 10 行，
             `20:40` 读取第 20 到第 40 行。
-        show_line_numbers: 是否在返回文本中显示 1-indexed 行号。
         max_chars: 每一行的最大显示宽度。该参数只裁切单行，不裁切整段
             结果。
 
@@ -460,15 +458,7 @@ Python execution completed without visible output.
 
 ## 8. `read_python_output` Pretty Text 规格
 
-### 8.1 Range With Line Numbers
-
-```text
-299 | line-298
-300 | line-299
-301 | line-300
-```
-
-### 8.2 Range Without Line Numbers
+### 8.1 Range Output
 
 ```text
 line-298
@@ -476,13 +466,13 @@ line-299
 line-300
 ```
 
-### 8.3 Empty Result
+### 8.2 Empty Result
 
 ```text
 No output lines are available.
 ```
 
-### 8.4 Invalid Range
+### 8.3 Invalid Range
 
 ```text
 invalid_line_range: line_range must use start:stop

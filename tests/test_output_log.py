@@ -4,11 +4,11 @@ from loommux.execution import Execution
 from loommux.output_log import ExecutionLogs, LineLog
 
 
-def test_line_log_reads_ranges_with_numbers_and_clipping() -> None:
+def test_line_log_reads_ranges_and_clipping() -> None:
     log = LineLog()
     log.append("alpha\nbeta\ngamma\n")
 
-    assert log.read(":2", show_line_numbers=True)["text"] == "1 | alpha\n2 | beta"
+    assert log.read(":2")["text"] == "alpha\nbeta"
     assert log.read("-2:")["text"] == "beta\ngamma"
     assert log.read("3:3", max_chars=3)["text"] == "gam...[2 chars omitted]"
     assert log.read("bad")["status"] == "invalid_line_range"

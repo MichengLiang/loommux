@@ -30,7 +30,7 @@ class LineLog:
     def append(self, text: str) -> None:
         self._text += text
 
-    def read(self, line_range: str | None = None, *, show_line_numbers: bool = False, max_chars: int | None = None) -> dict[str, object]:
+    def read(self, line_range: str | None = None, *, max_chars: int | None = None) -> dict[str, object]:
         max_chars_error = _validate_max_chars(max_chars)
         if max_chars_error is not None:
             return max_chars_error
@@ -42,12 +42,11 @@ class LineLog:
         return {
             "ok": True,
             "line_range": line_range,
-            "show_line_numbers": show_line_numbers,
             "total_lines": len(lines),
             "returned_lines": len(selected),
             "omitted_before": max(resolved.start - 1, 0) if selected else len(lines),
             "omitted_after": max(len(lines) - resolved.stop, 0) if selected else 0,
-            "text": "\n".join(_render_line(line, number, show_line_numbers=show_line_numbers, max_chars=max_chars) for number, line in selected),
+            "text": "\n".join(_clip_line(line, max_chars) for line in selected),
         }
 
     def search(self, query: str, *, query_mode: str = "auto", context_before: int = 0, context_after: int = 0, ignore_case: bool = False, max_chars: int | None = None) -> dict[str, object]:
@@ -129,13 +128,8 @@ def _resolve_endpoint(raw: str, total_lines: int, *, default: int) -> int:
     return total_lines + value + 1 if value < 0 else value
 
 
-def _selected_lines(lines: list[str], line_range: ResolvedLineRange) -> list[tuple[int, str]]:
-    return [] if line_range.start > line_range.stop else [(number, lines[number - 1]) for number in range(line_range.start, line_range.stop + 1)]
-
-
-def _render_line(line: str, number: int, *, show_line_numbers: bool, max_chars: int | None) -> str:
-    value = _clip_line(line, max_chars)
-    return f"{number} | {value}" if show_line_numbers else value
+def _selected_lines(lines: list[str], line_range: ResolvedLineRange) -> list[str]:
+    return [] if line_range.start > line_range.stop else lines[line_range.start - 1 : line_range.stop]
 
 
 def _clip_line(line: str, max_chars: int | None) -> str:
