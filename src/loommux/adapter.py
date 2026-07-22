@@ -1,40 +1,21 @@
 from __future__ import annotations
 
 import math
-import re
 import sys
 import threading
 from contextvars import ContextVar, Token
 from pathlib import Path
 from typing import Any
 
+from loommux.cell_control import LoommuxMagicError, parse_loommux_cell_control
 from loommux.execution import Execution
 from loommux.kernel_session import KernelSession
 from loommux.monitoring import MonitorPublisher, NoopMonitorPublisher, safe_publish
-from loommux.source_transform import prepare_protected_multiline_strings
+from loommux.source_transform import prepare_apply_patch_literals
 
 DEFAULT_OUTPUT_LINE_LIMIT = 300
-DEFAULT_RUN_PYTHON_TIMEOUT_SECONDS = 10.0
 KERNEL_START_ATTEMPTS = 2
 OUTPUT_STREAMS = {"combined", "stdout", "stderr", "result", "traceback"}
-RUN_PYTHON_TIMEOUT_DIRECTIVE_RE = re.compile(r"^# loommux: timeout_seconds=([1-9][0-9]*|[0-9]+\.[0-9]+)$")
-RUN_PYTHON_FULL_OUTPUT_DIRECTIVE_RE = re.compile(r"^# loommux: full_output$")
-
-
-def parse_run_python_freeform_timeout(freeform: str, protected_line_numbers: frozenset[int] = frozenset()) -> tuple[float, str]:
-    matches = [
-        float(match.group(1))
-        for line_number, line in enumerate(freeform.splitlines())
-        if line_number not in protected_line_numbers
-        and (match := RUN_PYTHON_TIMEOUT_DIRECTIVE_RE.fullmatch(line))
-        and math.isfinite(float(match.group(1)))
-        and float(match.group(1)) > 0
-    ]
-    return (matches[0], "directive") if len(matches) == 1 else (DEFAULT_RUN_PYTHON_TIMEOUT_SECONDS, "default")
-
-
-def parse_run_python_full_output(freeform: str, protected_line_numbers: frozenset[int] = frozenset()) -> bool:
-    return any(line_number not in protected_line_numbers and RUN_PYTHON_FULL_OUTPUT_DIRECTIVE_RE.fullmatch(line) for line_number, line in enumerate(freeform.splitlines()))
 
 
 class IPythonMCPAdapter:
@@ -104,19 +85,23 @@ class IPythonMCPAdapter:
     def run_python(self, freeform: str) -> dict[str, Any]:
         if not isinstance(freeform, str):
             return {"ok": False, "status": "invalid_code", "message": "freeform must be a string"}
-        protection_transform = prepare_protected_multiline_strings(freeform)
-        timeout_seconds, _source = parse_run_python_freeform_timeout(freeform, protection_transform.protected_line_numbers)
-        token = self._pending_execution_input.set((freeform, protection_transform.as_dict()))
+        try:
+            control = parse_loommux_cell_control(freeform)
+        except LoommuxMagicError as exc:
+            return {"ok": False, "status": "invalid_loommux_magic", "message": f"invalid_loommux_magic: {exc}"}
+        apply_patch_transform = prepare_apply_patch_literals(freeform)
+        token = self._pending_execution_input.set((freeform, apply_patch_transform.as_dict()))
         try:
             return self._submit_python_cell(
-                protection_transform.submitted_source,
-                timeout_seconds,
-                parse_run_python_full_output(freeform, protection_transform.protected_line_numbers),
+                apply_patch_transform.submitted_source,
+                control.initial_wait_seconds,
+                control.full_output_requested,
+                control_magic=control.control_magic,
             )
         finally:
             self._pending_execution_input.reset(token)
 
-    def _submit_python_cell(self, code: str, timeout_seconds: float, full_output_requested: bool = False) -> dict[str, Any]:
+    def _submit_python_cell(self, code: str, timeout_seconds: float, full_output_requested: bool = False, *, control_magic: str | None = None) -> dict[str, Any]:
         if not isinstance(code, str):
             return {"ok": False, "status": "invalid_code", "message": "code must be a string"}
         if (error := self._validate_timeout(timeout_seconds)) is not None:
@@ -129,7 +114,7 @@ class IPythonMCPAdapter:
                 return {"ok": False, "status": "kernel_not_started", "message": "kernel is not started"}
             if self.current_execution is not None:
                 return {"ok": False, "status": "busy", "execution": self.current_execution, "message": "kernel is already executing code"}
-            author_source, protection_transform = self._pending_execution_input.get() or (code, None)
+            author_source, apply_patch_transform = self._pending_execution_input.get() or (code, None)
             execution = Execution(
                 execution=self._next_execution,
                 code=code,
@@ -137,7 +122,9 @@ class IPythonMCPAdapter:
                 full_output_requested=full_output_requested,
                 author_source=author_source,
                 submitted_source=code,
-                protection_transform=protection_transform,
+                apply_patch_transform=apply_patch_transform,
+                initial_wait_seconds=timeout_seconds,
+                control_magic=control_magic,
             )
             self._next_execution += 1
             self.executions[execution.execution] = execution
@@ -339,8 +326,10 @@ class IPythonMCPAdapter:
                 "code": record.author_source,
                 "author_source": record.author_source,
                 "submitted_source": record.submitted_source,
-                "protection_transform": record.protection_transform,
-                "timeout_seconds": timeout_seconds,
+                "apply_patch_transform": record.apply_patch_transform,
+                "initial_wait_seconds": record.initial_wait_seconds,
+                "full_output_requested": record.full_output_requested,
+                "control_magic": record.control_magic,
                 "timestamp": record.submitted_at,
             },
         )

@@ -48,11 +48,13 @@ class Execution:
     kernel_pid: int
     author_source: str | None = None
     submitted_source: str | None = None
-    protection_transform: dict[str, Any] | None = None
+    apply_patch_transform: dict[str, Any] | None = None
     submitted_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     status: ExecutionStatus = "running"
+    initial_wait_seconds: float = 10.0
     full_output_requested: bool = False
+    control_magic: str | None = None
     stdout: str = ""
     stderr: str = ""
     result_text: str = ""
@@ -71,14 +73,14 @@ class Execution:
     _traceback_normalizer: TerminalTextNormalizer = field(default_factory=TerminalTextNormalizer, init=False, repr=False)
 
     def __post_init__(self) -> None:
-        # code predates protected cells. Keep it as the submitted-source alias
+        # code predates source transforms. Keep it as the submitted-source alias
         # for in-process callers while retaining author text for observability.
         if self.author_source is None:
             self.author_source = self.code
         if self.submitted_source is None:
             self.submitted_source = self.code
-        if self.protection_transform is None:
-            self.protection_transform = {
+        if self.apply_patch_transform is None:
+            self.apply_patch_transform = {
                 "author_source": self.author_source,
                 "submitted_source": self.submitted_source,
                 "applied": False,
@@ -203,7 +205,9 @@ class Execution:
             "ok": self.status not in {"error", "killed"},
             "execution": self.execution,
             "status": self.status,
+            "initial_wait_seconds": self.initial_wait_seconds,
             "full_output_requested": self.full_output_requested,
+            "control_magic": self.control_magic,
             "stdout": "" if omitted else self.stdout,
             "stderr": "" if omitted else self.stderr,
             "result_text": "" if omitted else self.result_text,
@@ -223,7 +227,9 @@ class Execution:
             "ok": self.status not in {"error", "killed"},
             "execution": self.execution,
             "status": self.status,
+            "initial_wait_seconds": self.initial_wait_seconds,
             "full_output_requested": self.full_output_requested,
+            "control_magic": self.control_magic,
             "submitted_at": self.submitted_at,
             "updated_at": self.updated_at,
             "completed_at": self.completed_at,

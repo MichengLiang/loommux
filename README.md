@@ -260,7 +260,7 @@ record, then the most recently accepted record. With neither, the tool returns
 ### Submitting A Cell
 
 `run_python` accepts one `freeform` loommux Python cell. Ordinary source and
-the resulting Python values of protected multiline strings are available to
+the resulting Python values of validated Apply Patch literals are available to
 later cells in the same persistent server process.
 
 ```python
@@ -269,45 +269,45 @@ radius = 3
 math.pi * radius**2
 ```
 
-### Protected Multiline Raw Strings
+### Apply Patch Literals
 
-Use an outer triple-double-quoted literal with `*** Begin...` and `*** End...`
-at physical column zero to pass long raw text through a Python cell. The Begin
-and End lines remain part of the resulting Python `str`; text inside the block
-is preserved literally, including triple quotes, backslashes, braces, and
-`# loommux:` text.
+Use an outer triple-double-quoted literal containing a valid Apply Patch
+program to pass patch text through a Python cell. The exact `*** Begin Patch`
+and `*** End Patch` markers, valid file-operation controls, and hunk lines are
+validated before loommux converts the literal into an equivalent Python `str`.
+The patch text remains part of the resulting value, including embedded triple
+quotes, backslashes, and braces.
 
 ````python
 patch = f"""
 *** Begin Patch
 *** Update File: example.py
 @@
-message = r"""
-hello
-"""
++message = r"""
++hello
++"""
 *** End Patch
 """
 ````
 
-`patch` contains the complete Begin/End text. The outer `r` and `f` prefixes do
-not apply raw-string or f-string interpretation to protected text. loommux
-recognizes timeout and complete-output directives only outside a complete
-protected string. See [Protected Multiline Raw String Design](docs/ipython-mcp-protected-multiline-string-design.md)
+`patch` contains the complete Apply Patch program. The outer `r` and `f`
+prefixes do not apply raw-string or f-string interpretation to the converted
+patch text. Marker-shaped text with invalid patch grammar is ordinary Python
+source and is not converted. See [Apply Patch Literal Transform Design](docs/ipython-mcp-protected-multiline-string-design.md)
 for the full contract and acceptance rules.
 
-The default wait for this one MCP call is 10 seconds. A cell can request a
-different positive wait time by containing exactly one complete directive
-line:
+The default initial wait for one MCP call is 10 seconds. A cell can make its
+complete submission policy explicit with a first-line `%%loommux` cell magic:
 
 ```python
-# loommux: timeout_seconds=120
+%%loommux --wait 120
 build_report()
 ```
 
-The directive only changes how long that `run_python` call waits. It does not
-limit Python runtime, interrupt the cell when time expires, modify later
-calls, or add a variable to the kernel. No valid directive, an invalid
-directive, or multiple valid directives uses the 10-second default.
+`--wait` only changes how long that `run_python` call waits. It does not limit
+Python runtime, interrupt the cell when time expires, modify later calls, or
+add a variable to the kernel. A malformed or duplicated option returns
+`invalid_loommux_magic` before an execution is allocated or source is submitted.
 
 When the call returns while the cell is still running, use `wait_python`,
 `python_execution_status`, `read_python_output`, `search_python_output`,
@@ -360,25 +360,24 @@ mark selected context lines with `C`.
 ### Requesting Complete Output
 
 When a cell's entire terminal combined output is the intended result, include
-this exact no-value Python comment in that cell:
+`--full-output` in its first-line control magic:
 
 ```python
-# loommux: full_output
+%%loommux --full-output
 build_report()
 ```
 
-The marker applies only to that execution. Once the execution is terminal, it
+The option applies only to that execution. Once the execution is terminal, it
 bypasses the normal 300-line delivery threshold and makes `run_python` or a
 later `wait_python` return the complete collected `combined` output. It does
 not cause partial running output to be returned and does not alter the input
 or behavior of `read_python_output` and `search_python_output`.
 
-The full-output and timeout directives are independent and may appear in the
-same cell:
+The full-output and wait options are independent and may appear in the same
+magic line:
 
 ```python
-# loommux: timeout_seconds=120
-# loommux: full_output
+%%loommux --wait 120 --full-output
 build_report()
 ```
 
@@ -472,8 +471,8 @@ The runtime is deliberately divided into narrow responsibilities:
 
 The current public contract is documented in [Coding Agent Control Plane
 Design](docs/coding-agent-control-plane-design.md).
-Focused references cover the [freeform timeout directive](docs/ipython-mcp-freeform-run-python-design.md),
-the [complete-output directive](docs/ipython-mcp-full-output-directive-design.md),
+Focused references cover [freeform cell control](docs/ipython-mcp-freeform-run-python-design.md),
+[complete-output control](docs/ipython-mcp-full-output-directive-design.md),
 and [workspace configuration](docs/workspace-configuration.md). Some files in
 `docs/` are explicitly retained as historical design material; they are not
 current API specifications.

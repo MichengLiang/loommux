@@ -55,14 +55,16 @@ async def test_execution_monitor_events_use_integer_coordinate(workspace: Path, 
     assert publisher.closed is True
 
 
-async def test_protected_source_monitor_event_preserves_author_and_submission_facts(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_apply_patch_source_monitor_event_preserves_author_and_submission_facts(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(workspace)
     publisher = RecordingPublisher()
-    source = '''payload = """
+    source = '''%%loommux --wait 2 --full-output
+payload = """
 *** Begin Patch
-value = """
-quoted
-"""
+*** Add File: quoted.txt
++value = """
++quoted
++"""
 *** End Patch
 """
 '''
@@ -74,17 +76,20 @@ quoted
     assert submitted["code"] == source
     assert submitted["author_source"] == source
     assert submitted["submitted_source"] != source
-    assert submitted["protection_transform"]["applied"] is True
-    assert submitted["protection_transform"]["literal_count"] == 1
-    assert submitted["protection_transform"]["author_source"] == source
-    assert submitted["protection_transform"]["submitted_source"] == submitted["submitted_source"]
+    assert submitted["apply_patch_transform"]["applied"] is True
+    assert submitted["apply_patch_transform"]["literal_count"] == 1
+    assert submitted["apply_patch_transform"]["author_source"] == source
+    assert submitted["apply_patch_transform"]["submitted_source"] == submitted["submitted_source"]
+    assert submitted["initial_wait_seconds"] == 2.0
+    assert submitted["full_output_requested"] is True
+    assert submitted["control_magic"] == "%%loommux --wait 2 --full-output"
 
 
 async def test_reset_publishes_killed_integer_record(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(workspace)
     publisher = RecordingPublisher()
     async with Client(create_mcp(publisher)) as client:
-        running = await client.call_tool("run_python", {"freeform": "# loommux: timeout_seconds=0.1\nimport time\ntime.sleep(5)"})
+        running = await client.call_tool("run_python", {"freeform": "%%loommux --wait 0.1\nimport time\ntime.sleep(5)"})
         await client.call_tool("reset_python", {})
 
     killed = [event for event in publisher.events_of("execution_finished") if event["status"] == "killed"]

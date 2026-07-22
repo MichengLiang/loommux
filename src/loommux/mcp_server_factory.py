@@ -55,31 +55,39 @@ def create_mcp(policy: ResultChannelPolicy, monitor_publisher: MonitorPublisher 
         输入
         ----
 
-        接受一段 loommux Python cell 源码。普通 Python 文本会提交给当前
-        kernel；变量、导入和其他 namespace 状态会与同一服务器会话中的后续
-        cell 共享。
+        接受一段 loommux Python cell 源码。普通 Python 文本使用默认策略；
+        若作者需要声明本次 cell 的观察策略，第一行使用 IPython cell magic
+        ``%%loommux``。变量、导入和其他 namespace 状态会与同一服务器会话中
+        的后续 cell 共享。
 
         等待上限
         --------
 
-        本次调用默认最多等待 10 秒。若 cell 中恰有一行完整匹配下列注释，
-        该正数秒值只覆盖本次调用的等待上限::
+        本次调用默认最多等待 10 秒。若 cell 的第一行是下列 magic，其
+        ``--wait`` 正有限十进制值只覆盖本次调用的等待上限::
 
-            # loommux: timeout_seconds=120
+            %%loommux --wait 120
+            build_report()
 
-        没有唯一有效注释时使用 10 秒。等待到期不会中断仍在运行的 cell；
-        该注释不改变 Python runtime 或后续调用的等待上限。
+        bare ``%%loommux`` 也使用 10 秒。重复选项、未知选项、缺少值或非正
+        值会返回 ``invalid_loommux_magic``，不会分配 execution 或提交 kernel。
+        等待到期不会中断仍在运行的 cell；magic 不改变 Python runtime 或后续
+        调用的等待上限。
 
         完整输出
         --------
 
-        若 cell 中至少有一行完整匹配下列无值注释，该 execution 在终态时
-        直接交付完整 combined 正文，不受默认 300 行交付阈值限制::
+        若第一行 magic 包含 ``--full-output``，该 execution 在终态时直接
+        交付完整 combined 正文，不受默认 300 行交付阈值限制::
 
-            # loommux: full_output
+            %%loommux --full-output
+            print("\\n".join(generate_manifest()))
 
-        该标记只作用于本次 execution，且保留在原始 cell 中作为 Python
-        注释执行。在明确需要完整阅读某些信息，例如阅读某些文件，资料……使用本标记以避免无意义的反复阅读开销。
+        ``--wait`` 与 ``--full-output`` 可以组合为
+        ``%%loommux --wait 120 --full-output``。这些选项只作用于本次
+        execution，且 authored magic line 保留在原始 source 中。在明确需要
+        完整阅读某些信息，例如阅读某些文件、资料时，使用该选项避免无意义的
+        反复阅读开销。
 
         图像展示
         --------
@@ -100,8 +108,8 @@ def create_mcp(policy: ResultChannelPolicy, monitor_publisher: MonitorPublisher 
         或 ``search_python_output`` 读取或搜索保留的输出。
 
         Args:
-            freeform: 要提交的原始 Python cell 源码文本；可包含唯一的
-                timeout directive 和无值的 full_output directive。
+            freeform: 要提交的原始 Python cell 源码文本；可用第一行
+                ``%%loommux`` 声明本次初始等待与完整输出策略。
 
         Returns:
             已接受 execution 的当前状态；完成的小输出直接进入模型内容，
@@ -254,9 +262,9 @@ def create_mcp(policy: ResultChannelPolicy, monitor_publisher: MonitorPublisher 
         完整输出交付
         ------------
 
-        当所选 execution 带有 ``# loommux: full_output`` 标记且已达到
-        终态时，本工具直接返回完整 combined 正文，不应用默认 300 行省略。
-        仍在运行的标记 execution 继续返回 running，而非不完整正文。
+        当所选 execution 的第一行 ``%%loommux`` 含 ``--full-output`` 且已
+        达到终态时，本工具直接返回完整 combined 正文，不应用默认 300 行省略。
+        仍在运行的此类 execution 继续返回 running，而非不完整正文。
 
         Args:
             execution: 要等待的正整数执行编号。省略时使用当前记录，随后

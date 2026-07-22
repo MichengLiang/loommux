@@ -1,59 +1,45 @@
 # `run_python` Freeform Input Contract
 
-This document is the authority for the `run_python` freeform input and timeout
-directive grammar. Protected multiline raw-string syntax, source conversion,
-and directive regions are defined by
-[IPython MCP Protected Multiline Raw String Design](ipython-mcp-protected-multiline-string-design.md).
-Execution identity, lifecycle, output streams, result surfaces, and all
-follow-up tools are defined by
-[Coding Agent Control Plane Design](coding-agent-control-plane-design.md).
-The no-value full-output marker and its result-delivery behavior are defined by
-[IPython MCP Complete Output Directive Design](ipython-mcp-full-output-directive-design.md).
+The target authority for this contract is [Loommux `%%loommux` Cell Control
+Magic Design](ipython-mcp-cell-control-magic-design.md). This companion
+document records the stable MCP input boundary without creating a second
+control language.
 
 ## Input
 
-`run_python(freeform)` accepts one loommux Python cell as its only input.
-Ordinary cell source is submitted to the persistent IPython kernel; complete
-protected multiline raw strings are converted to equivalent Python `str`
-expressions before submission. It does not accept a structured `code` field or
-a `timeout_seconds` field.
+`run_python(freeform)` accepts exactly one loommux Python cell. It has no
+structured `code`, `wait`, `timeout`, or `full_output` argument. Ordinary
+Python source uses the default initial wait of 10 seconds and no complete-output
+request.
 
-Protected strings use `*** Begin...` and `*** End...` lines at physical column
-zero. Their complete syntax, raw-value semantics, and relationship to the
-directives in this document are defined by the protected multiline string
-design.
-
-## Timeout Directive
-
-One complete directive line selects the wait duration for that invocation:
+When an author needs to declare the policy for the complete cell, its physical
+first line is:
 
 ```python
-# loommux: timeout_seconds=120
+%%loommux --wait 120 --full-output
+build_report()
 ```
 
-The complete-line grammar is:
+`--wait` accepts one positive finite decimal value. `--full-output` requests
+complete terminal combined-output delivery. The parser rejects unknown,
+duplicated, missing, malformed, or non-positive options as
+`invalid_loommux_magic` before execution allocation and kernel submission.
 
-```text
-^# loommux: timeout_seconds=([1-9][0-9]*|[0-9]+\.[0-9]+)$
-```
+The magic line is preserved in author and submitted source. The adapter resolves
+its policy before submission; the private kernel only accepts the magic and
+executes its body once.
 
-A unique valid directive uses its positive finite decimal value. No valid
-directive, an invalid directive, or multiple valid directives uses the
-10-second default. The directive controls only how long this MCP call waits;
-it neither limits Python runtime nor interrupts the cell, changes later calls,
-or creates runtime variables.
+## Apply Patch Transport
+
+A valid Apply Patch program in an outer triple-double-quoted Python literal may
+be converted into an equivalent Python `str` expression. The conversion is
+strictly limited to validated `*** Begin Patch` / `*** End Patch` programs.
+Its relationship to source fidelity and diagnostics is defined by the
+[Apply Patch Literal Transform Design](ipython-mcp-protected-multiline-string-design.md).
 
 ## Follow-up
 
-A timed-out invocation remains one integer `execution` record. Use
+A call whose initial wait expires retains its integer `execution` record. Use
 `wait_python`, `python_execution_status`, `read_python_output`,
-`search_python_output`, `interrupt_python`, or `reset_python` according to the
-control-plane contract. Readers select `execution` plus a stream; there is no
-log-address parameter or alternate execution identifier.
-
-## Verification
-
-Tests must cover exact directive recognition, protected-string directive
-regions, default fallback, source conversion, non-persistence, continued
-running after timeout, and the integer execution coordinate exposed at the real
-MCP boundary.
+`search_python_output`, `interrupt_python`, or `reset_python` under the
+execution-control contract.

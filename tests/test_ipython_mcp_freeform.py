@@ -2,83 +2,99 @@ from __future__ import annotations
 
 import pytest
 
-from loommux.adapter import IPythonMCPAdapter, parse_run_python_freeform_timeout, parse_run_python_full_output
-from loommux.source_transform import prepare_protected_multiline_strings
+from loommux.adapter import IPythonMCPAdapter
+from loommux.cell_control import LoommuxMagicError, parse_loommux_cell_control
 
 
 @pytest.mark.parametrize(
-    ("source", "expected"),
+    ("source", "wait_seconds", "full_output", "magic"),
     [
-        ("", (10.0, "default")),
-        ("# loommux: timeout_seconds=120", (120.0, "directive")),
-        ("# loommux: timeout_seconds=0.5", (0.5, "directive")),
-        ("# loommux: timeout_seconds=0", (10.0, "default")),
-        ("# loommux: timeout_seconds=01", (10.0, "default")),
-        ("# loommux: timeout_seconds = 1", (10.0, "default")),
-        ("# loommux: timeout_seconds=1\n# loommux: timeout_seconds=2", (10.0, "default")),
+        ("print('ordinary')", 10.0, False, None),
+        ("%%loommux\nprint('bare')", 10.0, False, "%%loommux"),
+        ("%%loommux --wait 120\nprint('wait')", 120.0, False, "%%loommux --wait 120"),
+        ("%%loommux --wait 0.5\nprint('fraction')", 0.5, False, "%%loommux --wait 0.5"),
+        ("%%loommux --full-output\nprint('full')", 10.0, True, "%%loommux --full-output"),
+        ("%%loommux --wait 2 --full-output\nprint('both')", 2.0, True, "%%loommux --wait 2 --full-output"),
     ],
 )
-def test_timeout_directive_uses_exactly_one_complete_line(source: str, expected: tuple[float, str]) -> None:
-    assert parse_run_python_freeform_timeout(source) == expected
+def test_parser_resolves_every_canonical_cell_form(source: str, wait_seconds: float, full_output: bool, magic: str | None) -> None:
+    parsed = parse_loommux_cell_control(source)
+
+    assert parsed.initial_wait_seconds == wait_seconds
+    assert parsed.full_output_requested is full_output
+    assert parsed.control_magic == magic
 
 
 @pytest.mark.parametrize(
-    ("source", "expected"),
+    ("source", "message"),
     [
-        ("", False),
-        ("# loommux: full_output", True),
-        ("# loommux: full_output\n# loommux: full_output", True),
-        (" # loommux: full_output", False),
-        ("# loommux: full_output ", False),
-        ("# loommux: full_output=yes", False),
-        ("# loommux: FULL_OUTPUT", False),
+        ("%%loommux --wait\npass", "--wait requires one positive finite decimal value"),
+        ("%%loommux --wait 0\npass", "--wait requires one positive finite decimal value"),
+        ("%%loommux --wait -1\npass", "invalid --wait value '-1'"),
+        ("%%loommux --wait infinity\npass", "invalid --wait value 'infinity'"),
+        ("%%loommux --unknown\npass", "unknown option '--unknown'"),
+        ("%%loommux --wait 20 --wait 30\npass", "--wait may be specified at most once"),
+        ("%%loommux --full-output --full-output\npass", "--full-output may be specified at most once"),
+        ("%%loommux  --wait 1\npass", "options must be separated by one space"),
+        ("%%loommux --wait 1 \npass", "options must be separated by one space"),
+        ("%%loommux\t--wait 1\npass", "%%loommux must be followed by options separated by spaces"),
     ],
 )
-def test_full_output_directive_requires_an_exact_complete_line(source: str, expected: bool) -> None:
-    assert parse_run_python_full_output(source) is expected
+def test_parser_rejects_each_ambiguous_or_invalid_control_declaration(source: str, message: str) -> None:
+    with pytest.raises(LoommuxMagicError, match=message):
+        parse_loommux_cell_control(source)
 
 
-def test_run_python_passes_original_freeform_source_to_submission() -> None:
+def test_magic_shaped_text_inside_an_ordinary_python_string_is_data() -> None:
+    source = 'payload = """\n%%loommux --full-output\n"""\nprint(payload)'
+
+    parsed = parse_loommux_cell_control(source)
+
+    assert parsed.full_output_requested is False
+    assert parsed.control_magic is None
+
+
+def test_parser_rejects_a_decimal_that_overflows_to_infinity() -> None:
+    source = f"%%loommux --wait {'9' * 400}\npass"
+
+    with pytest.raises(LoommuxMagicError, match="positive finite decimal"):
+        parse_loommux_cell_control(source)
+
+
+def test_run_python_passes_original_magic_source_and_resolved_policy_to_submission() -> None:
     class CapturingAdapter(IPythonMCPAdapter):
         def __init__(self) -> None:
             super().__init__()
-            self.calls: list[tuple[str, float, bool]] = []
+            self.calls: list[tuple[str, float, bool, str | None]] = []
 
-        def _submit_python_cell(self, code: str, timeout_seconds: float, full_output_requested: bool = False):
-            self.calls.append((code, timeout_seconds, full_output_requested))
+        def _submit_python_cell(self, code: str, timeout_seconds: float, full_output_requested: bool = False, *, control_magic: str | None = None) -> dict[str, object]:
+            self.calls.append((code, timeout_seconds, full_output_requested, control_magic))
             return {"ok": True, "status": "captured"}
 
     adapter = CapturingAdapter()
-    source = "# loommux: timeout_seconds=2\n# loommux: full_output\nprint('unchanged')"
+    source = "%%loommux --wait 2 --full-output\nprint('unchanged')"
+
     assert adapter.run_python(source)["status"] == "captured"
-    assert adapter.calls == [(source, 2.0, True)]
+    assert adapter.calls == [(source, 2.0, True, "%%loommux --wait 2 --full-output")]
 
 
-def test_directives_inside_complete_protected_strings_do_not_control_execution() -> None:
-    source = '''payload = """
-*** Begin
-# loommux: timeout_seconds=120
-# loommux: full_output
-*** End
-"""
-'''
-    transform = prepare_protected_multiline_strings(source)
+def test_invalid_magic_does_not_allocate_or_submit_an_execution() -> None:
+    class CapturingAdapter(IPythonMCPAdapter):
+        def __init__(self) -> None:
+            super().__init__()
+            self.submitted = False
 
-    assert parse_run_python_freeform_timeout(source, transform.protected_line_numbers) == (10.0, "default")
-    assert parse_run_python_full_output(source, transform.protected_line_numbers) is False
+        def _submit_python_cell(self, *args: object, **kwargs: object) -> dict[str, object]:
+            self.submitted = True
+            return {"ok": True}
 
+    adapter = CapturingAdapter()
+    response = adapter.run_python("%%loommux --wait 10 --wait 20\nprint('must not run')")
 
-def test_directives_outside_complete_protected_strings_remain_effective() -> None:
-    source = '''# loommux: timeout_seconds=2
-# loommux: full_output
-payload = """
-*** Begin
-# loommux: timeout_seconds=120
-# loommux: full_output
-*** End
-"""
-'''
-    transform = prepare_protected_multiline_strings(source)
-
-    assert parse_run_python_freeform_timeout(source, transform.protected_line_numbers) == (2.0, "directive")
-    assert parse_run_python_full_output(source, transform.protected_line_numbers) is True
+    assert response == {
+        "ok": False,
+        "status": "invalid_loommux_magic",
+        "message": "invalid_loommux_magic: --wait may be specified at most once",
+    }
+    assert adapter.submitted is False
+    assert adapter.executions == {}
