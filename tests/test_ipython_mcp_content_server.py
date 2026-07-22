@@ -56,7 +56,6 @@ async def test_default_workspace_ignores_legacy_files_and_exposes_launch_source(
     (project / "loommux_workspace.py").write_text(f"from pathlib import Path\nPath({str(marker)!r}).touch()\n", encoding="utf-8")
     (launch_cwd / "loommux_workspace.py").write_text(f"from pathlib import Path\nPath({str(marker)!r}).touch()\n", encoding="utf-8")
     monkeypatch.chdir(launch_cwd)
-    monkeypatch.delenv(WORKSPACE_CONFIG_ENV, raising=False)
 
     async with Client(create_standard_mcp()) as client:
         status = await client.call_tool("python_status", {})

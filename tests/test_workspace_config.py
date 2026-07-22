@@ -18,7 +18,6 @@ def test_default_workspace_does_not_execute_legacy_files_in_the_launch_tree(tmp_
     for legacy_path in (project / "loommux_workspace.py", launch_cwd / "loommux_workspace.py"):
         legacy_path.write_text(f"from pathlib import Path\nPath({str(marker)!r}).touch()\n", encoding="utf-8")
     monkeypatch.chdir(launch_cwd)
-    monkeypatch.delenv(WORKSPACE_CONFIG_ENV, raising=False)
 
     resolution = resolve_workspace_launch()
 
