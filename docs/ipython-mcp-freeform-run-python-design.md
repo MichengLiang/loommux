@@ -1,9 +1,8 @@
 # `run_python` Freeform Input Contract
 
-The target authority for this contract is [Loommux `%%loommux` Cell Control
-Magic Design](ipython-mcp-cell-control-magic-design.md). This companion
-document records the stable MCP input boundary without creating a second
-control language.
+The target authority for this contract is [Loommux Cell Control Directive
+Design](ipython-mcp-cell-control-directive-design.md). This companion document
+records the stable MCP input boundary without creating a second control language.
 
 ## Input
 
@@ -12,22 +11,23 @@ structured `code`, `wait`, `timeout`, or `full_output` argument. Ordinary
 Python source uses the default initial wait of 10 seconds and no complete-output
 request.
 
-When an author needs to declare the policy for the complete cell, its physical
-first line is:
+When an author needs to declare submission policy, the cell contains one or more
+column-zero control comments:
 
 ```python
-%%loommux --wait 120 --full-output
+# loommux: --wait 120 --full-output
 build_report()
 ```
 
 `--wait` accepts one positive finite decimal value. `--full-output` requests
 complete terminal combined-output delivery. The parser rejects unknown,
 duplicated, missing, malformed, or non-positive options as
-`invalid_loommux_magic` before execution allocation and kernel submission.
+`invalid_loommux_directive` before execution allocation and kernel submission.
 
-The magic line is preserved in author and submitted source. The adapter resolves
-its policy before submission; the private kernel only accepts the magic and
-executes its body once.
+Distinct options may be declared on separate control comments. Directive lines
+are preserved in author and submitted source. The adapter resolves policy before
+submission; the selected Python or cell-magic body interpreter receives the
+authored source normally.
 
 ## Apply Patch Transport
 

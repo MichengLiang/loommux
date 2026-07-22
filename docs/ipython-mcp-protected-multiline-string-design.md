@@ -1,8 +1,8 @@
 # Apply Patch Literal Transform Design
 
-The cell-control authority is [Loommux `%%loommux` Cell Control Magic
-Design](ipython-mcp-cell-control-magic-design.md). This document defines the
-single permitted source-fidelity exception: Apply Patch literal transport.
+The cell-control authority is [Loommux Cell Control Directive
+Design](ipython-mcp-cell-control-directive-design.md). This document defines
+the single permitted source-fidelity exception: Apply Patch literal transport.
 
 ## Purpose and Boundary
 
@@ -41,8 +41,8 @@ transform facts: whether it applied, literal count, author/submitted ranges,
 and physical-line mapping. Newline padding preserves meaningful coordinates
 for Python diagnostics following a transformed literal.
 
-The outer `%%loommux` magic remains the normal first authored line. A valid
-Apply Patch payload cannot contain such a line at physical column zero, because
+Control directives remain authored source facts. A valid Apply Patch payload
+cannot contain an active `# loommux:` directive at physical column zero, because
 it is neither a patch control nor a valid hunk-content line.
 
 ## Verification

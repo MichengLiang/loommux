@@ -38,7 +38,6 @@ def test_kernel_launch_builds_the_required_command_and_controlled_environment(tm
             "--InteractiveShell.cache_size=0",
             "--HistoryManager.enabled=False",
             "--InteractiveShellApp.exec_PYTHONSTARTUP=False",
-            "--IPKernelApp.exec_lines=from loommux.kernel_magic import register_loommux_magic as _register_loommux_magic; _register_loommux_magic(); del _register_loommux_magic",
         )
         assert launch.ipython_dir.is_dir()
         assert launch.jupyter_config_dir.is_dir()
@@ -219,7 +218,7 @@ def test_reset_kills_windows_kernel_descendants(tmp_path: Path) -> None:
     assert adapter.start_workspace(workspace, "launch_cwd")["ok"] is True
     try:
         running = adapter.run_python(
-            "%%loommux --wait 0.1\n"
+            "# loommux: --wait 0.1\n"
             "import subprocess\n"
             "import sys\n"
             "import time\n"

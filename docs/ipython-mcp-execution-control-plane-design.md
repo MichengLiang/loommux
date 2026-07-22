@@ -134,25 +134,26 @@ documentation must not describe a nonexistent workspace-setting operation.
 ### 4.2 Submission
 
 `run_python(freeform)` accepts one loommux Python cell. The adapter resolves
-the first-line `%%loommux` declaration and prepares validated Apply Patch
-literals according to the [Loommux `%%loommux` Cell Control Magic
-Design](ipython-mcp-cell-control-magic-design.md). It rejects a new submission
-while another record is `running`, allocates the next execution number, saves
-the record, and submits the prepared source to the kernel. A busy kernel returns
-`status="busy"` and the current execution number. It never queues a second
-cell.
+all `# loommux:` declarations and prepares validated Apply Patch literals
+according to the [Loommux Cell Control Directive
+Design](ipython-mcp-cell-control-directive-design.md). It rejects a new
+submission while another record is `running`, allocates the next execution
+number, saves the record, and submits the prepared source to the kernel. A busy
+kernel returns `status="busy"` and the current execution number. It never queues
+a second cell.
 
-The cell magic owns the run-python input rule:
+Control directives own the run-python policy:
 
 ```python
-%%loommux --wait 120 --full-output
+# loommux: --wait 120 --full-output
 ```
 
 `--wait` selects the initial wait duration and `--full-output` requests
-complete terminal combined-output delivery. A bare magic uses the default
-10-second wait and no complete-output request. Invalid declarations fail before
-allocation or kernel submission. The options do not limit Python runtime,
-change later calls, interrupt the cell, or add runtime variables.
+complete terminal combined-output delivery. Distinct options may appear on
+separate directives. A cell with no directive uses the default 10-second wait
+and no complete-output request. Invalid declarations fail before allocation or
+kernel submission. The options do not limit Python runtime, change later calls,
+interrupt the cell, or add runtime variables.
 
 ### 4.3 Completion and Reset
 
@@ -355,7 +356,7 @@ The following facts belong in descriptions because they change a model action:
 
 | Tool | Required description facts |
 | --- | --- |
-| `run_python` | Raw Python cell input, first-line `%%loommux` options, 10-second default, session execution number, and follow-up actions for running or large output. |
+| `run_python` | Raw Python cell input, `# loommux:` options, 10-second default, session execution number, and follow-up actions for running or large output. |
 | `python_execution_status` | Integer execution selection and current-or-last default. |
 | `read_python_output` | Integer execution selection, stream values, line range coordinate, and per-line clipping. |
 | `search_python_output` | Integer execution selection, stream values, query modes, context, case behavior, and per-line clipping. |

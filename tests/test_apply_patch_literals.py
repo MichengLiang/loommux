@@ -105,10 +105,10 @@ def test_invalid_update_operations_are_not_converted() -> None:
     assert prepare_apply_patch_literals(source).applied is False
 
 
-def test_magic_line_cannot_be_part_of_a_valid_apply_patch_program() -> None:
+def test_directive_line_cannot_be_part_of_a_valid_apply_patch_program() -> None:
     source = '''payload = """
 *** Begin Patch
-%%loommux --full-output
+# loommux: --full-output
 *** End Patch
 """
 '''

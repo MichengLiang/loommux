@@ -54,7 +54,7 @@ class Execution:
     status: ExecutionStatus = "running"
     initial_wait_seconds: float = 10.0
     full_output_requested: bool = False
-    control_magic: str | None = None
+    control_directives: tuple[str, ...] = ()
     stdout: str = ""
     stderr: str = ""
     result_text: str = ""
@@ -207,7 +207,7 @@ class Execution:
             "status": self.status,
             "initial_wait_seconds": self.initial_wait_seconds,
             "full_output_requested": self.full_output_requested,
-            "control_magic": self.control_magic,
+            "control_directives": list(self.control_directives),
             "stdout": "" if omitted else self.stdout,
             "stderr": "" if omitted else self.stderr,
             "result_text": "" if omitted else self.result_text,
@@ -229,7 +229,7 @@ class Execution:
             "status": self.status,
             "initial_wait_seconds": self.initial_wait_seconds,
             "full_output_requested": self.full_output_requested,
-            "control_magic": self.control_magic,
+            "control_directives": list(self.control_directives),
             "submitted_at": self.submitted_at,
             "updated_at": self.updated_at,
             "completed_at": self.completed_at,

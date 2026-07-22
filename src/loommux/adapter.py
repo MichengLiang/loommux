@@ -7,7 +7,7 @@ from contextvars import ContextVar, Token
 from pathlib import Path
 from typing import Any
 
-from loommux.cell_control import LoommuxMagicError, parse_loommux_cell_control
+from loommux.cell_control import LoommuxDirectiveError, parse_loommux_cell_control
 from loommux.execution import Execution
 from loommux.kernel_session import KernelSession
 from loommux.monitoring import MonitorPublisher, NoopMonitorPublisher, safe_publish
@@ -85,23 +85,23 @@ class IPythonMCPAdapter:
     def run_python(self, freeform: str) -> dict[str, Any]:
         if not isinstance(freeform, str):
             return {"ok": False, "status": "invalid_code", "message": "freeform must be a string"}
-        try:
-            control = parse_loommux_cell_control(freeform)
-        except LoommuxMagicError as exc:
-            return {"ok": False, "status": "invalid_loommux_magic", "message": f"invalid_loommux_magic: {exc}"}
         apply_patch_transform = prepare_apply_patch_literals(freeform)
+        try:
+            control = parse_loommux_cell_control(apply_patch_transform.submitted_source)
+        except LoommuxDirectiveError as exc:
+            return {"ok": False, "status": "invalid_loommux_directive", "message": f"invalid_loommux_directive: {exc}"}
         token = self._pending_execution_input.set((freeform, apply_patch_transform.as_dict()))
         try:
             return self._submit_python_cell(
                 apply_patch_transform.submitted_source,
                 control.initial_wait_seconds,
                 control.full_output_requested,
-                control_magic=control.control_magic,
+                control_directives=control.control_directives,
             )
         finally:
             self._pending_execution_input.reset(token)
 
-    def _submit_python_cell(self, code: str, timeout_seconds: float, full_output_requested: bool = False, *, control_magic: str | None = None) -> dict[str, Any]:
+    def _submit_python_cell(self, code: str, timeout_seconds: float, full_output_requested: bool = False, *, control_directives: tuple[str, ...] = ()) -> dict[str, Any]:
         if not isinstance(code, str):
             return {"ok": False, "status": "invalid_code", "message": "code must be a string"}
         if (error := self._validate_timeout(timeout_seconds)) is not None:
@@ -124,7 +124,7 @@ class IPythonMCPAdapter:
                 submitted_source=code,
                 apply_patch_transform=apply_patch_transform,
                 initial_wait_seconds=timeout_seconds,
-                control_magic=control_magic,
+                control_directives=control_directives,
             )
             self._next_execution += 1
             self.executions[execution.execution] = execution
@@ -329,7 +329,7 @@ class IPythonMCPAdapter:
                 "apply_patch_transform": record.apply_patch_transform,
                 "initial_wait_seconds": record.initial_wait_seconds,
                 "full_output_requested": record.full_output_requested,
-                "control_magic": record.control_magic,
+                "control_directives": list(record.control_directives),
                 "timestamp": record.submitted_at,
             },
         )

@@ -51,7 +51,6 @@ class KernelLaunch:
             "--InteractiveShell.cache_size=0",
             "--HistoryManager.enabled=False",
             "--InteractiveShellApp.exec_PYTHONSTARTUP=False",
-            "--IPKernelApp.exec_lines=from loommux.kernel_magic import register_loommux_magic as _register_loommux_magic; _register_loommux_magic(); del _register_loommux_magic",
         )
         return cls(command, environment, runtime_root, ipython_dir, jupyter_config_dir, connection_file)
 

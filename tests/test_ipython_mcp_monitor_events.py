@@ -58,7 +58,7 @@ async def test_execution_monitor_events_use_integer_coordinate(workspace: Path, 
 async def test_apply_patch_source_monitor_event_preserves_author_and_submission_facts(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(workspace)
     publisher = RecordingPublisher()
-    source = '''%%loommux --wait 2 --full-output
+    source = '''# loommux: --wait 2 --full-output
 payload = """
 *** Begin Patch
 *** Add File: quoted.txt
@@ -82,14 +82,14 @@ payload = """
     assert submitted["apply_patch_transform"]["submitted_source"] == submitted["submitted_source"]
     assert submitted["initial_wait_seconds"] == 2.0
     assert submitted["full_output_requested"] is True
-    assert submitted["control_magic"] == "%%loommux --wait 2 --full-output"
+    assert submitted["control_directives"] == ["# loommux: --wait 2 --full-output"]
 
 
 async def test_reset_publishes_killed_integer_record(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(workspace)
     publisher = RecordingPublisher()
     async with Client(create_mcp(publisher)) as client:
-        running = await client.call_tool("run_python", {"freeform": "%%loommux --wait 0.1\nimport time\ntime.sleep(5)"})
+        running = await client.call_tool("run_python", {"freeform": "# loommux: --wait 0.1\nimport time\ntime.sleep(5)"})
         await client.call_tool("reset_python", {})
 
     killed = [event for event in publisher.events_of("execution_finished") if event["status"] == "killed"]

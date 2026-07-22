@@ -191,8 +191,8 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
     assert "输入\n----" in run_python
     assert "等待上限\n--------" in run_python
     assert "执行编号与后续操作\n--------------------" in run_python
-    assert "%%loommux --wait 120" in run_python
-    assert "%%loommux --full-output" in run_python
+    assert "# loommux: --wait 120" in run_python
+    assert "# loommux: --full-output" in run_python
     assert "300 行" in run_python
     assert "wait_python" in run_python
     assert "图像展示\n--------" in run_python
@@ -309,7 +309,7 @@ print('after-image', flush=True)
 
 
 async def test_result_policies_share_marked_complete_long_output(content_client: Client[Any]) -> None:
-    source = "%%loommux --full-output\nprint('\\n'.join(f'line-{number}' for number in range(301)))"
+    source = "# loommux: --full-output\nprint('\\n'.join(f'line-{number}' for number in range(301)))"
     async with Client(create_standard_mcp()) as dual_client:
         dual = await dual_client.call_tool("run_python", {"freeform": source})
     content = await content_client.call_tool("run_python", {"freeform": source})
@@ -350,7 +350,7 @@ async def test_real_mcp_eight_tool_loop_preserves_public_sequence_across_reset(w
         small = await client.call_tool("run_python", {"freeform": "print('small-output')"})
         running = await client.call_tool(
             "run_python",
-            {"freeform": "%%loommux --wait 0.1\nimport time\nprint('long-start', flush=True)\ntime.sleep(1.5)\nprint('long-finished', flush=True)"},
+            {"freeform": "# loommux: --wait 0.1\nimport time\nprint('long-start', flush=True)\ntime.sleep(1.5)\nprint('long-finished', flush=True)"},
         )
         long_execution = running.data["execution"]
         observed = await client.call_tool("python_execution_status", {"execution": long_execution})
@@ -359,7 +359,7 @@ async def test_real_mcp_eight_tool_loop_preserves_public_sequence_across_reset(w
         completed = await client.call_tool("wait_python", {"execution": long_execution, "timeout_seconds": 3})
         interruptible = await client.call_tool(
             "run_python",
-            {"freeform": "%%loommux --wait 0.1\nimport time\nprint('interrupt-ready', flush=True)\ntime.sleep(5)"},
+            {"freeform": "# loommux: --wait 0.1\nimport time\nprint('interrupt-ready', flush=True)\ntime.sleep(5)"},
         )
         interrupted_execution = interruptible.data["execution"]
         interrupt_ready = await client.call_tool("read_python_output", {"execution": interrupted_execution, "stream": "stdout"})

@@ -53,7 +53,7 @@ monitor publisher。
 
 | 工具 | 契约 |
 | --- | --- |
-| `run_python(freeform)` | 提交原始 Python cell；第一行 `%%loommux --wait ...` 可声明初始等待，`--full-output` 可声明完整终态输出交付。 |
+| `run_python(freeform)` | 提交原始 Python cell；`# loommux: --wait ...` 可声明初始等待，`--full-output` 可声明完整终态输出交付。 |
 | `python_status()` | 返回 workspace、interpreter、kernel pid、busy 状态和 execution 计数。 |
 | `python_execution_status(execution_id=None)` | 返回 execution 的结构化状态和 canonical output log handle。 |
 | `read_python_output(...)` | 按 stream、行范围和单行字符上限读取 output log。 |

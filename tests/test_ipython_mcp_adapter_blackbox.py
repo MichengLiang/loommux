@@ -83,7 +83,7 @@ def test_workspace_start_retries_one_transient_kernel_failure(tmp_path: Path, mo
 
 
 def test_busy_submission_reports_running_integer_without_queueing(adapter: IPythonMCPAdapter) -> None:
-    running = adapter.run_python("%%loommux --wait 0.1\nimport time\ntime.sleep(1)")
+    running = adapter.run_python("# loommux: --wait 0.1\nimport time\ntime.sleep(1)")
     busy = adapter.run_python("'not queued'")
 
     assert running["execution"] == 1
@@ -94,7 +94,7 @@ def test_busy_submission_reports_running_integer_without_queueing(adapter: IPyth
 
 
 def test_interrupts_a_running_kernel_cell_through_the_managed_runtime(adapter: IPythonMCPAdapter) -> None:
-    running = adapter.run_python("%%loommux --wait 0.1\nimport time\nprint('started', flush=True)\ntime.sleep(30)")
+    running = adapter.run_python("# loommux: --wait 0.1\nimport time\nprint('started', flush=True)\ntime.sleep(30)")
     deadline = time.monotonic() + 3
     while time.monotonic() < deadline and "started" not in str(adapter.read_python_output(running["execution"], "stdout")["text"]):
         time.sleep(0.05)
@@ -109,8 +109,8 @@ def test_interrupts_a_running_kernel_cell_through_the_managed_runtime(adapter: I
     assert completed["error"] == {"ename": "KeyboardInterrupt", "evalue": ""}
 
 
-def test_full_output_magic_returns_complete_long_combined_output(adapter: IPythonMCPAdapter) -> None:
-    response = adapter.run_python("%%loommux --full-output\nprint('\\n'.join(f'line-{number}' for number in range(301)))")
+def test_full_output_directive_returns_complete_long_combined_output(adapter: IPythonMCPAdapter) -> None:
+    response = adapter.run_python("# loommux: --full-output\nprint('\\n'.join(f'line-{number}' for number in range(301)))")
 
     assert response["status"] == "completed"
     assert response["full_output_requested"] is True
@@ -118,28 +118,28 @@ def test_full_output_magic_returns_complete_long_combined_output(adapter: IPytho
     assert response["output_text"].splitlines() == [f"line-{number}" for number in range(301)]
 
 
-def test_full_output_magic_preserves_the_combined_iopub_order(adapter: IPythonMCPAdapter) -> None:
-    response = adapter.run_python("%%loommux --full-output\nimport sys\nprint('stdout')\nprint('stderr', file=sys.stderr)\n'display'")
+def test_full_output_directive_preserves_the_combined_iopub_order(adapter: IPythonMCPAdapter) -> None:
+    response = adapter.run_python("# loommux: --full-output\nimport sys\nprint('stdout')\nprint('stderr', file=sys.stderr)\n'display'")
     output = response["output_text"]
 
     assert response["output_omitted"] is False
     assert output.index("stdout") < output.index("stderr") < output.index("Out[1]: 'display'")
 
 
-def test_magic_relay_executes_its_body_once_without_namespace_control_state(adapter: IPythonMCPAdapter) -> None:
+def test_directive_does_not_create_namespace_control_state(adapter: IPythonMCPAdapter) -> None:
     adapter.run_python("counter = 0")
-    response = adapter.run_python("%%loommux\ncounter += 1\ncounter")
+    response = adapter.run_python("# loommux: --full-output\ncounter += 1\ncounter")
     namespace = adapter.run_python("counter")
 
     assert response["execution"] == 2
     assert response["output_text"].strip() == "Out[2]: 1"
     assert namespace["output_text"].strip() == "Out[3]: 1"
-    assert "_loommux_kernel_magic" not in str(adapter.run_python("sorted(name for name in globals() if 'loommux' in name)")["output_text"])
+    assert "loommux" not in str(adapter.run_python("sorted(name for name in globals() if 'loommux' in name)")["output_text"])
 
 
-def test_magic_relay_preserves_rich_display_events(adapter: IPythonMCPAdapter) -> None:
+def test_directive_preserves_rich_display_events(adapter: IPythonMCPAdapter) -> None:
     response = adapter.run_python(
-        "%%loommux --full-output\n"
+        "# loommux: --full-output\n"
         "from IPython.display import display\n"
         "from PIL import Image\n"
         "print('before-image')\n"
@@ -153,8 +153,22 @@ def test_magic_relay_preserves_rich_display_events(adapter: IPythonMCPAdapter) -
     assert record.has_rich_presentation is True
 
 
+def test_directive_composes_with_a_bash_cell_magic(adapter: IPythonMCPAdapter) -> None:
+    running = adapter.run_python("%%bash\n# loommux: --wait 0.1 --full-output\nsleep 0.3\nprintf 'bash-finished\\n'")
+
+    assert running["status"] == "running"
+    assert running["initial_wait_seconds"] == 0.1
+    assert running["full_output_requested"] is True
+    assert running["control_directives"] == ["# loommux: --wait 0.1 --full-output"]
+
+    completed = adapter.wait_python(running["execution"], timeout_seconds=3)
+
+    assert completed["status"] == "completed"
+    assert completed["output_text"] == "bash-finished\n"
+
+
 def test_unmarked_long_combined_output_keeps_the_default_omission_rule(adapter: IPythonMCPAdapter) -> None:
-    marked = adapter.run_python("%%loommux --full-output\nprint('marked only')")
+    marked = adapter.run_python("# loommux: --full-output\nprint('marked only')")
     response = adapter.run_python("print('\\n'.join(f'line-{number}' for number in range(301)))")
 
     assert marked["output_omitted"] is False
@@ -165,8 +179,8 @@ def test_unmarked_long_combined_output_keeps_the_default_omission_rule(adapter: 
     assert "output_text" not in response
 
 
-def test_full_output_magic_survives_running_wait_error_and_reset(adapter: IPythonMCPAdapter) -> None:
-    running = adapter.run_python("%%loommux --wait 0.1 --full-output\nimport time\ntime.sleep(0.3)\nprint('\\n'.join(f'wait-{number}' for number in range(301)))")
+def test_full_output_directive_survives_running_wait_error_and_reset(adapter: IPythonMCPAdapter) -> None:
+    running = adapter.run_python("# loommux: --wait 0.1 --full-output\nimport time\ntime.sleep(0.3)\nprint('\\n'.join(f'wait-{number}' for number in range(301)))")
     assert running["status"] == "running"
     assert running["output_omitted_reason"] == "running"
 
@@ -174,14 +188,13 @@ def test_full_output_magic_survives_running_wait_error_and_reset(adapter: IPytho
     assert completed["status"] == "completed"
     assert completed["output_text"].splitlines() == [f"wait-{number}" for number in range(301)]
 
-    failed = adapter.run_python("%%loommux --full-output\nprint('before failure')\nraise RuntimeError('expected failure')")
+    failed = adapter.run_python("# loommux: --full-output\nprint('before failure')\nraise RuntimeError('expected failure')")
     assert failed["status"] == "error"
-    assert "kernel_magic.py" not in failed["output_text"]
     assert failed["output_omitted"] is False
     assert "before failure" in failed["output_text"]
     assert "RuntimeError: expected failure" in failed["output_text"]
 
-    killed = adapter.run_python("%%loommux --wait 0.1 --full-output\nimport time\nprint('before reset', flush=True)\ntime.sleep(5)")
+    killed = adapter.run_python("# loommux: --wait 0.1 --full-output\nimport time\nprint('before reset', flush=True)\ntime.sleep(5)")
     assert killed["status"] == "running"
     time.sleep(0.2)
     adapter.reset_python()
@@ -191,16 +204,15 @@ def test_full_output_magic_survives_running_wait_error_and_reset(adapter: IPytho
     assert "before reset" in reset_result["output_text"]
 
 
-def test_removed_comment_directives_are_ordinary_python_comments(adapter: IPythonMCPAdapter) -> None:
-    response = adapter.run_python("# loommux: timeout_seconds=0.1\n# loommux: full_output\nprint('\\n'.join(f'line-{number}' for number in range(301)))")
+def test_legacy_key_value_declaration_fails_before_python_execution(adapter: IPythonMCPAdapter) -> None:
+    response = adapter.run_python("# loommux: legacy_key=0.1\nprint('\\n'.join(f'line-{number}' for number in range(301)))")
 
-    assert response["status"] == "completed"
-    assert response["full_output_requested"] is False
-    assert response["output_omitted_reason"] == "line_limit_exceeded"
+    assert response["status"] == "invalid_loommux_directive"
+    assert "unknown option" in response["message"]
 
 
 def test_apply_patch_literal_preserves_raw_value_and_execution_inputs(adapter: IPythonMCPAdapter) -> None:
-    source = '''%%loommux --wait 2 --full-output
+    source = '''# loommux: --wait 2 --full-output
 name = "Ada"
 payload = f"""
 *** Begin Patch
@@ -220,7 +232,7 @@ payload = f"""
     assert submitted["status"] == "completed"
     assert submitted["initial_wait_seconds"] == 2.0
     assert submitted["full_output_requested"] is True
-    assert submitted["control_magic"] == "%%loommux --wait 2 --full-output"
+    assert submitted["control_directives"] == ["# loommux: --wait 2 --full-output"]
     assert "C:\\\\new\\\\temp {name}" in inspected["output_text"]
     assert "*** Begin Patch" in inspected["output_text"]
     assert record.author_source == source
@@ -232,7 +244,7 @@ payload = f"""
 
 
 def test_apply_patch_literal_is_a_function_argument_and_keeps_later_traceback_lines(adapter: IPythonMCPAdapter) -> None:
-    source = '''%%loommux
+    source = '''# loommux: --full-output
 received = None
 def capture(value):
     global received
@@ -252,7 +264,7 @@ raise RuntimeError("mapped")
     received = adapter.run_python("received")
 
     assert failed["status"] == "error"
-    assert "line 13" in failed["output_text"]
+    assert "line 14" in failed["output_text"]
     assert received["status"] == "completed"
     assert "*** Begin Patch" in received["output_text"]
 
@@ -260,7 +272,7 @@ raise RuntimeError("mapped")
 def test_reset_preserves_records_and_sequence_and_reauthors_out_label(adapter: IPythonMCPAdapter) -> None:
     first = adapter.run_python("'before reset'")
     reset = adapter.reset_python()
-    second = adapter.run_python("%%loommux\n'after reset'")
+    second = adapter.run_python("# loommux: --full-output\n'after reset'")
 
     assert reset["status"] == "restarted"
     assert first["execution"] == 1
@@ -270,7 +282,7 @@ def test_reset_preserves_records_and_sequence_and_reauthors_out_label(adapter: I
 
 
 def test_reset_kills_running_execution_but_keeps_it_readable(adapter: IPythonMCPAdapter) -> None:
-    running = adapter.run_python("%%loommux --wait 0.1\nimport time\ntime.sleep(5)")
+    running = adapter.run_python("# loommux: --wait 0.1\nimport time\ntime.sleep(5)")
     adapter.reset_python()
 
     status = adapter.python_execution_status(running["execution"])
@@ -278,21 +290,22 @@ def test_reset_kills_running_execution_but_keeps_it_readable(adapter: IPythonMCP
     assert status["execution"] == 1
 
 
-def test_invalid_magic_has_no_real_kernel_or_sequence_side_effect(adapter: IPythonMCPAdapter) -> None:
+def test_invalid_directive_has_no_real_kernel_or_sequence_side_effect(adapter: IPythonMCPAdapter) -> None:
     accepted = adapter.run_python("'before invalid'")
-    invalid = adapter.run_python("%%loommux --wait 10 --wait 20\nprint('must not run')")
+    invalid = adapter.run_python("# loommux: --wait 10 --wait 20\nprint('must not run')")
     after = adapter.run_python("'after invalid'")
 
-    assert invalid["status"] == "invalid_loommux_magic"
+    assert invalid["status"] == "invalid_loommux_directive"
     assert "must not run" not in str(adapter.read_python_output(accepted["execution"])["text"])
     assert after["execution"] == accepted["execution"] + 1
 
 
-def test_inner_magic_text_is_python_data_and_cannot_change_outer_policy(adapter: IPythonMCPAdapter) -> None:
-    response = adapter.run_python('%%loommux\npayload = """\n%%loommux --full-output\n"""\nprint(payload)')
+def test_inner_directive_text_is_python_data_and_cannot_change_outer_policy(adapter: IPythonMCPAdapter) -> None:
+    response = adapter.run_python('# loommux: --wait 2\npayload = """\n# loommux: --full-output\n"""\nprint(payload)')
 
     assert response["full_output_requested"] is False
-    assert response["output_text"].strip() == "%%loommux --full-output"
+    assert response["initial_wait_seconds"] == 2.0
+    assert response["output_text"].strip() == "# loommux: --full-output"
 
 
 def test_stream_read_search_and_invalid_inputs(adapter: IPythonMCPAdapter) -> None:

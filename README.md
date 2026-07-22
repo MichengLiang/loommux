@@ -297,17 +297,18 @@ source and is not converted. See [Apply Patch Literal Transform Design](docs/ipy
 for the full contract and acceptance rules.
 
 The default initial wait for one MCP call is 10 seconds. A cell can make its
-complete submission policy explicit with a first-line `%%loommux` cell magic:
+complete submission policy explicit with a Loommux control directive:
 
 ```python
-%%loommux --wait 120
+# loommux: --wait 120
 build_report()
 ```
 
 `--wait` only changes how long that `run_python` call waits. It does not limit
 Python runtime, interrupt the cell when time expires, modify later calls, or
 add a variable to the kernel. A malformed or duplicated option returns
-`invalid_loommux_magic` before an execution is allocated or source is submitted.
+`invalid_loommux_directive` before an execution is allocated or source is
+submitted.
 
 When the call returns while the cell is still running, use `wait_python`,
 `python_execution_status`, `read_python_output`, `search_python_output`,
@@ -360,10 +361,10 @@ mark selected context lines with `C`.
 ### Requesting Complete Output
 
 When a cell's entire terminal combined output is the intended result, include
-`--full-output` in its first-line control magic:
+`--full-output` in a Loommux control directive:
 
 ```python
-%%loommux --full-output
+# loommux: --full-output
 build_report()
 ```
 
@@ -374,10 +375,18 @@ not cause partial running output to be returned and does not alter the input
 or behavior of `read_python_output` and `search_python_output`.
 
 The full-output and wait options are independent and may appear in the same
-magic line:
+directive:
 
 ```python
-%%loommux --wait 120 --full-output
+# loommux: --wait 120 --full-output
+build_report()
+```
+
+They may also be split across two directives:
+
+```python
+# loommux: --wait 120
+# loommux: --full-output
 build_report()
 ```
 
