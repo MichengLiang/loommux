@@ -12,6 +12,14 @@ _CONTROLLED_ENVIRONMENT = {
     "NO_COLOR": "1",
     "PY_COLORS": "0",
 }
+# ZMQInteractiveShell.init_environment enables child-process colours after
+# process launch, so enforce the server policy again after shell initialization.
+_IPYTHON_COLOR_CLEANUP = (
+    "import os; "
+    "os.environ.pop('CLICOLOR', None); "
+    "os.environ.pop('CLICOLOR_FORCE', None); "
+    "os.environ.pop('FORCE_COLOR', None)"
+)
 
 
 @dataclass(frozen=True)
@@ -51,6 +59,7 @@ class KernelLaunch:
             "--InteractiveShell.cache_size=0",
             "--HistoryManager.enabled=False",
             "--InteractiveShellApp.exec_PYTHONSTARTUP=False",
+            f"--InteractiveShellApp.exec_lines={_IPYTHON_COLOR_CLEANUP}",
         )
         return cls(command, environment, runtime_root, ipython_dir, jupyter_config_dir, connection_file)
 

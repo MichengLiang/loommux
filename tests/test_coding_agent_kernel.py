@@ -38,6 +38,12 @@ def test_kernel_launch_builds_the_required_command_and_controlled_environment(tm
             "--InteractiveShell.cache_size=0",
             "--HistoryManager.enabled=False",
             "--InteractiveShellApp.exec_PYTHONSTARTUP=False",
+            (
+                "--InteractiveShellApp.exec_lines="
+                "import os; os.environ.pop('CLICOLOR', None); "
+                "os.environ.pop('CLICOLOR_FORCE', None); "
+                "os.environ.pop('FORCE_COLOR', None)"
+            ),
         )
         assert launch.ipython_dir.is_dir()
         assert launch.jupyter_config_dir.is_dir()
@@ -252,6 +258,7 @@ def _assert_kernel_policy(adapter: IPythonMCPAdapter, launch: KernelLaunch) -> N
         "print(shell.history_manager.enabled)\n"
         "print(shell.cache_size)\n"
         "print(shell.colors)\n"
+        "print({name: os.environ.get(name) for name in ('FORCE_COLOR', 'CLICOLOR', 'CLICOLOR_FORCE')})\n"
         "print(os.environ['LOOMMUX_TEST_PRESERVED'])"
     )
 
@@ -261,7 +268,8 @@ def _assert_kernel_policy(adapter: IPythonMCPAdapter, launch: KernelLaunch) -> N
     # IPython 8 reports the same no-colour policy as ``NoColor`` while newer
     # versions preserve the kernel trait spelling ``nocolor``.
     assert lines[4].lower() == "nocolor"
-    assert lines[5] == "preserved"
+    assert lines[5] == "{'FORCE_COLOR': None, 'CLICOLOR': None, 'CLICOLOR_FORCE': None}"
+    assert lines[6] == "preserved"
 
 
 def _assert_hostile_user_state_is_untouched(profile_marker: Path, jupyter_marker: Path, python_startup_marker: Path, history_database: Path, original_mtime_ns: int) -> None:
