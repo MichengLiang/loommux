@@ -7,7 +7,12 @@ from typing import Any
 import pytest
 from fastmcp import Client
 
-from loommux.mcp_ipython_server import create_mcp
+from loommux.mcp_server_factory import create_mcp as create_policy_mcp
+
+
+def create_mcp(monitor_publisher: Any) -> Any:
+    """Monitor assertions need the explicitly requested structured result channel."""
+    return create_policy_mcp("structured", monitor_publisher)
 
 
 class RecordingPublisher:

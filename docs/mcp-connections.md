@@ -1,16 +1,14 @@
 # MCP Connection Guide
 
-`loommux` has two independent connection choices:
+`loommux` defaults to content-only results in every startup form:
 
-1. `--transport stdio` uses the MCP host's child process and standard input/output.
-2. `--transport streamable-http` starts a remote MCP service at `http://HOST:PORT/PATH`.
-3. `--result-mode structured` returns MCP `content` plus `structuredContent`.
-4. `--result-mode content` returns only MCP `content` blocks.
+1. `loommux` uses the MCP host's child process and Studio stdio connection.
+2. `loommux --server` starts a local Streamable HTTP service at `http://HOST:PORT/PATH`.
+3. `--result-mode structured` is the explicit opt-in that returns MCP `content` plus `structuredContent`.
 
-The transport does not change the eight tools, one-kernel-per-process lifetime,
-execution numbering, workspace resolution, text logs, or image content order.
-The result mode changes only whether `structuredContent` accompanies the same
-model-readable `content`.
+The connection choice does not change the eight tools, one-kernel-per-process
+lifetime, execution numbering, workspace resolution, text logs, image content
+order, or the default content-only policy.
 
 ## Install
 
@@ -20,15 +18,15 @@ python -m pip install loommux
 
 ## Child Process Stdio
 
-Use stdio when an MCP host starts and supervises loommux as a child process.
-The host's working directory is the default kernel workspace.
+Use the no-argument command when an MCP Studio or host starts and supervises
+loommux as a child process. The host's working directory is the default kernel
+workspace.
 
 ```json
 {
   "mcpServers": {
     "loommux": {
       "command": "loommux",
-      "args": ["--transport", "stdio", "--result-mode", "structured"],
       "cwd": "/absolute/path/to/your/workspace"
     }
   }
@@ -44,22 +42,21 @@ Unix compatibility shell:
   "mcpServers": {
     "loommux": {
       "command": "C:\\workspace\\.venv\\Scripts\\loommux.exe",
-      "args": ["--transport", "stdio", "--result-mode", "structured"],
       "cwd": "C:\\workspace"
     }
   }
 }
 ```
 
-For a host that must not receive `structuredContent`, use the same subprocess
-transport with content-only results:
+The default result has no `structuredContent`. Use this explicit argument only
+for a client that needs the raw status object:
 
 ```json
 {
   "mcpServers": {
     "loommux": {
       "command": "loommux",
-      "args": ["--transport", "stdio", "--result-mode", "content"],
+      "args": ["--result-mode", "structured"],
       "cwd": "/absolute/path/to/your/workspace"
     }
   }
@@ -68,11 +65,11 @@ transport with content-only results:
 
 ## Streamable HTTP
 
-Start a structured server bound only to the local machine:
+Start a content-only server bound only to the local machine:
 
 ```bash
 cd /absolute/path/to/your/workspace
-loommux --transport streamable-http --result-mode structured --host 127.0.0.1 --port 8801 --path /mcp
+loommux --server --host 127.0.0.1 --port 8801 --path /mcp
 ```
 
 The remote MCP endpoint is:
@@ -81,10 +78,10 @@ The remote MCP endpoint is:
 http://127.0.0.1:8801/mcp
 ```
 
-Use content-only results on any chosen port independently of the transport:
+Use `--result-mode structured` only as an explicit HTTP opt-in:
 
 ```bash
-loommux --transport streamable-http --result-mode content --host 127.0.0.1 --port 8802 --path /mcp
+loommux --server --result-mode structured --host 127.0.0.1 --port 8802 --path /mcp
 ```
 
 Its endpoint is `http://127.0.0.1:8802/mcp`. `--path /tools` would instead
@@ -94,14 +91,8 @@ PowerShell starts the same loopback-only endpoint on native Windows:
 
 ```powershell
 Set-Location C:\workspace
-loommux.exe --transport streamable-http --result-mode structured --host 127.0.0.1 --port 8801 --path /mcp
+loommux.exe --server --host 127.0.0.1 --port 8801 --path /mcp
 ```
-
-`loommux-content` remains available as a compatibility shortcut. With no
-arguments it starts content-only Streamable HTTP on `0.0.0.0:8801/mcp`; it also
-accepts both flags, so `loommux-content --transport stdio --result-mode
-structured` is valid. This executable retains its explicit Codex workspace
-resolver convenience when `LOOMMUX_WORKSPACE_CONFIG` is not already set.
 
 ## Studio Clients
 

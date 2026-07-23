@@ -31,8 +31,8 @@ search retained output, interrupt the active cell, or restart the kernel.
   it does not terminate the Python cell.
 - Explicit interrupt and kernel-reset operations, with preserved historical
   execution records after a reset.
-- Two fixed MCP result-channel entrypoints for clients with different result
-  handling requirements.
+- A single MCP entrypoint with content-only defaults and an explicit structured
+  result mode.
 - An optional local browser monitor for observing tool calls and execution
   lifecycle events without granting browser-side Python control.
 
@@ -67,7 +67,7 @@ workspace path for `cwd`:
   "mcpServers": {
     "loommux": {
       "command": "C:\\workspace\\.venv\\Scripts\\loommux.exe",
-      "args": ["--transport", "stdio", "--result-mode", "structured"],
+      "args": ["--result-mode", "structured"],
       "cwd": "C:\\workspace"
     }
   }
@@ -84,19 +84,18 @@ Windows coverage. Because IPython kernels do not accept Ctrl+C through this
 entry point on Windows, `interrupt_python` replaces the private kernel after
 marking the active cell `interrupted`; later cells use the fresh kernel.
 
-The package installs two console commands. Their defaults remain convenient,
-but `--transport` and `--result-mode` can be selected independently on either
-command:
+The package installs one console command:
 
 ```text
-loommux          structured results over stdio
-loommux-content  content-only results over Streamable HTTP
+loommux                   content-only results over Studio stdio
+loommux --server          content-only results over Streamable HTTP
 ```
 
-`--transport stdio` uses an MCP host's child process. `--transport
-streamable-http` starts a service with configurable `--host`, `--port`, and
-`--path`. `--result-mode structured` returns both `content` and
-`structuredContent`; `--result-mode content` returns only `content`.
+`loommux` uses an MCP Studio or host's child-process stdio connection by
+default. `--server` starts a Streamable HTTP service with configurable `--host`,
+`--port`, and `--path`. Both forms return only `content` by default.
+`--result-mode structured` is the explicit opt-in that additionally returns
+`structuredContent`.
 
 For development, use [uv](https://docs.astral.sh/uv/):
 
@@ -106,11 +105,12 @@ cd loommux
 uv sync --group dev
 ```
 
-## Standard MCP Server
+## Default Studio Connection
 
-`loommux` defaults to MCP stdio transport and returns both model-oriented text
-content and a structured public status object. This is the appropriate default
-for an MCP host that supports normal `structuredContent` handling.
+`loommux` defaults to MCP stdio transport and returns model-oriented `content`
+only. This is the Studio-compatible default and prevents a client from
+preferring raw `structuredContent` over the presentation intended for the
+model.
 
 The server process's working directory is the default kernel workspace. A
 generic MCP configuration therefore assigns the desired project directory as
@@ -136,27 +136,25 @@ On startup, loommux resolves its workspace, builds a kernel launch from the
 server interpreter, and starts the kernel before accepting MCP tools. Server
 startup fails rather than exposing a partially configured execution service.
 
-## Configurable HTTP And Content-Only Modes
+## HTTP Server And Structured Opt-In
 
-`loommux-content` exposes the same tools, input schemas, execution behavior,
-and model-readable text as the standard server. Its results deliberately omit
-`structuredContent`. Use it for a client that cannot consume structured MCP
-results correctly or must only receive text content. The result policy and
-transport are independent, so either installed command accepts both options.
+`loommux --server` exposes the same tools, input schemas, execution behavior,
+and model-readable text over Streamable HTTP. It remains content-only unless
+`--result-mode structured` is explicitly supplied.
 
-Start a loopback-only structured HTTP service from the workspace you want the
+Start a loopback-only content-only HTTP service from the workspace you want the
 kernel to use:
 
 ```bash
 cd /absolute/path/to/your/workspace
-loommux --transport streamable-http --result-mode structured --host 127.0.0.1 --port 8801 --path /mcp
+loommux --server --host 127.0.0.1 --port 8801 --path /mcp
 ```
 
-Its MCP endpoint is `http://127.0.0.1:8801/mcp`. A content-only HTTP service
-can use a different port without changing its transport:
+Its MCP endpoint is `http://127.0.0.1:8801/mcp`. `--result-mode structured` is
+available only when a client genuinely needs the raw status object:
 
 ```bash
-loommux --transport streamable-http --result-mode content --host 127.0.0.1 --port 8802 --path /mcp
+loommux --server --result-mode structured --host 127.0.0.1 --port 8801 --path /mcp
 ```
 
 MCP Studio, Inspector, and other Streamable HTTP clients use the same endpoint
@@ -164,24 +162,11 @@ URL. There is no separate Studio protocol. The complete matrix, subprocess
 configuration examples, and security guidance are in
 [MCP Connection Guide](docs/mcp-connections.md).
 
-For this manually started host entrypoint, an unset
-`LOOMMUX_WORKSPACE_CONFIG` selects the bundled Codex resolver, which uses the
-parent of the nearest `.codex` directory as the workspace. An explicitly set
-`LOOMMUX_WORKSPACE_CONFIG` always wins. This convenience is specific to the
-`loommux-content` command, even when its transport or result mode is overridden;
-direct `create_mcp()` use and the standard entrypoint retain the launch-cwd
-default described below.
-
-For compatibility, `loommux-content` with no arguments still binds
-`0.0.0.0:8801` and serves `/mcp`. Override this with `--host`, `--port`, and
-`--path` whenever the service is started deliberately. HTTP is a deployment
-boundary, not a different execution model: the `execution` sequence, tools,
-output streams, and presentation rules are the same as the stdio server.
-
-Because this entrypoint executes arbitrary Python and listens on all
-interfaces, do not expose it directly to untrusted networks. Put it behind
-network controls and authentication appropriate to the environment, or prefer
-the stdio server.
+HTTP is a deployment boundary, not a different execution model: the
+`execution` sequence, tools, output streams, workspace resolution, and
+presentation rules are the same as the stdio server. Binding it beyond the
+local machine exposes arbitrary Python execution and requires network controls
+and authentication outside loommux.
 
 ## Workspace And Interpreter
 
@@ -240,7 +225,7 @@ records remain readable.
 
 ## MCP Tools
 
-All tools below are exposed by both server entrypoints. Calls that take an
+All tools below are exposed by the single loommux entrypoint. Calls that take an
 optional `execution` share one selection rule: an explicitly supplied positive
 integer selects that record; otherwise loommux selects the current running
 record, then the most recently accepted record. With neither, the tool returns
@@ -449,7 +434,7 @@ the server access only to files, environments, and network resources the MCP
 client is authorized to use.
 
 The stdio server is generally the least exposed deployment mode. The HTTP
-entrypoint must never be placed directly on an untrusted network. For a
+server must never be placed directly on an untrusted network. For a
 vulnerability in loommux itself, use the private reporting process in
 [SECURITY.md](SECURITY.md), not a public issue.
 
@@ -473,8 +458,8 @@ The runtime is deliberately divided into narrow responsibilities:
 - `adapter.py` owns lifecycle, execution-number allocation, selection, and
   control operations.
 - `presentation.py` projects public state into model-readable text.
-- `mcp_server_factory.py` registers the shared tools; entry modules select
-  result-channel policy and transport.
+- `mcp_server_factory.py` registers the shared tools; the command entrypoint
+  selects the result mode and transport.
 - `monitoring.py` publishes normalized observation events without execution
   authority.
 
@@ -482,9 +467,7 @@ The current public contract is documented in [Coding Agent Control Plane
 Design](docs/coding-agent-control-plane-design.md).
 Focused references cover [freeform cell control](docs/ipython-mcp-freeform-run-python-design.md),
 [complete-output control](docs/ipython-mcp-full-output-directive-design.md),
-and [workspace configuration](docs/workspace-configuration.md). Some files in
-`docs/` are explicitly retained as historical design material; they are not
-current API specifications.
+and [workspace configuration](docs/workspace-configuration.md).
 
 ## Development And Release Checks
 

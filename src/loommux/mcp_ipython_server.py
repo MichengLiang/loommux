@@ -10,14 +10,14 @@ from loommux.server_entrypoints import run_entrypoint
 
 
 def create_mcp(monitor_publisher: MonitorPublisher | None = None) -> FastMCP:
-    return create_server("dual_channel", monitor_publisher)
+    return create_server("content", monitor_publisher)
 
 
 mcp = create_mcp()
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    run_entrypoint(lambda policy: create_server(policy), "dual_channel", "stdio", argv=argv)
+    run_entrypoint(lambda result_mode: create_server(result_mode), argv=argv)
 
 
 if __name__ == "__main__":

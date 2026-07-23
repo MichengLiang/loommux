@@ -98,7 +98,7 @@ def test_rich_execution_content_preserves_text_image_text_order_and_detail() -> 
                 PresentationImage("eQ==", "image/jpeg", None, 2),
             ),
         },
-        "dual_channel",
+        "structured",
     )
 
     assert [block.type for block in result.content] == ["text", "image", "text", "image"]
@@ -124,7 +124,7 @@ def test_rich_execution_content_keeps_neighbors_when_an_image_is_rejected() -> N
                 PresentationImage("eA==", "image/png", "wrong", 3),
             ),
         },
-        "content_only",
+        "content",
     )
 
     assert [block.type for block in result.content] == ["text", "text", "text", "text"]
@@ -145,7 +145,7 @@ def test_rich_execution_content_enforces_image_delivery_limits() -> None:
             "status": "completed",
             "_presentation": (PresentationImage("eA==", "image/png", None, 1),),
         },
-        "content_only",
+        "content",
         ImageDeliveryLimits(max_image_bytes=0, max_images=1, max_total_image_bytes=1),
     )
 
@@ -169,7 +169,7 @@ def test_rich_execution_keeps_images_but_omits_line_limited_text() -> None:
                 PresentationText("after image"),
             ),
         },
-        "content_only",
+        "content",
     )
 
     assert [block.type for block in result.content] == ["text", "image"]
@@ -188,7 +188,7 @@ def test_rich_execution_rejects_malformed_gif_data() -> None:
             "status": "completed",
             "_presentation": (PresentationImage("eA==", "image/gif", None, 1),),
         },
-        "content_only",
+        "content",
     )
 
     assert len(result.content) == 1
@@ -209,7 +209,7 @@ def test_rich_execution_keeps_explicit_failures_and_rejects_invalid_image_shapes
                 PresentationImage(b"x", "image/png", None, 3),
             ),
         },
-        "content_only",
+        "content",
     )
 
     assert [block.text for block in result.content if isinstance(block, TextContent)] == [
@@ -224,13 +224,13 @@ def test_rich_execution_enforces_image_count_and_total_byte_limits() -> None:
     count_limited = make_tool_result(
         "run_python",
         {"ok": True, "execution": 8, "status": "completed", "_presentation": images},
-        "content_only",
+        "content",
         ImageDeliveryLimits(max_image_bytes=1, max_images=1, max_total_image_bytes=2),
     )
     total_limited = make_tool_result(
         "run_python",
         {"ok": True, "execution": 8, "status": "completed", "_presentation": images},
-        "content_only",
+        "content",
         ImageDeliveryLimits(max_image_bytes=1, max_images=2, max_total_image_bytes=1),
     )
 
@@ -249,13 +249,13 @@ def test_rich_execution_accepts_a_single_frame_gif() -> None:
             "status": "completed",
             "_presentation": (PresentationImage("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==", "image/gif", None, 1),),
         },
-        "content_only",
+        "content",
     )
 
     assert isinstance(result.content[0], ImageContent)
     assert result.content[0].mimeType == "image/gif"
 
 
-def test_make_tool_result_rejects_an_unknown_result_policy() -> None:
-    with pytest.raises(ValueError, match="unknown result channel policy"):
+def test_make_tool_result_rejects_an_unknown_result_mode() -> None:
+    with pytest.raises(ValueError, match="unknown result mode"):
         make_tool_result("python_status", {"ok": True}, "unknown")  # type: ignore[arg-type]

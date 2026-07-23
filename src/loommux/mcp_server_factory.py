@@ -9,12 +9,12 @@ from fastmcp.tools import ToolResult
 
 from loommux.adapter import IPythonMCPAdapter
 from loommux.host_workspace_config import WorkspaceConfigError
-from loommux.mcp_result_policy import ResultChannelPolicy, make_tool_result
+from loommux.mcp_result_policy import ResultMode, make_tool_result
 from loommux.monitoring import MonitorPublisher, create_monitor_publisher, run_monitored_tool_call
 from loommux.workspace_resolver import resolve_workspace_launch
 
 
-def create_mcp(policy: ResultChannelPolicy, monitor_publisher: MonitorPublisher | None = None) -> FastMCP:
+def create_mcp(result_mode: ResultMode, monitor_publisher: MonitorPublisher | None = None) -> FastMCP:
     publisher = monitor_publisher or create_monitor_publisher()
     adapter = IPythonMCPAdapter(monitor_publisher=publisher)
 
@@ -26,7 +26,7 @@ def create_mcp(policy: ResultChannelPolicy, monitor_publisher: MonitorPublisher 
             finally:
                 adapter.reset_active_call_id(token)
 
-        return make_tool_result(tool_name, run_monitored_tool_call(tool_name, arguments, publisher, monitored), policy)
+        return make_tool_result(tool_name, run_monitored_tool_call(tool_name, arguments, publisher, monitored), result_mode)
 
     @asynccontextmanager
     async def lifespan(_server: FastMCP) -> AsyncIterator[dict[str, Any]]:

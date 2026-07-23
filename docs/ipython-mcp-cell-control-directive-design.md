@@ -381,8 +381,7 @@ complements:
 - [IPython MCP Complete Output Directive Design](ipython-mcp-full-output-directive-design.md);
 - [IPython MCP Apply Patch Literal Design](ipython-mcp-protected-multiline-string-design.md);
 - [Coding Agent 控制面设计](coding-agent-control-plane-design.md);
-- [IPython MCP Execution Control Plane Design](ipython-mcp-execution-control-plane-design.md);
-- [IPython MCP Output Surface Design](ipython-mcp-output-surface-design.md).
+- [workspace configuration](workspace-configuration.md).
 
 Those documents must use this directive contract and must not present the
 former Loommux cell magic as a current or compatible surface.

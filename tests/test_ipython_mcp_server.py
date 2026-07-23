@@ -8,14 +8,16 @@ from typing import Any
 import pytest
 from fastmcp import Client
 
-import loommux.mcp_ipython_content_server as content_server
-from loommux.codex_workspace_resolver import resolve_workspace as resolve_codex_workspace
-from loommux.mcp_ipython_content_server import create_mcp as create_content_mcp
-from loommux.mcp_ipython_server import create_mcp as create_standard_mcp
+from loommux.mcp_ipython_server import create_mcp as create_default_mcp
 from loommux.mcp_result_policy import make_tool_result
-from loommux.workspace_resolver import resolve_workspace_launch
+from loommux.mcp_server_factory import create_mcp as create_policy_mcp
 
 WORKSPACE_CONFIG_ENV = "LOOMMUX_WORKSPACE_CONFIG"
+
+
+def create_structured_mcp() -> Any:
+    """Use the explicit opt-in policy when testing the structured protocol surface."""
+    return create_policy_mcp("structured")
 
 
 @pytest.fixture
@@ -26,24 +28,24 @@ def workspace(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-async def content_client(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Client[Any]]:
+async def default_client(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Client[Any]]:
     monkeypatch.chdir(workspace)
-    async with Client(create_content_mcp()) as client:
+    async with Client(create_default_mcp()) as client:
         yield client
 
 
-async def test_entrypoints_have_identical_eight_tool_schemas_and_descriptions(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_result_modes_have_identical_eight_tool_schemas_and_descriptions(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(workspace)
-    async with Client(create_standard_mcp()) as dual, Client(create_content_mcp()) as content:
-        dual_tools = {tool.name: tool for tool in await dual.list_tools()}
-        content_tools = {tool.name: tool for tool in await content.list_tools()}
+    async with Client(create_structured_mcp()) as structured, Client(create_default_mcp()) as default:
+        structured_tools = {tool.name: tool for tool in await structured.list_tools()}
+        default_tools = {tool.name: tool for tool in await default.list_tools()}
 
     expected = {"run_python", "python_status", "python_execution_status", "read_python_output", "search_python_output", "wait_python", "interrupt_python", "reset_python"}
-    assert set(dual_tools) == set(content_tools) == expected
+    assert set(structured_tools) == set(default_tools) == expected
     for name in expected:
-        assert dual_tools[name].inputSchema == content_tools[name].inputSchema
-        assert dual_tools[name].description == content_tools[name].description
-    schema = dual_tools["read_python_output"].inputSchema["properties"]
+        assert structured_tools[name].inputSchema == default_tools[name].inputSchema
+        assert structured_tools[name].description == default_tools[name].description
+    schema = structured_tools["read_python_output"].inputSchema["properties"]
     assert set(schema) == {"execution", "stream", "line_range", "max_chars"}
     assert schema["execution"]["anyOf"][0]["type"] == "integer"
 
@@ -57,59 +59,15 @@ async def test_default_workspace_ignores_legacy_files_and_exposes_launch_source(
     (launch_cwd / "loommux_workspace.py").write_text(f"from pathlib import Path\nPath({str(marker)!r}).touch()\n", encoding="utf-8")
     monkeypatch.chdir(launch_cwd)
 
-    async with Client(create_standard_mcp()) as client:
+    async with Client(create_default_mcp()) as client:
         status = await client.call_tool("python_status", {})
         cwd = await client.call_tool("run_python", {"freeform": "import os\nprint(os.getcwd())"})
 
-    assert status.data["workspace"] == str(launch_cwd)
-    assert status.data["workspace_resolution"] == "launch_cwd"
+    assert status.data is None
+    assert f"workspace: {launch_cwd}" in status.content[0].text
+    assert "workspace_resolution: launch_cwd" in status.content[0].text
     assert cwd.content[0].text == f"In [1]:\n{launch_cwd}\n"
     assert not marker.exists()
-
-
-def test_manual_content_entrypoint_selects_the_bundled_codex_resolver(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    project = tmp_path / "project"
-    launch_cwd = project / "nested" / "launch"
-    (project / ".codex").mkdir(parents=True)
-    launch_cwd.mkdir(parents=True)
-    monkeypatch.chdir(launch_cwd)
-    environment: dict[str, str] = {}
-
-    content_server.configure_manual_content_workspace(environment)
-    monkeypatch.setenv(WORKSPACE_CONFIG_ENV, environment[WORKSPACE_CONFIG_ENV])
-    resolution = resolve_workspace_launch()
-
-    assert resolve_codex_workspace(launch_cwd) == project
-    assert resolution.workspace == project
-    assert resolution.workspace_resolution == "explicit_config"
-    assert Path(environment[WORKSPACE_CONFIG_ENV]).resolve() == Path(content_server.__file__).with_name("codex_workspace_resolver.py").resolve()
-
-
-def test_manual_content_entrypoint_preserves_a_host_supplied_resolver(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    resolver = tmp_path / "host-resolver.py"
-    resolver.write_text("def resolve_workspace(launch_cwd):\n    return launch_cwd\n", encoding="utf-8")
-    environment = {WORKSPACE_CONFIG_ENV: str(resolver)}
-
-    content_server.configure_manual_content_workspace(environment)
-
-    assert environment[WORKSPACE_CONFIG_ENV] == str(resolver)
-
-
-def test_manual_content_main_uses_content_http_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, object] = {}
-
-    def run_entrypoint(*args: object, **kwargs: object) -> None:
-        captured["args"] = args
-        captured.update(kwargs)
-
-    monkeypatch.setattr(content_server, "run_entrypoint", run_entrypoint)
-
-    content_server.main([])
-
-    assert captured["args"][1:3] == ("content_only", "streamable-http")
-    assert captured["default_host"] == "0.0.0.0"
-    assert captured["configure_workspace"] is content_server.configure_manual_content_workspace
-    assert captured["argv"] == []
 
 
 async def test_explicit_resolver_controls_server_workspace_and_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -122,17 +80,17 @@ async def test_explicit_resolver_controls_server_workspace_and_status(tmp_path: 
     monkeypatch.chdir(launch_cwd)
     monkeypatch.setenv(WORKSPACE_CONFIG_ENV, str(resolver))
 
-    async with Client(create_standard_mcp()) as client:
+    async with Client(create_default_mcp()) as client:
         status = await client.call_tool("python_status", {})
         cwd = await client.call_tool("run_python", {"freeform": "import os\nprint(os.getcwd())"})
 
-    assert status.data["workspace"] == str(workspace)
-    assert status.data["workspace_resolution"] == "explicit_config"
+    assert status.data is None
+    assert f"workspace: {workspace}" in status.content[0].text
+    assert "workspace_resolution: explicit_config" in status.content[0].text
     assert cwd.content[0].text == f"In [1]:\n{workspace}\n"
 
 
-@pytest.mark.parametrize("factory", [create_standard_mcp, create_content_mcp])
-async def test_configured_resolution_errors_prevent_each_entrypoint_from_starting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, factory: Any) -> None:
+async def test_configured_resolution_errors_prevent_server_startup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     launch_cwd = tmp_path / "launch"
     launch_cwd.mkdir()
     resolver_directory = tmp_path / "resolver-directory"
@@ -158,32 +116,32 @@ async def test_configured_resolution_errors_prevent_each_entrypoint_from_startin
     for configured_path, expected_status in cases:
         monkeypatch.setenv(WORKSPACE_CONFIG_ENV, configured_path)
         with pytest.raises(RuntimeError, match=expected_status) as error:
-            async with Client(factory()):
+            async with Client(create_default_mcp()):
                 pytest.fail("MCP tools must not become usable after resolver failure")
         assert "private resolver source" not in str(error.value)
 
 
-async def test_both_entrypoints_use_the_server_interpreter_and_preserve_workspace_resolution(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_result_modes_use_the_server_interpreter_and_preserve_workspace_resolution(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(workspace)
     expected_python = str(Path(sys.executable).absolute())
-    async with Client(create_standard_mcp()) as dual, Client(create_content_mcp()) as content:
-        dual_status = await dual.call_tool("python_status", {})
-        content_status = await content.call_tool("python_status", {})
-        dual_python = await dual.call_tool("run_python", {"freeform": "import sys\nprint(sys.executable)"})
-        content_python = await content.call_tool("run_python", {"freeform": "import sys\nprint(sys.executable)"})
-        reset = await dual.call_tool("reset_python", {})
+    async with Client(create_structured_mcp()) as structured, Client(create_default_mcp()) as default:
+        structured_status = await structured.call_tool("python_status", {})
+        default_status = await default.call_tool("python_status", {})
+        structured_python = await structured.call_tool("run_python", {"freeform": "import sys\nprint(sys.executable)"})
+        default_python = await default.call_tool("run_python", {"freeform": "import sys\nprint(sys.executable)"})
+        reset = await structured.call_tool("reset_python", {})
 
-    assert dual_status.data["python"] == expected_python
-    assert dual_status.data["workspace_resolution"] == "launch_cwd"
-    assert "workspace_resolution: launch_cwd" in content_status.content[0].text
-    assert expected_python in dual_python.content[0].text
-    assert expected_python in content_python.content[0].text
+    assert structured_status.data["python"] == expected_python
+    assert structured_status.data["workspace_resolution"] == "launch_cwd"
+    assert "workspace_resolution: launch_cwd" in default_status.content[0].text
+    assert expected_python in structured_python.content[0].text
+    assert expected_python in default_python.content[0].text
     assert reset.data["workspace_resolution"] == "launch_cwd"
 
 
 async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(workspace)
-    async with Client(create_standard_mcp()) as client:
+    async with Client(create_default_mcp()) as client:
         tools = {tool.name: tool for tool in await client.list_tools()}
 
     run_python = tools["run_python"].description or ""
@@ -249,33 +207,33 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
     assert "连续的下一个编号" in reset
 
 
-async def test_result_policies_share_content_but_only_dual_exposes_structured_status(content_client: Client[Any]) -> None:
-    async with Client(create_standard_mcp()) as dual_client:
-        dual = await dual_client.call_tool("run_python", {"freeform": "value = 1"})
-    content = await content_client.call_tool("run_python", {"freeform": "value = 1"})
+async def test_result_modes_share_content_but_only_structured_exposes_structured_status(default_client: Client[Any]) -> None:
+    async with Client(create_structured_mcp()) as structured_client:
+        structured = await structured_client.call_tool("run_python", {"freeform": "value = 1"})
+    default = await default_client.call_tool("run_python", {"freeform": "value = 1"})
 
-    assert dual.structured_content is not None
-    assert dual.structured_content["execution"] == 1
-    assert content.structured_content is None
-    assert dual.content[0].text == content.content[0].text == "In [1]:"
+    assert structured.structured_content is not None
+    assert structured.structured_content["execution"] == 1
+    assert default.structured_content is None
+    assert structured.content[0].text == default.content[0].text == "In [1]:"
 
 
-async def test_mcp_content_projects_input_coordinate_display_result_and_traceback(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_mcp_projects_input_coordinate_display_result_and_traceback(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(workspace)
-    async with Client(create_standard_mcp()) as dual_client, Client(create_content_mcp()) as content_client:
-        dual_silent = await dual_client.call_tool("run_python", {"freeform": "value = 1"})
-        content_silent = await content_client.call_tool("run_python", {"freeform": "value = 1"})
-        dual_result = await dual_client.call_tool("run_python", {"freeform": "value"})
-        content_result = await content_client.call_tool("run_python", {"freeform": "value"})
-        dual_error = await dual_client.call_tool("run_python", {"freeform": "1 / 0"})
-        content_error = await content_client.call_tool("run_python", {"freeform": "1 / 0"})
+    async with Client(create_structured_mcp()) as structured_client, Client(create_default_mcp()) as default_client:
+        structured_silent = await structured_client.call_tool("run_python", {"freeform": "value = 1"})
+        default_silent = await default_client.call_tool("run_python", {"freeform": "value = 1"})
+        structured_result = await structured_client.call_tool("run_python", {"freeform": "value"})
+        default_result = await default_client.call_tool("run_python", {"freeform": "value"})
+        structured_error = await structured_client.call_tool("run_python", {"freeform": "1 / 0"})
+        default_error = await default_client.call_tool("run_python", {"freeform": "1 / 0"})
 
-    assert dual_silent.content[0].text == content_silent.content[0].text == "In [1]:"
-    assert dual_result.content[0].text == content_result.content[0].text == "In [2]:\nOut[2]: 1\n"
-    assert dual_error.content[0].text.startswith("In [3]:\n")
-    assert content_error.content[0].text.startswith("In [3]:\n")
-    assert "ZeroDivisionError" in dual_error.content[0].text
-    assert "ZeroDivisionError" in content_error.content[0].text
+    assert structured_silent.content[0].text == default_silent.content[0].text == "In [1]:"
+    assert structured_result.content[0].text == default_result.content[0].text == "In [2]:\nOut[2]: 1\n"
+    assert structured_error.content[0].text.startswith("In [3]:\n")
+    assert default_error.content[0].text.startswith("In [3]:\n")
+    assert "ZeroDivisionError" in structured_error.content[0].text
+    assert "ZeroDivisionError" in default_error.content[0].text
 
 
 async def test_mcp_projects_real_display_images_in_iopub_order_with_detail(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -289,7 +247,7 @@ print('between-images', flush=True)
 display(Image(data=png, format='png'), metadata={'detail': 'original'})
 print('after-image', flush=True)
 """
-    async with Client(create_standard_mcp()) as client:
+    async with Client(create_structured_mcp()) as client:
         response = await client.call_tool("run_python", {"freeform": source})
 
     assert [block.type for block in response.content] == ["text", "text", "image", "text", "text", "image", "text"]
@@ -308,31 +266,31 @@ print('after-image', flush=True)
     assert "iVBOR" not in str(response.structured_content)
 
 
-async def test_result_policies_share_marked_complete_long_output(content_client: Client[Any]) -> None:
+async def test_result_modes_share_marked_complete_long_output(default_client: Client[Any]) -> None:
     source = "# loommux: --full-output\nprint('\\n'.join(f'line-{number}' for number in range(301)))"
-    async with Client(create_standard_mcp()) as dual_client:
-        dual = await dual_client.call_tool("run_python", {"freeform": source})
-    content = await content_client.call_tool("run_python", {"freeform": source})
+    async with Client(create_structured_mcp()) as structured_client:
+        structured = await structured_client.call_tool("run_python", {"freeform": source})
+    default = await default_client.call_tool("run_python", {"freeform": source})
 
     expected = "In [1]:\n" + "\n".join(f"line-{number}" for number in range(301)) + "\n"
-    assert dual.content[0].text == content.content[0].text == expected
-    assert dual.structured_content is not None
-    assert dual.structured_content["output_omitted"] is False
-    assert content.structured_content is None
+    assert structured.content[0].text == default.content[0].text == expected
+    assert structured.structured_content is not None
+    assert structured.structured_content["output_omitted"] is False
+    assert default.structured_content is None
 
 
-async def test_shared_factory_binds_every_tool_to_the_integer_contract(content_client: Client[Any]) -> None:
-    await content_client.call_tool("python_status", {})
-    submitted = await content_client.call_tool("run_python", {"freeform": "print('factory')"})
+async def test_shared_factory_binds_every_tool_to_the_integer_contract(default_client: Client[Any]) -> None:
+    await default_client.call_tool("python_status", {})
+    submitted = await default_client.call_tool("run_python", {"freeform": "print('factory')"})
     execution = submitted.data
-    # content-only intentionally has no data; the current-or-recent default still
+    # Content results intentionally have no data; the current-or-recent default still
     # exercises the same single selection path without any hidden alternate id.
-    status = await content_client.call_tool("python_execution_status", {})
-    read = await content_client.call_tool("read_python_output", {"stream": "stdout"})
-    search = await content_client.call_tool("search_python_output", {"query": "factory", "stream": "stdout", "query_mode": "literal"})
-    wait = await content_client.call_tool("wait_python", {"timeout_seconds": 1})
-    interrupt = await content_client.call_tool("interrupt_python", {})
-    reset = await content_client.call_tool("reset_python", {})
+    status = await default_client.call_tool("python_execution_status", {})
+    read = await default_client.call_tool("read_python_output", {"stream": "stdout"})
+    search = await default_client.call_tool("search_python_output", {"query": "factory", "stream": "stdout", "query_mode": "literal"})
+    wait = await default_client.call_tool("wait_python", {"timeout_seconds": 1})
+    interrupt = await default_client.call_tool("interrupt_python", {})
+    reset = await default_client.call_tool("reset_python", {})
 
     assert execution is None
     assert "execution 1: completed" in status.content[0].text
@@ -345,7 +303,7 @@ async def test_shared_factory_binds_every_tool_to_the_integer_contract(content_c
 
 async def test_real_mcp_eight_tool_loop_preserves_public_sequence_across_reset(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(workspace)
-    async with Client(create_standard_mcp()) as client:
+    async with Client(create_structured_mcp()) as client:
         initial = await client.call_tool("python_status", {})
         small = await client.call_tool("run_python", {"freeform": "print('small-output')"})
         running = await client.call_tool(
@@ -390,7 +348,7 @@ async def test_real_mcp_eight_tool_loop_preserves_public_sequence_across_reset(w
     assert after_reset.content[0].text == "In [4]:\nafter-reset\n"
 
 
-def test_mcp_result_policy_only_changes_structured_channel() -> None:
+def test_mcp_result_mode_only_changes_structured_content() -> None:
     raw = {"ok": True, "execution": 4, "status": "completed", "result_text": "1", "output_text": "Out[4]: 1\n", "output_omitted": False}
-    assert make_tool_result("run_python", raw, "dual_channel").structured_content == raw
-    assert make_tool_result("run_python", raw, "content_only").structured_content is None
+    assert make_tool_result("run_python", raw, "structured").structured_content == raw
+    assert make_tool_result("run_python", raw, "content").structured_content is None

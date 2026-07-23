@@ -11,7 +11,7 @@ from mcp.types import ImageContent, TextContent
 from loommux.execution import PresentationFailure, PresentationImage, PresentationText
 from loommux.presentation import format_tool_result_text
 
-ResultChannelPolicy = Literal["dual_channel", "content_only"]
+ResultMode = Literal["content", "structured"]
 
 
 @dataclass(frozen=True)
@@ -31,18 +31,18 @@ ALLOWED_IMAGE_DETAILS = {"low", "high", "original"}
 def make_tool_result(
     tool_name: str,
     raw_status: Mapping[str, Any],
-    policy: ResultChannelPolicy,
+    result_mode: ResultMode,
     image_limits: ImageDeliveryLimits = DEFAULT_IMAGE_DELIVERY_LIMITS,
 ) -> ToolResult:
     status = {key: value for key, value in raw_status.items() if not key.startswith("_")}
     content = _rich_execution_content(tool_name, status, raw_status.get("_presentation"), image_limits)
     if content is None:
         content = format_tool_result_text(tool_name, status)
-    if policy == "dual_channel":
+    if result_mode == "structured":
         return ToolResult(content=content, structured_content=status)
-    if policy == "content_only":
+    if result_mode == "content":
         return ToolResult(content=content)
-    raise ValueError(f"unknown result channel policy: {policy}")
+    raise ValueError(f"unknown result mode: {result_mode}")
 
 
 def _rich_execution_content(
