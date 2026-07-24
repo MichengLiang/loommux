@@ -1,6 +1,6 @@
 [project]
 name = "loommux"
-version = "0.1.9"
+version = "0.1.10"
 description = "Persistent IPython MCP server with inspectable execution output"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -40,6 +40,7 @@ loommux = "loommux.mcp_ipython_server:main"
 [dependency-groups]
 dev = [
     "basedpyright>=1.34.0",
+    "pillow>=10.0.0",
     "pytest>=9.0.0",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.0.0",
@@ -56,13 +57,14 @@ build-backend = "hatchling.build"
 packages = ["src/loommux"]
 
 [tool.hatch.build.targets.sdist]
-# An explicit source allowlist keeps local monitor dependencies and workspace
-# experiments out of the PyPI source archive.
+# An explicit source allowlist keeps workspace experiments out of the PyPI
+# source archive.
 include = [
     "/src/loommux",
     "/tests",
     "/docs",
     "/README.md",
+    "/CHANGELOG.md",
     "/LICENSE",
     "/pyproject.toml",
     "/CONTRIBUTING.md",

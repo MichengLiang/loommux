@@ -17,8 +17,6 @@ class KernelSession:
         self.workspace = workspace
         self.python_path = python_path
         self._on_idle = on_idle
-        self._on_output: Callable[[Execution, str, str], None] = _ignore_output
-        self._on_finished: Callable[[Execution], None] = _ignore_finished
         self.runtime = KernelRuntime(workspace, python_path)
         self.client: BlockingKernelClient | None = None
         self.current_execution: Execution | None = None
@@ -26,10 +24,6 @@ class KernelSession:
         self._lock = threading.RLock()
         self._stop_collector = threading.Event()
         self._collector: threading.Thread | None = None
-
-    def set_monitor_callbacks(self, on_output: Callable[[Execution, str, str], None], on_finished: Callable[[Execution], None]) -> None:
-        self._on_output = on_output
-        self._on_finished = on_finished
 
     @property
     def pid(self) -> int | None:
@@ -63,7 +57,6 @@ class KernelSession:
             execution = self.current_execution
             if mark_execution_killed and execution is not None and execution.is_running:
                 execution.kill()
-                self._on_finished(execution)
             self.current_execution = None
             self._stop_collector.set()
             self.client = None
@@ -113,35 +106,25 @@ class KernelSession:
             elif msg_type == "stream":
                 text = str(content.get("text", ""))
                 if content.get("name") == "stdout":
-                    self._on_output(execution, "stdout", execution.append_stdout(text))
+                    execution.append_stdout(text)
                 elif content.get("name") == "stderr":
-                    self._on_output(execution, "stderr", execution.append_stderr(text))
+                    execution.append_stderr(text)
             elif msg_type in {"execute_result", "display_data"}:
                 data = content.get("data", {})
                 if isinstance(data, dict) and "text/plain" in data:
                     text = str(data["text/plain"])
-                    self._on_output(execution, "result", execution.append_result_text(text))
+                    execution.append_result_text(text)
                 execution.append_display_data(data, content.get("metadata", {}))
             elif msg_type == "error":
                 traceback = content.get("traceback", [])
-                output = execution.record_error(
+                execution.record_error(
                     {
                         "ename": content.get("ename"),
                         "evalue": content.get("evalue"),
                         "traceback": traceback if isinstance(traceback, list) else [str(traceback)],
                     }
                 )
-                self._on_output(execution, "traceback", output)
             elif msg_type == "status" and content.get("execution_state") == "idle":
                 execution.finish()
                 self.current_execution = None
-                self._on_finished(execution)
                 self._on_idle(execution)
-
-
-def _ignore_output(_execution: Execution, _stream: str, _text: str) -> None:
-    pass
-
-
-def _ignore_finished(_execution: Execution) -> None:
-    pass

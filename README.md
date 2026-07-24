@@ -26,15 +26,13 @@ search retained output, interrupt the active cell, or restart the kernel.
 - IOPub-order `combined` output, including IPython-style `Out[execution]:`
   labels for display results.
 - Terminal-formatted IOPub text normalized into ordinary append-only text
-  transcripts before it reaches public output or monitor events.
+  transcripts before it reaches public output.
 - A non-blocking execution model: a tool-call timeout ends only that MCP call;
   it does not terminate the Python cell.
 - Explicit interrupt and kernel-reset operations, with preserved historical
   execution records after a reset.
 - A single MCP entrypoint with content-only defaults and an explicit structured
   result mode.
-- An optional local browser monitor for observing tool calls and execution
-  lifecycle events without granting browser-side Python control.
 
 `loommux` is intentionally not a multi-user notebook service, a durable job
 queue, or a sandbox. Kernel state and execution records are memory-only and
@@ -391,40 +389,6 @@ Stopping the loommux server ends the session. The kernel, namespace,
 execution-record table, output streams, and sequence are not persisted to
 disk; a new server process begins a fresh sequence at `1`.
 
-## Optional Local Monitor
-
-The repository contains an optional [`monitor/`](monitor/) application. It is
-not part of the PyPI package distribution. It receives a bounded stream of
-observation events, retains them only in memory, and renders recent Python
-code, output, status, and tool activity in a browser. It does not execute
-Python, interrupt executions, reset kernels, or change workspaces.
-
-From a source checkout:
-
-```bash
-cd monitor
-pnpm install
-pnpm dev
-```
-
-The monitor service defaults to `http://127.0.0.1:9765`. loommux publishes to
-`http://127.0.0.1:9765/api/events` by default. Publishing runs in a bounded
-background path: an unavailable monitor, delivery failure, or queue overflow
-does not change MCP tool results or kernel behavior.
-
-Configuration:
-
-| Variable | Meaning |
-| --- | --- |
-| `LOOMMUX_MONITOR_URL` | Override the monitor event-ingest URL. |
-| `LOOMMUX_MONITOR_DISABLED=1` | Disable monitor publishing. |
-
-Monitor events can contain submitted code, stdout, stderr, display results,
-tracebacks, tool arguments, and result summaries. Treat them as sensitive
-execution telemetry. The monitor is localhost-only by default; do not expose
-it publicly without applying appropriate security controls. More operational
-details are in [monitor/README.md](monitor/README.md).
-
 ## Security
 
 Arbitrary Python execution is loommux's central capability. Treat the MCP
@@ -451,8 +415,7 @@ The runtime is deliberately divided into narrow responsibilities:
   process containment is isolated there.
 - `kernel_session.py` owns IOPub collection and execution correlation without
   invoking operating-system process APIs.
-- `terminal_text.py` normalizes terminal controls before public text is stored
-  or published.
+- `terminal_text.py` normalizes terminal controls before public text is stored.
 - `execution.py` and `output_log.py` own normalized execution records and the
   append-only stream projections, line ranges, clipping, and search behavior.
 - `adapter.py` owns lifecycle, execution-number allocation, selection, and
@@ -460,14 +423,13 @@ The runtime is deliberately divided into narrow responsibilities:
 - `presentation.py` projects public state into model-readable text.
 - `mcp_server_factory.py` registers the shared tools; the command entrypoint
   selects the result mode and transport.
-- `monitoring.py` publishes normalized observation events without execution
-  authority.
 
 The current public contract is documented in [Coding Agent Control Plane
 Design](docs/coding-agent-control-plane-design.md).
 Focused references cover [freeform cell control](docs/ipython-mcp-freeform-run-python-design.md),
 [complete-output control](docs/ipython-mcp-full-output-directive-design.md),
-and [workspace configuration](docs/workspace-configuration.md).
+[workspace configuration](docs/workspace-configuration.md), and the
+[changelog](CHANGELOG.md).
 
 ## Development And Release Checks
 
@@ -490,17 +452,8 @@ readme = "README.md"
 
 Consequently, the same document is rendered on PyPI when a new release is
 built and uploaded. The explicit source-distribution allowlist includes this
-file, the runtime package, tests, and public documentation while excluding the
-local monitor's Node dependencies and workspace-only material.
-
-For the optional monitor, run its checks from `monitor/`:
-
-```bash
-pnpm typecheck
-pnpm test
-pnpm build
-pnpm e2e
-```
+file, the runtime package, tests, and public documentation while excluding
+workspace-only material.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution expectations.
 

@@ -36,10 +36,10 @@ invalid body remains ordinary Python source and is never transformed.
 
 Every accepted execution retains `author_source` and `submitted_source`. They
 are byte-for-byte equal unless the validated Apply Patch conversion is applied.
-In that exception, the execution and monitoring records retain structured
-transform facts: whether it applied, literal count, author/submitted ranges,
-and physical-line mapping. Newline padding preserves meaningful coordinates
-for Python diagnostics following a transformed literal.
+In that exception, the execution record retains structured transform facts:
+whether it applied, literal count, author/submitted ranges, and physical-line
+mapping. Newline padding preserves meaningful coordinates for Python
+diagnostics following a transformed literal.
 
 Control directives remain authored source facts. A valid Apply Patch payload
 cannot contain an active `# loommux:` directive at physical column zero, because

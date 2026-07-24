@@ -10,23 +10,14 @@ from fastmcp.tools import ToolResult
 from loommux.adapter import IPythonMCPAdapter
 from loommux.host_workspace_config import WorkspaceConfigError
 from loommux.mcp_result_policy import ResultMode, make_tool_result
-from loommux.monitoring import MonitorPublisher, create_monitor_publisher, run_monitored_tool_call
 from loommux.workspace_resolver import resolve_workspace_launch
 
 
-def create_mcp(result_mode: ResultMode, monitor_publisher: MonitorPublisher | None = None) -> FastMCP:
-    publisher = monitor_publisher or create_monitor_publisher()
-    adapter = IPythonMCPAdapter(monitor_publisher=publisher)
+def create_mcp(result_mode: ResultMode) -> FastMCP:
+    adapter = IPythonMCPAdapter()
 
-    def call(tool_name: str, arguments: dict[str, Any], operation: Callable[[], dict[str, Any]]) -> ToolResult:
-        def monitored(call_id: str) -> dict[str, Any]:
-            token = adapter.set_active_call_id(call_id)
-            try:
-                return operation()
-            finally:
-                adapter.reset_active_call_id(token)
-
-        return make_tool_result(tool_name, run_monitored_tool_call(tool_name, arguments, publisher, monitored), result_mode)
+    def call(tool_name: str, operation: Callable[[], dict[str, Any]]) -> ToolResult:
+        return make_tool_result(tool_name, operation(), result_mode)
 
     @asynccontextmanager
     async def lifespan(_server: FastMCP) -> AsyncIterator[dict[str, Any]]:
@@ -116,7 +107,7 @@ def create_mcp(result_mode: ResultMode, monitor_publisher: MonitorPublisher | No
             已接受 execution 的当前状态；完成的小输出直接进入模型内容，
             running 或行数受限状态给出 ``execution`` 与省略原因。
         """
-        return call("run_python", {"freeform": freeform}, lambda: adapter.run_python(freeform))
+        return call("run_python", lambda: adapter.run_python(freeform))
 
     @mcp.tool(output_schema=None)
     def python_status() -> ToolResult:
@@ -147,7 +138,7 @@ def create_mcp(result_mode: ResultMode, monitor_publisher: MonitorPublisher | No
         Returns:
             当前 server 与 kernel 的状态快照。
         """
-        return call("python_status", {}, adapter.python_status)
+        return call("python_status", adapter.python_status)
 
     @mcp.tool(output_schema=None)
     def python_execution_status(execution: int | None = None) -> ToolResult:
@@ -168,7 +159,7 @@ def create_mcp(result_mode: ResultMode, monitor_publisher: MonitorPublisher | No
             选中记录的 ``execution``、status、时间戳、提交时 kernel 元数据、
             输出总行数、输出省略原因与错误摘要。
         """
-        return call("python_execution_status", {"execution": execution}, lambda: adapter.python_execution_status(execution))
+        return call("python_execution_status", lambda: adapter.python_execution_status(execution))
 
     @mcp.tool(output_schema=None)
     def read_python_output(execution: int | None = None, stream: str = "combined", line_range: str | None = None, max_chars: int | None = None) -> ToolResult:
@@ -207,8 +198,7 @@ def create_mcp(result_mode: ResultMode, monitor_publisher: MonitorPublisher | No
         Returns:
             所选流的文本、总行数、返回行数及范围外省略行数。
         """
-        arguments = {"execution": execution, "stream": stream, "line_range": line_range, "max_chars": max_chars}
-        return call("read_python_output", arguments, lambda: adapter.read_python_output(execution, stream, line_range, max_chars))
+        return call("read_python_output", lambda: adapter.read_python_output(execution, stream, line_range, max_chars))
 
     @mcp.tool(output_schema=None)
     def search_python_output(query: str, execution: int | None = None, stream: str = "combined", query_mode: str = "auto", context_before: int = 0, context_after: int = 0, ignore_case: bool = False, max_chars: int | None = None) -> ToolResult:
@@ -246,8 +236,7 @@ def create_mcp(result_mode: ResultMode, monitor_publisher: MonitorPublisher | No
             带 ``M`` / ``C`` 行标记的命中与上下文、匹配统计和所选流行数；
             无命中时返回零匹配结果。
         """
-        arguments = {"query": query, "execution": execution, "stream": stream, "query_mode": query_mode, "context_before": context_before, "context_after": context_after, "ignore_case": ignore_case, "max_chars": max_chars}
-        return call("search_python_output", arguments, lambda: adapter.search_python_output(query, execution, stream, query_mode, context_before, context_after, ignore_case, max_chars))
+        return call("search_python_output", lambda: adapter.search_python_output(query, execution, stream, query_mode, context_before, context_after, ignore_case, max_chars))
 
     @mcp.tool(output_schema=None)
     def wait_python(execution: int | None = None, timeout_seconds: float = 30) -> ToolResult:
@@ -276,7 +265,7 @@ def create_mcp(result_mode: ResultMode, monitor_publisher: MonitorPublisher | No
             选中 execution 的当前状态和可返回的输出表面。未找到记录或
             非正等待时长返回对应错误。
         """
-        return call("wait_python", {"execution": execution, "timeout_seconds": timeout_seconds}, lambda: adapter.wait_python(execution, timeout_seconds))
+        return call("wait_python", lambda: adapter.wait_python(execution, timeout_seconds))
 
     @mcp.tool(output_schema=None)
     def interrupt_python() -> ToolResult:
@@ -292,7 +281,7 @@ def create_mcp(result_mode: ResultMode, monitor_publisher: MonitorPublisher | No
         Returns:
             已发送信号时返回目标 ``execution``；kernel 空闲时返回 idle。
         """
-        return call("interrupt_python", {}, adapter.interrupt_python)
+        return call("interrupt_python", adapter.interrupt_python)
 
     @mcp.tool(output_schema=None)
     def reset_python() -> ToolResult:
@@ -309,6 +298,6 @@ def create_mcp(result_mode: ResultMode, monitor_publisher: MonitorPublisher | No
             新 kernel 的状态与 PID；重启失败时返回 workspace 或 kernel
             启动错误。
         """
-        return call("reset_python", {}, adapter.reset_python)
+        return call("reset_python", adapter.reset_python)
 
     return mcp

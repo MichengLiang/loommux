@@ -37,6 +37,14 @@ The public execution contract is documented under [`docs/`](docs/). Update the
 relevant design document when changing a public tool input, result surface,
 execution lifecycle rule, or output-reading coordinate.
 
+## Releases
+
+The package version is declared in [`pyproject.toml`](pyproject.toml). A release
+must update [CHANGELOG.md](CHANGELOG.md), pass the complete local gate, and use
+an annotated `v<version>` tag that exactly matches the package version. The
+PyPI workflow independently verifies that match, reruns the quality gate, and
+checks the built distribution before upload.
+
 ## Reporting defects
 
 Use the issue templates for reproducible defects and feature proposals. Report

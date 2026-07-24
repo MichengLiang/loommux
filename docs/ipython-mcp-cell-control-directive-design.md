@@ -232,9 +232,6 @@ Resolved metadata records:
 }
 ```
 
-Monitor events may expose the same facts, but monitoring is not an alternate
-control channel and may not infer policy after submission.
-
 ## 7. Composition Boundary
 
 The adapter recognizes directive lines in raw freeform source. A selected cell
@@ -352,7 +349,7 @@ The change is complete only when:
 2. All former Loommux cell-magic runtime registration, relay code, tests,
    examples, and documentation are removed.
 3. The adapter aggregates and validates directives before execution allocation.
-4. `Execution` and monitor metadata expose resolved `control_directives`.
+4. `Execution` exposes resolved `control_directives`.
 5. Apply Patch conversion remains narrow and grammar-validated.
 6. README, MCP tool descriptions, and all linked design documents agree.
 7. The complete test suite, project coverage gate, Ruff, Basedpyright, and

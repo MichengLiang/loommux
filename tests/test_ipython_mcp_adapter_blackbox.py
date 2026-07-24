@@ -65,9 +65,6 @@ def test_workspace_start_retries_one_transient_kernel_failure(tmp_path: Path, mo
         def is_alive(self) -> bool:
             return True
 
-        def set_monitor_callbacks(self, *_callbacks: object) -> None:
-            pass
-
     adapter = IPythonMCPAdapter()
     failed_kernel = ControlledKernel(True)
     started_kernel = ControlledKernel(False)
