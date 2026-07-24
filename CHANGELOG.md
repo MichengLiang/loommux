@@ -7,6 +7,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-07-24
+
 ### Fixed
 
 - Skip the POSIX-only `%%bash` cell-magic test on Windows, where IPython cannot
@@ -31,4 +33,5 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Declared Pillow as a development dependency so rich presentation tests run
   in a clean CI environment.
 
+[0.1.11]: https://github.com/MichengLiang/loommux/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/MichengLiang/loommux/compare/v0.1.9...v0.1.10
