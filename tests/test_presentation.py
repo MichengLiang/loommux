@@ -13,9 +13,9 @@ def test_completed_result_projects_only_ipython_visible_output() -> None:
     printed = {"ok": True, "execution": 6, "status": "completed", "result_text": "", "output_text": "printed\n", "output_omitted": False}
     silent = {"ok": True, "execution": 7, "status": "completed", "result_text": "", "output_text": "", "output_omitted": False}
 
-    assert format_tool_result_text("run_python", result) == "In [5]:\nOut[5]: 42\n"
-    assert format_tool_result_text("run_python", printed) == "In [6]:\nprinted\n"
-    assert format_tool_result_text("run_python", silent) == "In [7]:"
+    assert format_tool_result_text("run_cell", result) == "In [5]:\nOut[5]: 42\n"
+    assert format_tool_result_text("run_cell", printed) == "In [6]:\nprinted\n"
+    assert format_tool_result_text("run_cell", silent) == "In [7]:"
 
 
 def test_execution_states_name_the_integer_coordinate() -> None:
@@ -24,10 +24,10 @@ def test_execution_states_name_the_integer_coordinate() -> None:
     error = {"ok": False, "execution": 5, "status": "error", "error": {"ename": "ZeroDivisionError", "evalue": "division by zero"}}
     killed = {"ok": False, "execution": 5, "status": "killed"}
 
-    assert format_tool_result_text("run_python", running) == "In [5]:\nRunning: use wait_python() for completion, read_python_output() for collected output, or search_python_output() to locate text."
-    assert format_tool_result_text("wait_python", large) == "In [5]:\nOutput: more than 300 lines; use read_python_output() to read all lines or search_python_output() to locate text."
-    assert format_tool_result_text("run_python", error) == "In [5]:\nError: ZeroDivisionError: division by zero"
-    assert format_tool_result_text("wait_python", killed) == "In [5]:\nKilled: reset_python() stopped this execution."
+    assert format_tool_result_text("run_cell", running) == "In [5]:\nRunning: use wait() for completion, read_output() for collected output, or search_output() to locate text."
+    assert format_tool_result_text("wait", large) == "In [5]:\nOutput: more than 300 lines; use read_output() to read all lines or search_output() to locate text."
+    assert format_tool_result_text("run_cell", error) == "In [5]:\nError: ZeroDivisionError: division by zero"
+    assert format_tool_result_text("wait", killed) == "In [5]:\nKilled: restart() stopped this execution."
 
 
 def test_marked_terminal_execution_renders_its_complete_combined_output() -> None:
@@ -48,8 +48,8 @@ def test_marked_terminal_execution_renders_its_complete_combined_output() -> Non
         "output_omitted": False,
     }
 
-    assert format_tool_result_text("run_python", error) == "In [5]:\nbefore failure\nTraceback...\n"
-    assert format_tool_result_text("wait_python", killed) == "In [6]:\nbefore reset\nKilled: reset_python() stopped this execution."
+    assert format_tool_result_text("run_cell", error) == "In [5]:\nbefore failure\nTraceback...\n"
+    assert format_tool_result_text("wait", killed) == "In [6]:\nbefore reset\nKilled: restart() stopped this execution."
 
 
 def test_unmarked_error_with_a_small_combined_body_preserves_its_traceback() -> None:
@@ -62,31 +62,31 @@ def test_unmarked_error_with_a_small_combined_body_preserves_its_traceback() -> 
         "output_omitted": False,
     }
 
-    assert format_tool_result_text("run_python", error) == "In [5]:\nbefore failure\nTraceback...\n"
+    assert format_tool_result_text("run_cell", error) == "In [5]:\nbefore failure\nTraceback...\n"
 
 
 def test_read_search_and_status_surfaces_are_output_oriented() -> None:
-    assert format_tool_result_text("read_python_output", {"ok": True, "returned_lines": 1, "text": "1 | payload"}) == "1 | payload"
-    assert format_tool_result_text("read_python_output", {"ok": True, "returned_lines": 0, "text": ""}) == "No output lines are available."
-    assert format_tool_result_text("search_python_output", {"ok": True, "matched_lines": 0}) == "No matching output lines were found."
-    assert format_tool_result_text("python_status", {"ok": True, "kernel_started": True, "busy": False, "recent_execution": 5, "workspace": "/tmp/ws", "workspace_resolution": "launch_cwd"}) == "kernel: idle\nrecent_execution: 5\nworkspace: /tmp/ws\nworkspace_resolution: launch_cwd"
-    assert format_tool_result_text("python_execution_status", {"ok": True, "execution": 5, "status": "completed", "output_total_lines": 2}).startswith("execution 5: completed")
+    assert format_tool_result_text("read_output", {"ok": True, "returned_lines": 1, "text": "1 | payload"}) == "1 | payload"
+    assert format_tool_result_text("read_output", {"ok": True, "returned_lines": 0, "text": ""}) == "No output lines are available."
+    assert format_tool_result_text("search_output", {"ok": True, "matched_lines": 0}) == "No matching output lines were found."
+    assert format_tool_result_text("status", {"ok": True, "kernel_started": True, "busy": False, "recent_execution": 5, "workspace": "/tmp/ws", "workspace_resolution": "launch_cwd"}) == "kernel: idle\nrecent_execution: 5\nworkspace: /tmp/ws\nworkspace_resolution: launch_cwd"
+    assert format_tool_result_text("execution_status", {"ok": True, "execution": 5, "status": "completed", "output_total_lines": 2}).startswith("execution 5: completed")
 
 
 def test_tool_failure_surface_remains_concise() -> None:
-    assert format_tool_result_text("read_python_output", {"ok": False, "status": "invalid_stream", "message": "bad stream"}) == "invalid_stream: bad stream"
+    assert format_tool_result_text("read_output", {"ok": False, "status": "invalid_stream", "message": "bad stream"}) == "invalid_stream: bad stream"
 
 
 def test_presentation_handles_remaining_lifecycle_and_status_cases() -> None:
-    assert format_tool_result_text("interrupt_python", {"ok": True, "status": "interrupt_sent", "execution": 7}) == "Interrupt sent to Python execution 7."
-    assert format_tool_result_text("interrupt_python", {"ok": True, "status": "idle"}) == "Python kernel is idle."
-    assert format_tool_result_text("reset_python", {"ok": True, "status": "restarted"}).startswith("Python kernel restarted")
-    assert format_tool_result_text("python_execution_status", {"ok": False, "execution": 8, "status": "error", "error": {"ename": "NameError"}}).startswith("execution 8: error\nPython execution 8 failed with NameError")
+    assert format_tool_result_text("interrupt", {"ok": True, "status": "interrupt_sent", "execution": 7}) == "Interrupt sent to Python execution 7."
+    assert format_tool_result_text("interrupt", {"ok": True, "status": "idle"}) == "Python kernel is idle."
+    assert format_tool_result_text("restart", {"ok": True, "status": "restarted"}).startswith("Python kernel restarted")
+    assert format_tool_result_text("execution_status", {"ok": False, "execution": 8, "status": "error", "error": {"ename": "NameError"}}).startswith("execution 8: error\nPython execution 8 failed with NameError")
 
 
 def test_rich_execution_content_preserves_text_image_text_order_and_detail() -> None:
     result = make_tool_result(
-        "run_python",
+        "run_cell",
         {
             "ok": True,
             "execution": 12,
@@ -112,7 +112,7 @@ def test_rich_execution_content_preserves_text_image_text_order_and_detail() -> 
 
 def test_rich_execution_content_keeps_neighbors_when_an_image_is_rejected() -> None:
     result = make_tool_result(
-        "wait_python",
+        "wait",
         {
             "ok": True,
             "execution": 3,
@@ -138,7 +138,7 @@ def test_rich_execution_content_keeps_neighbors_when_an_image_is_rejected() -> N
 
 def test_rich_execution_content_enforces_image_delivery_limits() -> None:
     result = make_tool_result(
-        "run_python",
+        "run_cell",
         {
             "ok": True,
             "execution": 4,
@@ -156,7 +156,7 @@ def test_rich_execution_content_enforces_image_delivery_limits() -> None:
 
 def test_rich_execution_keeps_images_but_omits_line_limited_text() -> None:
     result = make_tool_result(
-        "run_python",
+        "run_cell",
         {
             "ok": True,
             "execution": 5,
@@ -175,13 +175,13 @@ def test_rich_execution_keeps_images_but_omits_line_limited_text() -> None:
     assert [block.type for block in result.content] == ["text", "image"]
     assert isinstance(result.content[0], TextContent)
     assert "exceeds 300 lines" in result.content[0].text
-    assert "read_python_output() to read all lines or search_python_output()" in result.content[0].text
+    assert "read_output() to read all lines or search_output()" in result.content[0].text
     assert "line-0" not in result.content[0].text
 
 
 def test_rich_execution_rejects_malformed_gif_data() -> None:
     result = make_tool_result(
-        "run_python",
+        "run_cell",
         {
             "ok": True,
             "execution": 6,
@@ -198,7 +198,7 @@ def test_rich_execution_rejects_malformed_gif_data() -> None:
 
 def test_rich_execution_keeps_explicit_failures_and_rejects_invalid_image_shapes() -> None:
     result = make_tool_result(
-        "run_python",
+        "run_cell",
         {
             "ok": True,
             "execution": 7,
@@ -222,13 +222,13 @@ def test_rich_execution_keeps_explicit_failures_and_rejects_invalid_image_shapes
 def test_rich_execution_enforces_image_count_and_total_byte_limits() -> None:
     images = (PresentationImage("eA==", "image/png", None, 1), PresentationImage("eQ==", "image/png", None, 2))
     count_limited = make_tool_result(
-        "run_python",
+        "run_cell",
         {"ok": True, "execution": 8, "status": "completed", "_presentation": images},
         "content",
         ImageDeliveryLimits(max_image_bytes=1, max_images=1, max_total_image_bytes=2),
     )
     total_limited = make_tool_result(
-        "run_python",
+        "run_cell",
         {"ok": True, "execution": 8, "status": "completed", "_presentation": images},
         "content",
         ImageDeliveryLimits(max_image_bytes=1, max_images=2, max_total_image_bytes=1),
@@ -242,7 +242,7 @@ def test_rich_execution_enforces_image_count_and_total_byte_limits() -> None:
 
 def test_rich_execution_accepts_a_single_frame_gif() -> None:
     result = make_tool_result(
-        "wait_python",
+        "wait",
         {
             "ok": True,
             "execution": 9,
@@ -258,4 +258,4 @@ def test_rich_execution_accepts_a_single_frame_gif() -> None:
 
 def test_make_tool_result_rejects_an_unknown_result_mode() -> None:
     with pytest.raises(ValueError, match="unknown result mode"):
-        make_tool_result("python_status", {"ok": True}, "unknown")  # type: ignore[arg-type]
+        make_tool_result("status", {"ok": True}, "unknown")  # type: ignore[arg-type]

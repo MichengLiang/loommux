@@ -40,12 +40,12 @@ async def test_result_modes_have_identical_eight_tool_schemas_and_descriptions(w
         structured_tools = {tool.name: tool for tool in await structured.list_tools()}
         default_tools = {tool.name: tool for tool in await default.list_tools()}
 
-    expected = {"run_python", "python_status", "python_execution_status", "read_python_output", "search_python_output", "wait_python", "interrupt_python", "reset_python"}
+    expected = {"run_cell", "status", "execution_status", "read_output", "search_output", "wait", "interrupt", "restart"}
     assert set(structured_tools) == set(default_tools) == expected
     for name in expected:
         assert structured_tools[name].inputSchema == default_tools[name].inputSchema
         assert structured_tools[name].description == default_tools[name].description
-    schema = structured_tools["read_python_output"].inputSchema["properties"]
+    schema = structured_tools["read_output"].inputSchema["properties"]
     assert set(schema) == {"execution", "stream", "line_range", "max_chars"}
     assert schema["execution"]["anyOf"][0]["type"] == "integer"
 
@@ -60,8 +60,8 @@ async def test_default_workspace_ignores_legacy_files_and_exposes_launch_source(
     monkeypatch.chdir(launch_cwd)
 
     async with Client(create_default_mcp()) as client:
-        status = await client.call_tool("python_status", {})
-        cwd = await client.call_tool("run_python", {"freeform": "import os\nprint(os.getcwd())"})
+        status = await client.call_tool("status", {})
+        cwd = await client.call_tool("run_cell", {"freeform": "import os\nprint(os.getcwd())"})
 
     assert status.data is None
     assert f"workspace: {launch_cwd}" in status.content[0].text
@@ -81,8 +81,8 @@ async def test_explicit_resolver_controls_server_workspace_and_status(tmp_path: 
     monkeypatch.setenv(WORKSPACE_CONFIG_ENV, str(resolver))
 
     async with Client(create_default_mcp()) as client:
-        status = await client.call_tool("python_status", {})
-        cwd = await client.call_tool("run_python", {"freeform": "import os\nprint(os.getcwd())"})
+        status = await client.call_tool("status", {})
+        cwd = await client.call_tool("run_cell", {"freeform": "import os\nprint(os.getcwd())"})
 
     assert status.data is None
     assert f"workspace: {workspace}" in status.content[0].text
@@ -125,11 +125,11 @@ async def test_result_modes_use_the_server_interpreter_and_preserve_workspace_re
     monkeypatch.chdir(workspace)
     expected_python = str(Path(sys.executable).absolute())
     async with Client(create_structured_mcp()) as structured, Client(create_default_mcp()) as default:
-        structured_status = await structured.call_tool("python_status", {})
-        default_status = await default.call_tool("python_status", {})
-        structured_python = await structured.call_tool("run_python", {"freeform": "import sys\nprint(sys.executable)"})
-        default_python = await default.call_tool("run_python", {"freeform": "import sys\nprint(sys.executable)"})
-        reset = await structured.call_tool("reset_python", {})
+        structured_status = await structured.call_tool("status", {})
+        default_status = await default.call_tool("status", {})
+        structured_python = await structured.call_tool("run_cell", {"freeform": "import sys\nprint(sys.executable)"})
+        default_python = await default.call_tool("run_cell", {"freeform": "import sys\nprint(sys.executable)"})
+        reset = await structured.call_tool("restart", {})
 
     assert structured_status.data["python"] == expected_python
     assert structured_status.data["workspace_resolution"] == "launch_cwd"
@@ -144,73 +144,73 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
     async with Client(create_default_mcp()) as client:
         tools = {tool.name: tool for tool in await client.list_tools()}
 
-    run_python = tools["run_python"].description or ""
-    assert "向持久 IPython kernel 提交一个原始 Python cell。" in run_python
-    assert "输入\n----" in run_python
-    assert "等待上限\n--------" in run_python
-    assert "执行编号与后续操作\n--------------------" in run_python
-    assert "# loommux: --wait 120" in run_python
-    assert "# loommux: --full-output" in run_python
-    assert "300 行" in run_python
-    assert "wait_python" in run_python
-    assert "图像展示\n--------" in run_python
-    assert "IPython ``display()``" in run_python
-    assert 'metadata={"detail": "low"}' in run_python
-    assert '"original"})``' in run_python
-    assert "只作用于这一处 ``display()`` 调用" in run_python
-    assert "execution_id" not in run_python and "output_log" not in run_python
-    assert "原始 Python cell 源码文本" in tools["run_python"].inputSchema["properties"]["freeform"]["description"]
+    run_cell = tools["run_cell"].description or ""
+    assert "向持久 IPython kernel 提交一个原始 IPython cell。" in run_cell
+    assert "输入\n----" in run_cell
+    assert "等待上限\n--------" in run_cell
+    assert "执行编号与后续操作\n--------------------" in run_cell
+    assert "# loommux: --wait 120" in run_cell
+    assert "# loommux: --full-output" in run_cell
+    assert "300 行" in run_cell
+    assert "wait" in run_cell
+    assert "图像展示\n--------" in run_cell
+    assert "IPython ``display()``" in run_cell
+    assert 'metadata={"detail": "low"}' in run_cell
+    assert '"original"})``' in run_cell
+    assert "只作用于这一处 ``display()`` 调用" in run_cell
+    assert "execution_id" not in run_cell and "output_log" not in run_cell
+    assert "原始 IPython cell 源码文本" in tools["run_cell"].inputSchema["properties"]["freeform"]["description"]
 
-    status = tools["python_execution_status"].description or ""
+    status = tools["execution_status"].description or ""
     assert "选择规则\n--------" in status
     assert "当前\nrunning 记录" in status
-    assert "正整数执行编号" in tools["python_execution_status"].inputSchema["properties"]["execution"]["description"]
+    assert "正整数执行编号" in tools["execution_status"].inputSchema["properties"]["execution"]["description"]
 
-    python_status = tools["python_status"].description or ""
-    assert "workspace_resolution" in python_status
-    assert "launch_cwd" in python_status and "explicit_config" in python_status
-    assert "resolver 的路径或内容" in python_status
-    assert "private runtime root" in python_status
+    status = tools["status"].description or ""
+    assert "workspace_resolution" in status
+    assert "launch_cwd" in status and "explicit_config" in status
+    assert "resolver 的路径或内容" in status
+    assert "private runtime root" in status
 
-    read = tools["read_python_output"].description or ""
+    read = tools["read_output"].description or ""
     assert "行坐标\n------" in read
     assert "``:10``" in read and "``-10:``" in read and "``3:3``" in read
     assert "完整读取\n--------" in read
     assert "无需把阅读拆成连续小范围" in read
-    read_parameters = tools["read_python_output"].inputSchema["properties"]
+    read_parameters = tools["read_output"].inputSchema["properties"]
     assert "省略时使用当前记录" in read_parameters["execution"]["description"]
     assert "已确定需要完整消费所选流时省略" in read_parameters["line_range"]["description"]
     assert "必须为正数" in read_parameters["max_chars"]["description"]
 
-    search = tools["search_python_output"].description or ""
+    search = tools["search_output"].description or ""
     assert "选择与匹配\n------------" in search
     assert "query_mode=\"auto\"" in search
-    search_parameters = tools["search_python_output"].inputSchema["properties"]
+    search_parameters = tools["search_output"].inputSchema["properties"]
     assert "字面文本或正则表达式" in search_parameters["query"]["description"]
     assert "必须大于或等于 0" in search_parameters["context_before"]["description"]
     assert "每个命中之后" in search_parameters["context_after"]["description"]
     assert "忽略大小写" in search_parameters["ignore_case"]["description"]
 
-    wait = tools["wait_python"].description or ""
+    wait = tools["wait"].description or ""
     assert "选择与等待\n----------" in wait
     assert "不中断 Python cell" in wait
     assert "完整 combined 正文" in wait
-    assert "默认 30 秒" in tools["wait_python"].inputSchema["properties"]["timeout_seconds"]["description"]
+    assert "默认 30 秒" in tools["wait"].inputSchema["properties"]["timeout_seconds"]["description"]
 
-    interrupt = tools["interrupt_python"].description or ""
+    interrupt = tools["interrupt"].description or ""
     assert "中断语义\n--------" in interrupt
     assert "IOPub ``idle``" in interrupt
     assert "信号已发送不等同于记录已终态" in interrupt
 
-    reset = tools["reset_python"].description or ""
+    reset = tools["restart"].description or ""
     assert "重置边界\n--------" in reset
     assert "连续的下一个编号" in reset
 
 
 async def test_result_modes_share_content_but_only_structured_exposes_structured_status(default_client: Client[Any]) -> None:
     async with Client(create_structured_mcp()) as structured_client:
-        structured = await structured_client.call_tool("run_python", {"freeform": "value = 1"})
-    default = await default_client.call_tool("run_python", {"freeform": "value = 1"})
+        structured = await structured_client.call_tool("run_cell", {"freeform": "value = 1"})
+    default = await default_client.call_tool("run_cell", {"freeform": "value = 1"})
 
     assert structured.structured_content is not None
     assert structured.structured_content["execution"] == 1
@@ -221,12 +221,12 @@ async def test_result_modes_share_content_but_only_structured_exposes_structured
 async def test_mcp_projects_input_coordinate_display_result_and_traceback(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(workspace)
     async with Client(create_structured_mcp()) as structured_client, Client(create_default_mcp()) as default_client:
-        structured_silent = await structured_client.call_tool("run_python", {"freeform": "value = 1"})
-        default_silent = await default_client.call_tool("run_python", {"freeform": "value = 1"})
-        structured_result = await structured_client.call_tool("run_python", {"freeform": "value"})
-        default_result = await default_client.call_tool("run_python", {"freeform": "value"})
-        structured_error = await structured_client.call_tool("run_python", {"freeform": "1 / 0"})
-        default_error = await default_client.call_tool("run_python", {"freeform": "1 / 0"})
+        structured_silent = await structured_client.call_tool("run_cell", {"freeform": "value = 1"})
+        default_silent = await default_client.call_tool("run_cell", {"freeform": "value = 1"})
+        structured_result = await structured_client.call_tool("run_cell", {"freeform": "value"})
+        default_result = await default_client.call_tool("run_cell", {"freeform": "value"})
+        structured_error = await structured_client.call_tool("run_cell", {"freeform": "1 / 0"})
+        default_error = await default_client.call_tool("run_cell", {"freeform": "1 / 0"})
 
     assert structured_silent.content[0].text == default_silent.content[0].text == "In [1]:"
     assert structured_result.content[0].text == default_result.content[0].text == "In [2]:\nOut[2]: 1\n"
@@ -248,7 +248,7 @@ display(Image(data=png, format='png'), metadata={'detail': 'original'})
 print('after-image', flush=True)
 """
     async with Client(create_structured_mcp()) as client:
-        response = await client.call_tool("run_python", {"freeform": source})
+        response = await client.call_tool("run_cell", {"freeform": source})
 
     assert [block.type for block in response.content] == ["text", "text", "image", "text", "text", "image", "text"]
     texts = [block.text for block in response.content if block.type == "text"]
@@ -269,8 +269,8 @@ print('after-image', flush=True)
 async def test_result_modes_share_marked_complete_long_output(default_client: Client[Any]) -> None:
     source = "# loommux: --full-output\nprint('\\n'.join(f'line-{number}' for number in range(301)))"
     async with Client(create_structured_mcp()) as structured_client:
-        structured = await structured_client.call_tool("run_python", {"freeform": source})
-    default = await default_client.call_tool("run_python", {"freeform": source})
+        structured = await structured_client.call_tool("run_cell", {"freeform": source})
+    default = await default_client.call_tool("run_cell", {"freeform": source})
 
     expected = "In [1]:\n" + "\n".join(f"line-{number}" for number in range(301)) + "\n"
     assert structured.content[0].text == default.content[0].text == expected
@@ -280,17 +280,17 @@ async def test_result_modes_share_marked_complete_long_output(default_client: Cl
 
 
 async def test_shared_factory_binds_every_tool_to_the_integer_contract(default_client: Client[Any]) -> None:
-    await default_client.call_tool("python_status", {})
-    submitted = await default_client.call_tool("run_python", {"freeform": "print('factory')"})
+    await default_client.call_tool("status", {})
+    submitted = await default_client.call_tool("run_cell", {"freeform": "print('factory')"})
     execution = submitted.data
     # Content results intentionally have no data; the current-or-recent default still
     # exercises the same single selection path without any hidden alternate id.
-    status = await default_client.call_tool("python_execution_status", {})
-    read = await default_client.call_tool("read_python_output", {"stream": "stdout"})
-    search = await default_client.call_tool("search_python_output", {"query": "factory", "stream": "stdout", "query_mode": "literal"})
-    wait = await default_client.call_tool("wait_python", {"timeout_seconds": 1})
-    interrupt = await default_client.call_tool("interrupt_python", {})
-    reset = await default_client.call_tool("reset_python", {})
+    status = await default_client.call_tool("execution_status", {})
+    read = await default_client.call_tool("read_output", {"stream": "stdout"})
+    search = await default_client.call_tool("search_output", {"query": "factory", "stream": "stdout", "query_mode": "literal"})
+    wait = await default_client.call_tool("wait", {"timeout_seconds": 1})
+    interrupt = await default_client.call_tool("interrupt", {})
+    reset = await default_client.call_tool("restart", {})
 
     assert execution is None
     assert "execution 1: completed" in status.content[0].text
@@ -304,28 +304,28 @@ async def test_shared_factory_binds_every_tool_to_the_integer_contract(default_c
 async def test_real_mcp_eight_tool_loop_preserves_public_sequence_across_reset(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(workspace)
     async with Client(create_structured_mcp()) as client:
-        initial = await client.call_tool("python_status", {})
-        small = await client.call_tool("run_python", {"freeform": "print('small-output')"})
+        initial = await client.call_tool("status", {})
+        small = await client.call_tool("run_cell", {"freeform": "print('small-output')"})
         running = await client.call_tool(
-            "run_python",
+            "run_cell",
             {"freeform": "# loommux: --wait 0.1\nimport time\nprint('long-start', flush=True)\ntime.sleep(1.5)\nprint('long-finished', flush=True)"},
         )
         long_execution = running.data["execution"]
-        observed = await client.call_tool("python_execution_status", {"execution": long_execution})
-        partial = await client.call_tool("read_python_output", {"execution": long_execution, "stream": "stdout"})
-        found = await client.call_tool("search_python_output", {"execution": long_execution, "stream": "stdout", "query": "long-start", "query_mode": "literal"})
-        completed = await client.call_tool("wait_python", {"execution": long_execution, "timeout_seconds": 3})
+        observed = await client.call_tool("execution_status", {"execution": long_execution})
+        partial = await client.call_tool("read_output", {"execution": long_execution, "stream": "stdout"})
+        found = await client.call_tool("search_output", {"execution": long_execution, "stream": "stdout", "query": "long-start", "query_mode": "literal"})
+        completed = await client.call_tool("wait", {"execution": long_execution, "timeout_seconds": 3})
         interruptible = await client.call_tool(
-            "run_python",
+            "run_cell",
             {"freeform": "# loommux: --wait 0.1\nimport time\nprint('interrupt-ready', flush=True)\ntime.sleep(5)"},
         )
         interrupted_execution = interruptible.data["execution"]
-        interrupt_ready = await client.call_tool("read_python_output", {"execution": interrupted_execution, "stream": "stdout"})
-        interrupt = await client.call_tool("interrupt_python", {})
-        interrupted = await client.call_tool("wait_python", {"execution": interrupted_execution, "timeout_seconds": 3})
-        reset = await client.call_tool("reset_python", {})
-        old_record = await client.call_tool("read_python_output", {"execution": small.data["execution"], "stream": "stdout"})
-        after_reset = await client.call_tool("run_python", {"freeform": "print('after-reset')"})
+        interrupt_ready = await client.call_tool("read_output", {"execution": interrupted_execution, "stream": "stdout"})
+        interrupt = await client.call_tool("interrupt", {})
+        interrupted = await client.call_tool("wait", {"execution": interrupted_execution, "timeout_seconds": 3})
+        reset = await client.call_tool("restart", {})
+        old_record = await client.call_tool("read_output", {"execution": small.data["execution"], "stream": "stdout"})
+        after_reset = await client.call_tool("run_cell", {"freeform": "print('after-reset')"})
 
     assert initial.data["workspace"] == str(workspace)
     assert initial.data["workspace_resolution"] == "launch_cwd"
@@ -350,5 +350,5 @@ async def test_real_mcp_eight_tool_loop_preserves_public_sequence_across_reset(w
 
 def test_mcp_result_mode_only_changes_structured_content() -> None:
     raw = {"ok": True, "execution": 4, "status": "completed", "result_text": "1", "output_text": "Out[4]: 1\n", "output_omitted": False}
-    assert make_tool_result("run_python", raw, "structured").structured_content == raw
-    assert make_tool_result("run_python", raw, "content").structured_content is None
+    assert make_tool_result("run_cell", raw, "structured").structured_content == raw
+    assert make_tool_result("run_cell", raw, "content").structured_content is None

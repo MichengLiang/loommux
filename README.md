@@ -74,12 +74,12 @@ workspace path for `cwd`:
 
 loommux launches the kernel with the same interpreter as `loommux.exe`, keeps
 its IPython and Jupyter state in a private temporary directory, and uses a
-Windows Job Object so `reset_python` and server shutdown also end child
+Windows Job Object so `restart` and server shutdown also end child
 processes launched by the kernel. A submitted cell remains arbitrary Python:
 commands inside that cell must target the operating system on which the kernel
 is running. WSL is a separate Linux deployment, not a substitute for native
 Windows coverage. Because IPython kernels do not accept Ctrl+C through this
-entry point on Windows, `interrupt_python` replaces the private kernel after
+entry point on Windows, `interrupt` replaces the private kernel after
 marking the active cell `interrupted`; later cells use the fresh kernel.
 
 The package installs one console command:
@@ -191,7 +191,7 @@ for the complete contract.
 
 ## Execution Model
 
-Each accepted `run_python` submission creates an execution record with one
+Each accepted `run_cell` submission creates an execution record with one
 public identity:
 
 ```text
@@ -200,7 +200,7 @@ execution: positive integer
 
 The sequence begins at `1` for a new loommux server process and increases only
 when a cell is accepted. loommux accepts one running cell at a time. A second
-`run_python` call while the kernel is busy is rejected with `status="busy"`;
+`run_cell` call while the kernel is busy is rejected with `status="busy"`;
 it is not queued.
 
 An execution can be `running`, `completed`, `error`, `interrupted`, or
@@ -210,7 +210,7 @@ traceback remains available from the execution's `traceback` stream.
 
 The integer is owned by loommux rather than copied from IPython's kernel-local
 execution counter. It stays stable for the server process, including across
-`reset_python`. When a cell yields a `text/plain` display result, loommux
+`restart`. When a cell yields a `text/plain` display result, loommux
 authors the combined log with its own stable coordinate:
 
 ```text
@@ -231,18 +231,18 @@ record, then the most recently accepted record. With neither, the tool returns
 
 | Tool | Purpose |
 | --- | --- |
-| `run_python(freeform)` | Submit one loommux Python cell to the persistent kernel and wait for its initial result. |
-| `python_status()` | Inspect the workspace, its authored source category, interpreter, kernel PID, busy state, and current or recent execution. |
-| `python_execution_status(execution=None)` | Inspect lifecycle and diagnostic metadata without returning the full output body. |
-| `read_python_output(...)` | Read a selected execution stream, optionally by line range and with per-line clipping. |
-| `search_python_output(...)` | Search a selected output stream using literal text or regular expressions. |
-| `wait_python(execution=None, timeout_seconds=30)` | Wait for an execution without interrupting it. |
-| `interrupt_python()` | Send an interrupt signal to the current running execution. |
-| `reset_python()` | Restart the kernel while preserving execution records and the server-local sequence. |
+| `run_cell(freeform)` | Submit one loommux IPython cell to the persistent kernel and wait for its initial result. |
+| `status()` | Inspect the workspace, its authored source category, interpreter, kernel PID, busy state, and current or recent execution. |
+| `execution_status(execution=None)` | Inspect lifecycle and diagnostic metadata without returning the full output body. |
+| `read_output(...)` | Read a selected execution stream, optionally by line range and with per-line clipping. |
+| `search_output(...)` | Search a selected output stream using literal text or regular expressions. |
+| `wait(execution=None, timeout_seconds=30)` | Wait for an execution without interrupting it. |
+| `interrupt()` | Send an interrupt signal to the current running execution. |
+| `restart()` | Restart the kernel while preserving execution records and the server-local sequence. |
 
 ### Submitting A Cell
 
-`run_python` accepts one `freeform` loommux Python cell. Ordinary source and
+`run_cell` accepts one `freeform` loommux IPython cell. Ordinary source and
 the resulting Python values of validated Apply Patch literals are available to
 later cells in the same persistent server process.
 
@@ -287,15 +287,15 @@ complete submission policy explicit with a Loommux control directive:
 build_report()
 ```
 
-`--wait` only changes how long that `run_python` call waits. It does not limit
+`--wait` only changes how long that `run_cell` call waits. It does not limit
 Python runtime, interrupt the cell when time expires, modify later calls, or
 add a variable to the kernel. A malformed or duplicated option returns
 `invalid_loommux_directive` before an execution is allocated or source is
 submitted.
 
-When the call returns while the cell is still running, use `wait_python`,
-`python_execution_status`, `read_python_output`, `search_python_output`,
-`interrupt_python`, or `reset_python` to continue observing or controlling the
+When the call returns while the cell is still running, use `wait`,
+`execution_status`, `read_output`, `search_output`,
+`interrupt`, or `restart` to continue observing or controlling the
 same execution.
 
 ### Output Streams And Long Output
@@ -310,8 +310,8 @@ Each execution retains five append-only text projections:
 | `result` | `text/plain` from IPython execute-result and display-data events. |
 | `traceback` | Traceback text from Python error events. |
 
-Completed combined output of at most 300 lines is returned by `run_python` and
-`wait_python` beneath an `In [execution]:` header. A display result then keeps
+Completed combined output of at most 300 lines is returned by `run_cell` and
+`wait` beneath an `In [execution]:` header. A display result then keeps
 its IPython-style `Out[execution]:` line; a silent cell returns only the input
 header, and stdout or traceback remains in its original combined order. For an
 execution that is still running, or for an unmarked terminal execution whose
@@ -319,7 +319,7 @@ combined output exceeds 300 lines, the response retains the record but omits
 the full body. The output is not discarded; read or search it through the
 output tools.
 
-`read_python_output` uses `start:stop` inclusive line coordinates. Positive
+`read_output` uses `start:stop` inclusive line coordinates. Positive
 endpoints are 1-indexed, endpoints may be omitted, and negative endpoints
 count from the end of the selected stream:
 
@@ -331,11 +331,11 @@ count from the end of the selected stream:
 ```
 
 When the caller has determined that the selected stream must be consumed in
-full, omit `line_range`. `read_python_output` returns all of its lines in one
+full, omit `line_range`. `read_output` returns all of its lines in one
 response, so there is no need to divide the read into consecutive small ranges.
 
 `max_chars` clips each returned line without changing stored text or line
-coordinates. `search_python_output` supports `literal`, `regex`, and `auto`
+coordinates. `search_output` supports `literal`, `regex`, and `auto`
 matching. In `auto` mode, loommux treats the query as a regular expression
 when it compiles and falls back to literal matching when it does not. Search
 results preserve original line numbers, mark matching lines with `M`, and
@@ -352,10 +352,10 @@ build_report()
 ```
 
 The option applies only to that execution. Once the execution is terminal, it
-bypasses the normal 300-line delivery threshold and makes `run_python` or a
-later `wait_python` return the complete collected `combined` output. It does
+bypasses the normal 300-line delivery threshold and makes `run_cell` or a
+later `wait` return the complete collected `combined` output. It does
 not cause partial running output to be returned and does not alter the input
-or behavior of `read_python_output` and `search_python_output`.
+or behavior of `read_output` and `search_output`.
 
 The full-output and wait options are independent and may appear in the same
 directive:
@@ -375,11 +375,11 @@ build_report()
 
 ## Interrupting And Resetting
 
-`interrupt_python` requests an interrupt for the current running cell. An
+`interrupt` requests an interrupt for the current running cell. An
 `interrupt_sent` response only confirms signal delivery; the execution reaches
 its final state after the kernel reports IOPub `idle`.
 
-`reset_python` is stronger: it stops the existing kernel and starts a
+`restart` is stronger: it stops the existing kernel and starts a
 replacement in the same workspace with the same interpreter. A running record
 is marked `killed`. Reset does not erase stored executions, their output, or
 the sequence counter, so historical records can still be read by their
@@ -426,7 +426,7 @@ The runtime is deliberately divided into narrow responsibilities:
 
 The current public contract is documented in [Coding Agent Control Plane
 Design](docs/coding-agent-control-plane-design.md).
-Focused references cover [freeform cell control](docs/ipython-mcp-freeform-run-python-design.md),
+Focused references cover [freeform cell control](docs/ipython-mcp-freeform-run-cell-design.md),
 [complete-output control](docs/ipython-mcp-full-output-directive-design.md),
 [workspace configuration](docs/workspace-configuration.md), and the
 [changelog](CHANGELOG.md).

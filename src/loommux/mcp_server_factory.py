@@ -38,8 +38,8 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
     mcp = FastMCP("loommux IPython MCP adapter", lifespan=lifespan)
 
     @mcp.tool(output_schema=None)
-    def run_python(freeform: str) -> ToolResult:
-        """向持久 IPython kernel 提交一个原始 Python cell。
+    def run_cell(freeform: str) -> ToolResult:
+        """向持久 IPython kernel 提交一个原始 IPython cell。
 
         请你使用 IPython 的思想来优雅使用本系列工具。
 
@@ -95,22 +95,22 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
 
         已接受的提交会分配一个正整数 ``execution``，它在服务器进程存续
         期间严格递增。若执行仍在运行，或未标记 execution 的 combined 输出
-        超过 300 行，响应不携带完整输出正文；使用 ``wait_python`` 等待，使用
-        ``python_execution_status`` 查看状态，使用 ``read_python_output``
-        或 ``search_python_output`` 读取或搜索保留的输出。
+        超过 300 行，响应不携带完整输出正文；使用 ``wait`` 等待，使用
+        ``execution_status`` 查看状态，使用 ``read_output``
+        或 ``search_output`` 读取或搜索保留的输出。
 
         Args:
-            freeform: 要提交的原始 Python cell 源码文本；可用 ``# loommux:``
+            freeform: 要提交的原始 IPython cell 源码文本；可用 ``# loommux:``
                 控制注释声明本次初始等待与完整输出策略。
 
         Returns:
             已接受 execution 的当前状态；完成的小输出直接进入模型内容，
             running 或行数受限状态给出 ``execution`` 与省略原因。
         """
-        return call("run_python", lambda: adapter.run_python(freeform))
+        return call("run_cell", lambda: adapter.run_cell(freeform))
 
     @mcp.tool(output_schema=None)
-    def python_status() -> ToolResult:
+    def status() -> ToolResult:
         """返回 workspace、kernel 与最近执行记录的观察状态。
 
         状态范围
@@ -138,10 +138,10 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         Returns:
             当前 server 与 kernel 的状态快照。
         """
-        return call("python_status", adapter.python_status)
+        return call("status", adapter.status)
 
     @mcp.tool(output_schema=None)
-    def python_execution_status(execution: int | None = None) -> ToolResult:
+    def execution_status(execution: int | None = None) -> ToolResult:
         """返回一个 execution 的状态与元数据，不返回完整输出正文。
 
         选择规则
@@ -159,16 +159,16 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             选中记录的 ``execution``、status、时间戳、提交时 kernel 元数据、
             输出总行数、输出省略原因与错误摘要。
         """
-        return call("python_execution_status", lambda: adapter.python_execution_status(execution))
+        return call("execution_status", lambda: adapter.execution_status(execution))
 
     @mcp.tool(output_schema=None)
-    def read_python_output(execution: int | None = None, stream: str = "combined", line_range: str | None = None, max_chars: int | None = None) -> ToolResult:
+    def read_output(execution: int | None = None, stream: str = "combined", line_range: str | None = None, max_chars: int | None = None) -> ToolResult:
         """读取一个 execution 的指定输出流。
 
         选择与流
         ----------
 
-        ``execution`` 的选择规则与 ``python_execution_status`` 相同。``stream``
+        ``execution`` 的选择规则与 ``execution_status`` 相同。``stream``
         只能为 ``combined``、``stdout``、``stderr``、``result`` 或
         ``traceback``。
 
@@ -198,17 +198,17 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         Returns:
             所选流的文本、总行数、返回行数及范围外省略行数。
         """
-        return call("read_python_output", lambda: adapter.read_python_output(execution, stream, line_range, max_chars))
+        return call("read_output", lambda: adapter.read_output(execution, stream, line_range, max_chars))
 
     @mcp.tool(output_schema=None)
-    def search_python_output(query: str, execution: int | None = None, stream: str = "combined", query_mode: str = "auto", context_before: int = 0, context_after: int = 0, ignore_case: bool = False, max_chars: int | None = None) -> ToolResult:
+    def search_output(query: str, execution: int | None = None, stream: str = "combined", query_mode: str = "auto", context_before: int = 0, context_after: int = 0, ignore_case: bool = False, max_chars: int | None = None) -> ToolResult:
         """在一个 execution 的指定输出流中搜索文本或正则表达式。
 
         选择与匹配
         ------------
 
-        ``execution`` 的选择规则与 ``python_execution_status`` 相同；可选的
-        ``stream`` 值与 ``read_python_output`` 相同。``query_mode="literal"``
+        ``execution`` 的选择规则与 ``execution_status`` 相同；可选的
+        ``stream`` 值与 ``read_output`` 相同。``query_mode="literal"``
         按字面文本匹配，``query_mode="regex"`` 要求 ``query`` 是有效正则，
         ``query_mode="auto"`` 先按正则解释，仅在编译失败时回退到字面匹配。
 
@@ -236,18 +236,18 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             带 ``M`` / ``C`` 行标记的命中与上下文、匹配统计和所选流行数；
             无命中时返回零匹配结果。
         """
-        return call("search_python_output", lambda: adapter.search_python_output(query, execution, stream, query_mode, context_before, context_after, ignore_case, max_chars))
+        return call("search_output", lambda: adapter.search_output(query, execution, stream, query_mode, context_before, context_after, ignore_case, max_chars))
 
     @mcp.tool(output_schema=None)
-    def wait_python(execution: int | None = None, timeout_seconds: float = 30) -> ToolResult:
+    def wait(execution: int | None = None, timeout_seconds: float = 30) -> ToolResult:
         """等待一个 execution 结束，或在指定时限到达时返回其当前状态。
 
         选择与等待
         ----------
 
-        ``execution`` 的选择规则与 ``python_execution_status`` 相同。等待
+        ``execution`` 的选择规则与 ``execution_status`` 相同。等待
         到期只结束本次工具调用，不中断 Python cell。后续可再次调用本工具，
-        或用 ``read_python_output`` 查看已到达的输出。
+        或用 ``read_output`` 查看已到达的输出。
 
         完整输出交付
         ------------
@@ -265,10 +265,10 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             选中 execution 的当前状态和可返回的输出表面。未找到记录或
             非正等待时长返回对应错误。
         """
-        return call("wait_python", lambda: adapter.wait_python(execution, timeout_seconds))
+        return call("wait", lambda: adapter.wait(execution, timeout_seconds))
 
     @mcp.tool(output_schema=None)
-    def interrupt_python() -> ToolResult:
+    def interrupt() -> ToolResult:
         """向当前正在运行的 execution 发送 kernel 中断信号。
 
         中断语义
@@ -281,10 +281,10 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         Returns:
             已发送信号时返回目标 ``execution``；kernel 空闲时返回 idle。
         """
-        return call("interrupt_python", adapter.interrupt_python)
+        return call("interrupt", adapter.interrupt)
 
     @mcp.tool(output_schema=None)
-    def reset_python() -> ToolResult:
+    def restart() -> ToolResult:
         """重启 IPython kernel，并保留 loommux 服务器会话中的 execution 历史。
 
         重置边界
@@ -298,6 +298,6 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             新 kernel 的状态与 PID；重启失败时返回 workspace 或 kernel
             启动错误。
         """
-        return call("reset_python", adapter.reset_python)
+        return call("restart", adapter.restart)
 
     return mcp

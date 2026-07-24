@@ -1,4 +1,4 @@
-# `run_python` Freeform Input Contract
+# `run_cell` Freeform Input Contract
 
 The target authority for this contract is [Loommux Cell Control Directive
 Design](ipython-mcp-cell-control-directive-design.md). This companion document
@@ -6,7 +6,7 @@ records the stable MCP input boundary without creating a second control language
 
 ## Input
 
-`run_python(freeform)` accepts exactly one loommux Python cell. It has no
+`run_cell(freeform)` accepts exactly one loommux IPython cell. It has no
 structured `code`, `wait`, `timeout`, or `full_output` argument. Ordinary
 Python source uses the default initial wait of 10 seconds and no complete-output
 request.
@@ -40,6 +40,6 @@ Its relationship to source fidelity and diagnostics is defined by the
 ## Follow-up
 
 A call whose initial wait expires retains its integer `execution` record. Use
-`wait_python`, `python_execution_status`, `read_python_output`,
-`search_python_output`, `interrupt_python`, or `reset_python` under the
+`wait`, `execution_status`, `read_output`,
+`search_output`, `interrupt`, or `restart` under the
 execution-control contract.

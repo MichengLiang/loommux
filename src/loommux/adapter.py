@@ -70,15 +70,15 @@ class IPythonMCPAdapter:
             return self._workspace_error("kernel_start_failed", f"kernel failed to start: {start_error}", workspace, python_path)
         with self._lock:
             self.workspace, self.workspace_resolution, self.python_path, self.kernel = workspace, workspace_resolution, python_path, kernel
-            # A server lifespan has one session. This path is startup only; reset_python
+            # A server lifespan has one session. This path is startup only; restart
             # deliberately does not pass here so it cannot discard existing records.
             self.executions.clear()
             self.current_execution = None
             self.recent_execution = None
             self._next_execution = 1
-        return self.python_status()
+        return self.status()
 
-    def run_python(self, freeform: str) -> dict[str, Any]:
+    def run_cell(self, freeform: str) -> dict[str, Any]:
         if not isinstance(freeform, str):
             return {"ok": False, "status": "invalid_code", "message": "freeform must be a string"}
         apply_patch_transform = prepare_apply_patch_literals(freeform)
@@ -137,7 +137,7 @@ class IPythonMCPAdapter:
         execution.done.wait(float(timeout_seconds))
         return self._execution_response(execution)
 
-    def python_status(self) -> dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         with self._lock:
             kernel = self.kernel if self.kernel is not None and self.kernel.is_alive() else None
             if kernel is None:
@@ -156,11 +156,11 @@ class IPythonMCPAdapter:
                 "kernel_execution_count": kernel.latest_execution_count if kernel is not None else 0,
             }
 
-    def python_execution_status(self, execution: int | None = None) -> dict[str, Any]:
+    def execution_status(self, execution: int | None = None) -> dict[str, Any]:
         record = self._select_execution(execution)
         return {"ok": False, "status": "execution_not_found", "message": "execution was not found"} if record is None else self._status_response(record)
 
-    def read_python_output(self, execution: int | None = None, stream: str = "combined", line_range: str | None = None, max_chars: int | None = None) -> dict[str, Any]:
+    def read_output(self, execution: int | None = None, stream: str = "combined", line_range: str | None = None, max_chars: int | None = None) -> dict[str, Any]:
         record, error = self._select_stream(execution, stream)
         if error is not None:
             return error
@@ -172,7 +172,7 @@ class IPythonMCPAdapter:
             result.update({"execution": record.execution, "stream": stream})
         return result
 
-    def search_python_output(self, query: str, execution: int | None = None, stream: str = "combined", query_mode: str = "auto", context_before: int = 0, context_after: int = 0, ignore_case: bool = False, max_chars: int | None = None) -> dict[str, Any]:
+    def search_output(self, query: str, execution: int | None = None, stream: str = "combined", query_mode: str = "auto", context_before: int = 0, context_after: int = 0, ignore_case: bool = False, max_chars: int | None = None) -> dict[str, Any]:
         record, error = self._select_stream(execution, stream)
         if error is not None:
             return error
@@ -184,7 +184,7 @@ class IPythonMCPAdapter:
             result.update({"execution": record.execution, "stream": stream})
         return result
 
-    def wait_python(self, execution: int | None = None, timeout_seconds: float = 30) -> dict[str, Any]:
+    def wait(self, execution: int | None = None, timeout_seconds: float = 30) -> dict[str, Any]:
         if (error := self._validate_timeout(timeout_seconds)) is not None:
             return error
         record = self._select_execution(execution)
@@ -194,7 +194,7 @@ class IPythonMCPAdapter:
             record.done.wait(float(timeout_seconds))
         return self._execution_response(record)
 
-    def interrupt_python(self) -> dict[str, Any]:
+    def interrupt(self) -> dict[str, Any]:
         with self._lock:
             kernel = self.kernel
             if kernel is None or not kernel.is_alive():
@@ -229,7 +229,7 @@ class IPythonMCPAdapter:
             self.kernel = kernel
         return {"ok": True, "status": "interrupt_sent", "execution": record.execution, "kernel_pid": kernel.pid}
 
-    def reset_python(self) -> dict[str, Any]:
+    def restart(self) -> dict[str, Any]:
         with self._lock:
             if self.workspace is None or self.python_path is None:
                 return {"ok": False, "status": "workspace_not_set", "message": "workspace has not been set"}

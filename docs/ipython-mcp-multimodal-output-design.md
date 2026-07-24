@@ -113,7 +113,7 @@ detail 值。
 
 ### 5.1 内容顺序
 
-`run_python` 或 `wait_python` 返回已终态 execution 时，`ToolResult.content` 逐项
+`run_cell` 或 `wait` 返回已终态 execution 时，`ToolResult.content` 逐项
 迭代展示序列：
 
 1. 已规范化 stdout、stderr、`text/plain` 与 traceback 文本元素形成
@@ -152,15 +152,15 @@ detail 值。
 
 ### 5.3 终态与文本省略
 
-running execution 不返回部分图像内容。`run_python` 在等待上限内未达到终态时，保持
-既有 running 表面；`wait_python` 在 execution 终态后返回可交付展示内容。
+running execution 不返回部分图像内容。`run_cell` 在等待上限内未达到终态时，保持
+既有 running 表面；`wait` 在 execution 终态后返回可交付展示内容。
 
 文本行数超过文本输出阈值时，文本正文继续遵守既有省略规则。该结果是展示序列的有损
 文本投影，必须携带文本省略原因。已捕获图像不因文本行数超过阈值而
 自动丢失，并按其在未省略 sequence 中的相对次序交付。图像是否交付只由图像 MIME、
 图像大小、图像数量和请求大小限制决定。
 
-`read_python_output` 与 `search_python_output` 保持文本工具身份，只读取和搜索文本
+`read_output` 与 `search_output` 保持文本工具身份，只读取和搜索文本
 流。它们不重新编码或重传图像。需要再次向模型展示一个已有 Python 对象时，代码作者
 使用新的 `display()` 调用。
 
@@ -183,7 +183,7 @@ running execution 不返回部分图像内容。`run_python` 在等待上限内�
 
 ## 7. Tool Docstring
 
-`run_python` 的 MCP docstring 必须说明图像展示的直接使用规则：IPython
+`run_cell` 的 MCP docstring 必须说明图像展示的直接使用规则：IPython
 `display()` 产生的可交付图像直接进入模型内容；普通 `display(image)` 使用 `high`
 视觉细节；单张图像可通过 `metadata={"detail": "low"}` 或
 `metadata={"detail": "original"}` 声明不同细节。
@@ -213,6 +213,6 @@ docstring 必须说明 `detail` 只作用于对应的 `display()` 调用。它�
 5. 两次独立 display 可以分别产生 `low` 与 `original` 图像。
 6. 一个 display 调用内的多个对象共享该调用的 detail metadata。
 7. 文本超过文本行数阈值时，终态结果仍可交付符合图像资源限制的图像。
-8. running execution 不交付部分图像；终态 `wait_python` 可以交付图像。
+8. running execution 不交付部分图像；终态 `wait` 可以交付图像。
 9. 无效 detail、无效图像数据和超限图像产生可定位错误，且不丢失其他内容。
 10. 既有 stdout、stderr、result、traceback、combined、read 与 search 的文本行为保持成立。

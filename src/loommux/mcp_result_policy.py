@@ -51,7 +51,7 @@ def _rich_execution_content(
     presentation: object,
     limits: ImageDeliveryLimits,
 ) -> list[TextContent | ImageContent] | None:
-    if tool_name not in {"run_python", "wait_python"}:
+    if tool_name not in {"run_cell", "wait"}:
         return None
     if status.get("status") == "running" or not isinstance(presentation, tuple):
         return None
@@ -67,7 +67,7 @@ def _rich_execution_content(
                 type="text",
                 text=(
                     f"Text output omitted because it exceeds {status.get('output_line_limit')} lines; "
-                    "use read_python_output() to read all lines or search_python_output() to locate text."
+                    "use read_output() to read all lines or search_output() to locate text."
                 ),
             )
         )

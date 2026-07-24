@@ -196,7 +196,7 @@ def test_kernel_ignores_hostile_user_state_and_reset_replaces_its_private_root(t
         _assert_kernel_policy(adapter, first_launch)
         _assert_hostile_user_state_is_untouched(profile_marker, jupyter_marker, python_startup_marker, history_database, original_history_stat.st_mtime_ns)
 
-        reset = adapter.reset_python()
+        reset = adapter.restart()
 
         assert reset["status"] == "restarted"
         assert not first_launch.runtime_root.exists()
@@ -208,8 +208,8 @@ def test_kernel_ignores_hostile_user_state_and_reset_replaces_its_private_root(t
         _assert_private_root(second_root, workspace, home)
         _assert_kernel_policy(adapter, second_launch)
         _assert_hostile_user_state_is_untouched(profile_marker, jupyter_marker, python_startup_marker, history_database, original_history_stat.st_mtime_ns)
-        assert adapter.read_python_output(1, "stdout")["text"]
-        assert adapter.run_python("'after reset'")["execution"] == 3
+        assert adapter.read_output(1, "stdout")["text"]
+        assert adapter.run_cell("'after reset'")["execution"] == 3
     finally:
         adapter.close()
     assert second_root is not None
@@ -223,7 +223,7 @@ def test_reset_kills_windows_kernel_descendants(tmp_path: Path) -> None:
     adapter = IPythonMCPAdapter()
     assert adapter.start_workspace(workspace, "launch_cwd")["ok"] is True
     try:
-        running = adapter.run_python(
+        running = adapter.run_cell(
             "# loommux: --wait 0.1\n"
             "import subprocess\n"
             "import sys\n"
@@ -235,21 +235,21 @@ def test_reset_kills_windows_kernel_descendants(tmp_path: Path) -> None:
         deadline = time.monotonic() + 3
         child_pid: int | None = None
         while time.monotonic() < deadline:
-            text = str(adapter.read_python_output(running["execution"], "stdout")["text"])
+            text = str(adapter.read_output(running["execution"], "stdout")["text"])
             if text.strip().isdigit():
                 child_pid = int(text.strip())
                 break
             time.sleep(0.05)
         assert child_pid is not None
 
-        assert adapter.reset_python()["status"] == "restarted"
+        assert adapter.restart()["status"] == "restarted"
         assert _wait_for_windows_process_exit(child_pid)
     finally:
         adapter.close()
 
 
 def _assert_kernel_policy(adapter: IPythonMCPAdapter, launch: KernelLaunch) -> None:
-    response = adapter.run_python(
+    response = adapter.run_cell(
         "import os\n"
         "from IPython import get_ipython\n"
         "shell = get_ipython()\n"

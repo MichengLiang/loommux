@@ -1,7 +1,7 @@
 # Loommux Cell Control Directive Design
 
 > **Status: Implemented on July 22, 2026.** This document defines the
-> `# loommux:` control-directive contract used by `run_python`.
+> `# loommux:` control-directive contract used by `run_cell`.
 
 ## 1. Decision
 
@@ -75,7 +75,7 @@ The design rejects several tempting means:
 
 ## 3. Public Directive Grammar
 
-`run_python(freeform)` accepts ordinary source with zero or more control
+`run_cell(freeform)` accepts ordinary source with zero or more control
 directives:
 
 ```text
@@ -144,14 +144,14 @@ resolved into one immutable policy.
 | distinct `--wait` and `--full-output` directives | specified value | yes |
 | both options on one directive | specified value | yes |
 
-`--wait SECONDS` controls only how long the originating `run_python` call
+`--wait SECONDS` controls only how long the originating `run_cell` call
 waits for a terminal result. If that wait expires, the execution remains
-running and is observed through `wait_python`, `python_execution_status`,
-`read_python_output`, `search_python_output`, `interrupt_python`, or
-`reset_python`.
+running and is observed through `wait`, `execution_status`,
+`read_output`, `search_output`, `interrupt`, or
+`restart`.
 
 `--full-output` records a per-execution request. Once that execution is
-terminal, `run_python` or a later `wait_python` returns its complete combined
+terminal, `run_cell` or a later `wait` returns its complete combined
 output even when the output has more than the normal 300-line threshold. It
 does not return a complete running transcript and does not change log storage
 or the output-reader tools.
@@ -196,7 +196,7 @@ No malformed, duplicated, or legacy declaration falls back to default policy.
 ## 6. Submission and Source-Fidelity Lifecycle
 
 ```text
-1. The MCP client calls run_python(freeform).
+1. The MCP client calls run_cell(freeform).
 2. Loommux prepares any valid Apply Patch literal conversion.
 3. Loommux parses active # loommux: directives from the prepared source.
 4. Loommux validates and resolves one control policy.
@@ -371,10 +371,10 @@ The implementation is excellent only when Definition of Done is satisfied and:
 
 ## 11. Document Relationships
 
-This document is the authority for `run_python` control declarations. It
+This document is the authority for `run_cell` control declarations. It
 complements:
 
-- [run_python Freeform Input Contract](ipython-mcp-freeform-run-python-design.md);
+- [run_cell Freeform Input Contract](ipython-mcp-freeform-run-cell-design.md);
 - [IPython MCP Complete Output Directive Design](ipython-mcp-full-output-directive-design.md);
 - [IPython MCP Apply Patch Literal Design](ipython-mcp-protected-multiline-string-design.md);
 - [Coding Agent 控制面设计](coding-agent-control-plane-design.md);

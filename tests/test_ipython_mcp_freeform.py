@@ -77,7 +77,7 @@ def test_run_python_passes_original_directive_source_and_resolved_policy_to_subm
     adapter = CapturingAdapter()
     source = "# loommux: --wait 2\n# loommux: --full-output\nprint('unchanged')"
 
-    assert adapter.run_python(source)["status"] == "captured"
+    assert adapter.run_cell(source)["status"] == "captured"
     assert adapter.calls == [(source, 2.0, True, ("# loommux: --wait 2", "# loommux: --full-output"))]
 
 
@@ -92,7 +92,7 @@ def test_invalid_directive_does_not_allocate_or_submit_an_execution() -> None:
             return {"ok": True}
 
     adapter = CapturingAdapter()
-    response = adapter.run_python("# loommux: --wait 10\n# loommux: --wait 20\nprint('must not run')")
+    response = adapter.run_cell("# loommux: --wait 10\n# loommux: --wait 20\nprint('must not run')")
 
     assert response == {
         "ok": False,

@@ -20,27 +20,27 @@ def adapter(tmp_path: Path) -> IPythonMCPAdapter:
 
 
 def test_allocates_integer_sequence_and_selects_exact_record(adapter: IPythonMCPAdapter) -> None:
-    first = adapter.run_python("print('one')")
-    second = adapter.run_python("print('two')")
-    third = adapter.run_python("3 * 7")
+    first = adapter.run_cell("print('one')")
+    second = adapter.run_cell("print('two')")
+    third = adapter.run_cell("3 * 7")
 
     assert [first["execution"], second["execution"], third["execution"]] == [1, 2, 3]
-    assert adapter.read_python_output(2, "stdout")["text"] == "two"
-    assert adapter.wait_python(2)["execution"] == 2
-    assert adapter.python_execution_status(2)["execution"] == 2
-    assert adapter.read_python_output(99)["status"] == "execution_not_found"
+    assert adapter.read_output(2, "stdout")["text"] == "two"
+    assert adapter.wait(2)["execution"] == 2
+    assert adapter.execution_status(2)["execution"] == 2
+    assert adapter.read_output(99)["status"] == "execution_not_found"
 
 
 def test_omitted_selection_uses_current_then_recent_and_empty_adapter_is_not_found(tmp_path: Path) -> None:
     adapter = IPythonMCPAdapter()
-    assert adapter.python_execution_status()["status"] == "execution_not_found"
+    assert adapter.execution_status()["status"] == "execution_not_found"
     try:
         workspace = tmp_path / "workspace"
         workspace.mkdir()
         adapter.start_workspace(workspace, "launch_cwd")
-        completed = adapter.run_python("'last'")
-        assert adapter.wait_python()["execution"] == completed["execution"]
-        assert adapter.read_python_output()["execution"] == completed["execution"]
+        completed = adapter.run_cell("'last'")
+        assert adapter.wait()["execution"] == completed["execution"]
+        assert adapter.read_output()["execution"] == completed["execution"]
     finally:
         adapter.close()
 
@@ -81,34 +81,34 @@ def test_workspace_start_retries_one_transient_kernel_failure(tmp_path: Path, mo
 
 
 def test_busy_submission_reports_running_integer_without_queueing(adapter: IPythonMCPAdapter) -> None:
-    running = adapter.run_python("# loommux: --wait 0.1\nimport time\ntime.sleep(1)")
-    busy = adapter.run_python("'not queued'")
+    running = adapter.run_cell("# loommux: --wait 0.1\nimport time\ntime.sleep(1)")
+    busy = adapter.run_cell("'not queued'")
 
     assert running["execution"] == 1
     assert running["status"] == "running"
     assert busy == {"ok": False, "status": "busy", "execution": 1, "message": "kernel is already executing code"}
-    assert adapter.wait_python(1, 3)["status"] == "completed"
+    assert adapter.wait(1, 3)["status"] == "completed"
     assert len(adapter.executions) == 1
 
 
 def test_interrupts_a_running_kernel_cell_through_the_managed_runtime(adapter: IPythonMCPAdapter) -> None:
-    running = adapter.run_python("# loommux: --wait 0.1\nimport time\nprint('started', flush=True)\ntime.sleep(30)")
+    running = adapter.run_cell("# loommux: --wait 0.1\nimport time\nprint('started', flush=True)\ntime.sleep(30)")
     deadline = time.monotonic() + 3
-    while time.monotonic() < deadline and "started" not in str(adapter.read_python_output(running["execution"], "stdout")["text"]):
+    while time.monotonic() < deadline and "started" not in str(adapter.read_output(running["execution"], "stdout")["text"]):
         time.sleep(0.05)
 
-    interrupted = adapter.interrupt_python()
-    completed = adapter.wait_python(running["execution"], 3)
+    interrupted = adapter.interrupt()
+    completed = adapter.wait(running["execution"], 3)
 
     assert running["status"] == "running"
-    assert "started" in str(adapter.read_python_output(running["execution"], "stdout")["text"])
+    assert "started" in str(adapter.read_output(running["execution"], "stdout")["text"])
     assert interrupted["status"] == "interrupt_sent"
     assert completed["status"] == "interrupted"
     assert completed["error"] == {"ename": "KeyboardInterrupt", "evalue": ""}
 
 
 def test_full_output_directive_returns_complete_long_combined_output(adapter: IPythonMCPAdapter) -> None:
-    response = adapter.run_python("# loommux: --full-output\nprint('\\n'.join(f'line-{number}' for number in range(301)))")
+    response = adapter.run_cell("# loommux: --full-output\nprint('\\n'.join(f'line-{number}' for number in range(301)))")
 
     assert response["status"] == "completed"
     assert response["full_output_requested"] is True
@@ -117,7 +117,7 @@ def test_full_output_directive_returns_complete_long_combined_output(adapter: IP
 
 
 def test_full_output_directive_preserves_the_combined_iopub_order(adapter: IPythonMCPAdapter) -> None:
-    response = adapter.run_python("# loommux: --full-output\nimport sys\nprint('stdout')\nprint('stderr', file=sys.stderr)\n'display'")
+    response = adapter.run_cell("# loommux: --full-output\nimport sys\nprint('stdout')\nprint('stderr', file=sys.stderr)\n'display'")
     output = response["output_text"]
 
     assert response["output_omitted"] is False
@@ -125,18 +125,18 @@ def test_full_output_directive_preserves_the_combined_iopub_order(adapter: IPyth
 
 
 def test_directive_does_not_create_namespace_control_state(adapter: IPythonMCPAdapter) -> None:
-    adapter.run_python("counter = 0")
-    response = adapter.run_python("# loommux: --full-output\ncounter += 1\ncounter")
-    namespace = adapter.run_python("counter")
+    adapter.run_cell("counter = 0")
+    response = adapter.run_cell("# loommux: --full-output\ncounter += 1\ncounter")
+    namespace = adapter.run_cell("counter")
 
     assert response["execution"] == 2
     assert response["output_text"].strip() == "Out[2]: 1"
     assert namespace["output_text"].strip() == "Out[3]: 1"
-    assert "loommux" not in str(adapter.run_python("sorted(name for name in globals() if 'loommux' in name)")["output_text"])
+    assert "loommux" not in str(adapter.run_cell("sorted(name for name in globals() if 'loommux' in name)")["output_text"])
 
 
 def test_directive_preserves_rich_display_events(adapter: IPythonMCPAdapter) -> None:
-    response = adapter.run_python(
+    response = adapter.run_cell(
         "# loommux: --full-output\n"
         "from IPython.display import display\n"
         "from PIL import Image\n"
@@ -153,22 +153,22 @@ def test_directive_preserves_rich_display_events(adapter: IPythonMCPAdapter) -> 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="IPython %%bash requires a POSIX shell")
 def test_directive_composes_with_a_bash_cell_magic(adapter: IPythonMCPAdapter) -> None:
-    running = adapter.run_python("%%bash\n# loommux: --wait 0.1 --full-output\nsleep 0.3\nprintf 'bash-finished\\n'")
+    running = adapter.run_cell("%%bash\n# loommux: --wait 0.1 --full-output\nsleep 0.3\nprintf 'bash-finished\\n'")
 
     assert running["status"] == "running"
     assert running["initial_wait_seconds"] == 0.1
     assert running["full_output_requested"] is True
     assert running["control_directives"] == ["# loommux: --wait 0.1 --full-output"]
 
-    completed = adapter.wait_python(running["execution"], timeout_seconds=3)
+    completed = adapter.wait(running["execution"], timeout_seconds=3)
 
     assert completed["status"] == "completed"
     assert completed["output_text"] == "bash-finished\n"
 
 
 def test_unmarked_long_combined_output_keeps_the_default_omission_rule(adapter: IPythonMCPAdapter) -> None:
-    marked = adapter.run_python("# loommux: --full-output\nprint('marked only')")
-    response = adapter.run_python("print('\\n'.join(f'line-{number}' for number in range(301)))")
+    marked = adapter.run_cell("# loommux: --full-output\nprint('marked only')")
+    response = adapter.run_cell("print('\\n'.join(f'line-{number}' for number in range(301)))")
 
     assert marked["output_omitted"] is False
     assert response["status"] == "completed"
@@ -179,32 +179,32 @@ def test_unmarked_long_combined_output_keeps_the_default_omission_rule(adapter: 
 
 
 def test_full_output_directive_survives_running_wait_error_and_reset(adapter: IPythonMCPAdapter) -> None:
-    running = adapter.run_python("# loommux: --wait 0.1 --full-output\nimport time\ntime.sleep(0.3)\nprint('\\n'.join(f'wait-{number}' for number in range(301)))")
+    running = adapter.run_cell("# loommux: --wait 0.1 --full-output\nimport time\ntime.sleep(0.3)\nprint('\\n'.join(f'wait-{number}' for number in range(301)))")
     assert running["status"] == "running"
     assert running["output_omitted_reason"] == "running"
 
-    completed = adapter.wait_python(running["execution"], timeout_seconds=3)
+    completed = adapter.wait(running["execution"], timeout_seconds=3)
     assert completed["status"] == "completed"
     assert completed["output_text"].splitlines() == [f"wait-{number}" for number in range(301)]
 
-    failed = adapter.run_python("# loommux: --full-output\nprint('before failure')\nraise RuntimeError('expected failure')")
+    failed = adapter.run_cell("# loommux: --full-output\nprint('before failure')\nraise RuntimeError('expected failure')")
     assert failed["status"] == "error"
     assert failed["output_omitted"] is False
     assert "before failure" in failed["output_text"]
     assert "RuntimeError: expected failure" in failed["output_text"]
 
-    killed = adapter.run_python("# loommux: --wait 0.1 --full-output\nimport time\nprint('before reset', flush=True)\ntime.sleep(5)")
+    killed = adapter.run_cell("# loommux: --wait 0.1 --full-output\nimport time\nprint('before reset', flush=True)\ntime.sleep(5)")
     assert killed["status"] == "running"
     time.sleep(0.2)
-    adapter.reset_python()
-    reset_result = adapter.wait_python(killed["execution"])
+    adapter.restart()
+    reset_result = adapter.wait(killed["execution"])
     assert reset_result["status"] == "killed"
     assert reset_result["output_omitted"] is False
     assert "before reset" in reset_result["output_text"]
 
 
 def test_legacy_key_value_declaration_fails_before_python_execution(adapter: IPythonMCPAdapter) -> None:
-    response = adapter.run_python("# loommux: legacy_key=0.1\nprint('\\n'.join(f'line-{number}' for number in range(301)))")
+    response = adapter.run_cell("# loommux: legacy_key=0.1\nprint('\\n'.join(f'line-{number}' for number in range(301)))")
 
     assert response["status"] == "invalid_loommux_directive"
     assert "unknown option" in response["message"]
@@ -224,8 +224,8 @@ payload = f"""
 """
 '''
 
-    submitted = adapter.run_python(source)
-    inspected = adapter.run_python("payload")
+    submitted = adapter.run_cell(source)
+    inspected = adapter.run_cell("payload")
     record = adapter.executions[submitted["execution"]]
 
     assert submitted["status"] == "completed"
@@ -259,8 +259,8 @@ capture(r"""
 raise RuntimeError("mapped")
 '''
 
-    failed = adapter.run_python(source)
-    received = adapter.run_python("received")
+    failed = adapter.run_cell(source)
+    received = adapter.run_cell("received")
 
     assert failed["status"] == "error"
     assert "line 14" in failed["output_text"]
@@ -269,38 +269,38 @@ raise RuntimeError("mapped")
 
 
 def test_reset_preserves_records_and_sequence_and_reauthors_out_label(adapter: IPythonMCPAdapter) -> None:
-    first = adapter.run_python("'before reset'")
-    reset = adapter.reset_python()
-    second = adapter.run_python("# loommux: --full-output\n'after reset'")
+    first = adapter.run_cell("'before reset'")
+    reset = adapter.restart()
+    second = adapter.run_cell("# loommux: --full-output\n'after reset'")
 
     assert reset["status"] == "restarted"
     assert first["execution"] == 1
     assert second["execution"] == 2
-    assert "Out[2]: 'after reset'" in str(adapter.read_python_output(2)["text"])
-    assert "Out[1]: 'before reset'" in str(adapter.read_python_output(1)["text"])
+    assert "Out[2]: 'after reset'" in str(adapter.read_output(2)["text"])
+    assert "Out[1]: 'before reset'" in str(adapter.read_output(1)["text"])
 
 
 def test_reset_kills_running_execution_but_keeps_it_readable(adapter: IPythonMCPAdapter) -> None:
-    running = adapter.run_python("# loommux: --wait 0.1\nimport time\ntime.sleep(5)")
-    adapter.reset_python()
+    running = adapter.run_cell("# loommux: --wait 0.1\nimport time\ntime.sleep(5)")
+    adapter.restart()
 
-    status = adapter.python_execution_status(running["execution"])
+    status = adapter.execution_status(running["execution"])
     assert status["status"] == "killed"
     assert status["execution"] == 1
 
 
 def test_invalid_directive_has_no_real_kernel_or_sequence_side_effect(adapter: IPythonMCPAdapter) -> None:
-    accepted = adapter.run_python("'before invalid'")
-    invalid = adapter.run_python("# loommux: --wait 10 --wait 20\nprint('must not run')")
-    after = adapter.run_python("'after invalid'")
+    accepted = adapter.run_cell("'before invalid'")
+    invalid = adapter.run_cell("# loommux: --wait 10 --wait 20\nprint('must not run')")
+    after = adapter.run_cell("'after invalid'")
 
     assert invalid["status"] == "invalid_loommux_directive"
-    assert "must not run" not in str(adapter.read_python_output(accepted["execution"])["text"])
+    assert "must not run" not in str(adapter.read_output(accepted["execution"])["text"])
     assert after["execution"] == accepted["execution"] + 1
 
 
 def test_inner_directive_text_is_python_data_and_cannot_change_outer_policy(adapter: IPythonMCPAdapter) -> None:
-    response = adapter.run_python('# loommux: --wait 2\npayload = """\n# loommux: --full-output\n"""\nprint(payload)')
+    response = adapter.run_cell('# loommux: --wait 2\npayload = """\n# loommux: --full-output\n"""\nprint(payload)')
 
     assert response["full_output_requested"] is False
     assert response["initial_wait_seconds"] == 2.0
@@ -308,26 +308,26 @@ def test_inner_directive_text_is_python_data_and_cannot_change_outer_policy(adap
 
 
 def test_stream_read_search_and_invalid_inputs(adapter: IPythonMCPAdapter) -> None:
-    result = adapter.run_python("import sys\nprint('alpha')\nprint('warning', file=sys.stderr)\n'omega'")
+    result = adapter.run_cell("import sys\nprint('alpha')\nprint('warning', file=sys.stderr)\n'omega'")
     execution = result["execution"]
 
-    assert adapter.read_python_output(execution, "stderr")["text"] == "warning"
-    assert "M 1 | alpha" in str(adapter.search_python_output("alpha", execution, "stdout", "literal")["text"])
-    assert adapter.read_python_output(execution, "invalid")["status"] == "invalid_stream"
-    assert adapter.python_execution_status(-1)["status"] == "execution_not_found"
+    assert adapter.read_output(execution, "stderr")["text"] == "warning"
+    assert "M 1 | alpha" in str(adapter.search_output("alpha", execution, "stdout", "literal")["text"])
+    assert adapter.read_output(execution, "invalid")["status"] == "invalid_stream"
+    assert adapter.execution_status(-1)["status"] == "execution_not_found"
 
 
 def test_adapter_reports_invalid_operations_and_idle_interrupt(adapter: IPythonMCPAdapter, tmp_path: Path) -> None:
-    assert adapter.run_python(1)["status"] == "invalid_code"  # type: ignore[arg-type]
-    assert adapter.wait_python(timeout_seconds=0)["status"] == "invalid_timeout"
-    assert adapter.interrupt_python()["status"] == "idle"
-    assert adapter.reset_python()["status"] == "restarted"
-    assert adapter.python_status()["recent_execution"] is None
+    assert adapter.run_cell(1)["status"] == "invalid_code"  # type: ignore[arg-type]
+    assert adapter.wait(timeout_seconds=0)["status"] == "invalid_timeout"
+    assert adapter.interrupt()["status"] == "idle"
+    assert adapter.restart()["status"] == "restarted"
+    assert adapter.status()["recent_execution"] is None
 
     unstarted = IPythonMCPAdapter()
     try:
-        assert unstarted.reset_python()["status"] == "workspace_not_set"
-        assert unstarted.python_status()["kernel_started"] is False
+        assert unstarted.restart()["status"] == "workspace_not_set"
+        assert unstarted.status()["kernel_started"] is False
     finally:
         unstarted.close()
 

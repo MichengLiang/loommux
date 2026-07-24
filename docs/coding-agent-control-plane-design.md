@@ -32,19 +32,19 @@ coding agent 不持续观看终端屏幕。它发起一个工具调用，读取�
 
 | Tool | 直接职责 | 不承担的职责 |
 | --- | --- | --- |
-| `run_python` | 提交原始 Python cell，并返回该 execution 的当前可观察结果。 | 不无限等待，不解释历史日志。 |
-| `python_status` | 观察 kernel、workspace 和最近执行的运行状态。 | 不返回日志正文。 |
-| `python_execution_status` | 观察一个 execution 的生命周期状态和元数据。 | 不读取日志正文。 |
-| `read_python_output` | 读取一个 execution 的指定文本流与行范围。 | 不改变 kernel 状态。 |
-| `search_python_output` | 在一个 execution 的指定文本流中定位匹配文本。 | 不改变 kernel 状态。 |
-| `wait_python` | 在给定等待时长内等待一个 execution 进入可观察状态。 | 不终止 execution。 |
-| `interrupt_python` | 向当前运行的 execution 请求中断。 | 不重启 kernel。 |
-| `reset_python` | 替换 kernel，并保留既有 execution 的可读记录。 | 不保留旧 kernel namespace。 |
+| `run_cell` | 提交原始 IPython cell，并返回该 execution 的当前可观察结果。 | 不无限等待，不解释历史日志。 |
+| `status` | 观察 kernel、workspace 和最近执行的运行状态。 | 不返回日志正文。 |
+| `execution_status` | 观察一个 execution 的生命周期状态和元数据。 | 不读取日志正文。 |
+| `read_output` | 读取一个 execution 的指定文本流与行范围。 | 不改变 kernel 状态。 |
+| `search_output` | 在一个 execution 的指定文本流中定位匹配文本。 | 不改变 kernel 状态。 |
+| `wait` | 在给定等待时长内等待一个 execution 进入可观察状态。 | 不终止 execution。 |
+| `interrupt` | 向当前运行的 execution 请求中断。 | 不重启 kernel。 |
+| `restart` | 替换 kernel，并保留既有 execution 的可读记录。 | 不保留旧 kernel namespace。 |
 
-正常工作流是：`run_python` 创建 execution；完成的小输出直接成为观察面；
-运行中的 execution 由 `wait_python`、`python_execution_status`、
-`read_python_output` 或 `search_python_output` 继续观察；不再需要的运行由
-`interrupt_python` 控制；无法继续使用的 kernel 由 `reset_python` 替换。该
+正常工作流是：`run_cell` 创建 execution；完成的小输出直接成为观察面；
+运行中的 execution 由 `wait`、`execution_status`、
+`read_output` 或 `search_output` 继续观察；不再需要的运行由
+`interrupt` 控制；无法继续使用的 kernel 由 `restart` 替换。该
 闭环不要求 agent 持续附着到终端，也不要求新增 profile 选择或额外交互工具。
 
 ### 2.3 现有隐式状态
@@ -181,7 +181,7 @@ launch cwd。
 | `workspace_not_found` | 解析后的 workspace 不存在。 |
 | `workspace_not_directory` | 解析后的 workspace 不是目录。 |
 
-`python_status` 必须公开 `workspace_resolution`。其 authored surface 只能是
+`status` 必须公开 `workspace_resolution`。其 authored surface 只能是
 `launch_cwd` 或 `explicit_config`。该字段说明 workspace 的来源类别，不公开
 resolver 文件内容或私有配置路径。
 
@@ -326,7 +326,7 @@ workspace resolver -----> workspace + workspace_resolution
                                        v
 coding-agent kernel bootstrap -> KernelLaunch -> KernelSession -> IPython kernel
                                                               |
-run_python ---------------------------------------------------+
+run_cell ---------------------------------------------------+
                                                               |
                                                               v
                                              IOPub text and display events
@@ -343,11 +343,11 @@ run_python ---------------------------------------------------+
 
 | 状态 | 拥有者 | 生命周期 | 可观察方式 |
 | --- | --- | --- | --- |
-| workspace 与 workspace resolution | server process | server process 生命周期 | `python_status` |
-| kernel namespace | kernel session | start 至 shutdown 或 reset | `run_python` 的后续 cell |
+| workspace 与 workspace resolution | server process | server process 生命周期 | `status` |
+| kernel namespace | kernel session | start 至 shutdown 或 reset | `run_cell` 的后续 cell |
 | private runtime root | `KernelSession` | 一个 kernel session | 不作为常规 MCP 输出公开 |
 | execution records 与 output logs | adapter | server process 生命周期 | execution status、read、search、wait |
-| ordered display events | execution record | server process 生命周期 | `run_python` 与 `wait_python` 的 MCP content |
+| ordered display events | execution record | server process 生命周期 | `run_cell` 与 `wait` 的 MCP content |
 | terminal normalizer state | 一个 execution 的 stream 投影 | 该 execution 的 IOPub 处理期间 | 只通过规范化后的日志观察 |
 
 任何状态不得跨越其拥有者的生命周期伪装为另一种状态。特别是 IPython history
@@ -367,7 +367,7 @@ run_python ---------------------------------------------------+
    `PYTHONSTARTUP` 不成为 session 的隐式输入或持久输出。
 6. start 与 reset 的 kernel 都满足第 6 节的同一 policy。
 7. 所有公开文本投影满足第 7 节 terminal text invariant。
-8. `python_status` 能观察 workspace 及其来源类别，但不泄露 private runtime
+8. `status` 能观察 workspace 及其来源类别，但不泄露 private runtime
    root 或 resolver 内容。
 9. 可交付图像按展示顺序进入 MCP content；同一 event 的 `text/plain` 继续满足
    第 7 节的文本不变量。
@@ -382,9 +382,9 @@ public tool surface。私有函数的单元测试可以补充边界覆盖，但�
 **初始条件：** 使用一个空 workspace 启动 server。
 
 **动作：** 依次提交小输出 cell、超过默认等待时长的 cell、包含 stdout/stderr/
-最后表达式的 cell、抛出异常的 cell；对运行中的 execution 使用 `wait_python`、
-`python_execution_status`、`read_python_output`、`search_python_output`、
-`interrupt_python` 与 `reset_python`。
+最后表达式的 cell、抛出异常的 cell；对运行中的 execution 使用 `wait`、
+`execution_status`、`read_output`、`search_output`、
+`interrupt` 与 `restart`。
 
 **验收：** 每一个 accepted cell 都有连续正整数 execution；运行状态和终态可由
 对应 tool 观察；日志可按 stream 读取和搜索；interrupt 只控制当前运行 execution；
@@ -397,7 +397,7 @@ reset 后旧记录仍可读取且新 execution 连续。配置改造不得改变
 `loommux_workspace.py`。该同名文件在执行时会创建一个可观察标记文件。
 
 **动作：** 不设置 `LOOMMUX_WORKSPACE_CONFIG` 启动 server，并调用
-`python_status` 与 `run_python("import os; print(os.getcwd())")`。
+`status` 与 `run_cell("import os; print(os.getcwd())")`。
 
 **验收：** `workspace`、kernel cwd 都等于 launch cwd；`workspace_resolution`
 等于 `launch_cwd`；标记文件不存在。
@@ -446,7 +446,7 @@ reset 前后的 private runtime root 不相同，旧 root 已清理。
 `text/plain` result 与 traceback。构造同一 formatting sequence 跨两个 write
 输出的情况。
 
-**动作：** 使用 `run_python`、`read_python_output` 和 `search_python_output` 读取
+**动作：** 使用 `run_cell`、`read_output` 和 `search_output` 读取
 五条 stream。
 
 **验收：** `stdout`、`stderr`、`result`、`traceback`、`combined` 和小输出响应

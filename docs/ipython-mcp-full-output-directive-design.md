@@ -27,14 +27,14 @@ interpreter does not interpret the option.
 ## Delivery Behavior
 
 Without `--full-output`, terminal combined output exceeding 300 lines remains
-stored but is omitted from `run_python` and `wait_python`. With the option, a
+stored but is omitted from `run_cell` and `wait`. With the option, a
 terminal response returns the entire combined stream regardless of its line
 count. A running execution still returns the normal running surface; callers
 can use output-reading tools for partial progress.
 
-The option is per execution. It survives a later `wait_python`, error,
+The option is per execution. It survives a later `wait`, error,
 interrupt, or reset-induced `killed` state, but it does not alter
-`read_python_output`, `search_python_output`, output-log storage, or later
+`read_output`, `search_output`, output-log storage, or later
 cells.
 
 ## Verification
