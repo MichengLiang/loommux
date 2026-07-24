@@ -35,7 +35,6 @@ def test_marked_terminal_execution_renders_its_complete_combined_output() -> Non
         "ok": False,
         "execution": 5,
         "status": "error",
-        "full_output_requested": True,
         "output_text": "before failure\nTraceback...\n",
         "output_omitted": False,
     }
@@ -43,7 +42,6 @@ def test_marked_terminal_execution_renders_its_complete_combined_output() -> Non
         "ok": False,
         "execution": 6,
         "status": "killed",
-        "full_output_requested": True,
         "output_text": "before reset\n",
         "output_omitted": False,
     }

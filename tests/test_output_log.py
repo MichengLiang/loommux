@@ -42,7 +42,7 @@ def test_execution_logs_keep_streams_and_author_public_execution_label() -> None
 
 
 def test_execution_tracks_error_interrupt_and_omitted_snapshots() -> None:
-    record = Execution(execution=9, code="x", kernel_pid=12)
+    record = Execution(execution=9, kernel_pid=12)
     record.append_stdout("one\n")
     record.append_result_text("first")
     record.append_result_text("second")
@@ -58,7 +58,7 @@ def test_execution_tracks_error_interrupt_and_omitted_snapshots() -> None:
 
 
 def test_execution_normalizes_every_stream_projection_before_logging() -> None:
-    record = Execution(execution=4, code="x", kernel_pid=12)
+    record = Execution(execution=4, kernel_pid=12)
 
     first_stdout = record.append_stdout("stdout \x1b[3")
     second_stdout = record.append_stdout("1mvisible\x1b[0m\n")

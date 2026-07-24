@@ -291,7 +291,9 @@ build_report()
 Python runtime, interrupt the cell when time expires, modify later calls, or
 add a variable to the kernel. A malformed or duplicated option returns
 `invalid_loommux_directive` before an execution is allocated or source is
-submitted.
+submitted. Valid directive lines are transport-only metadata: Loommux consumes
+them before IPython receives the cell, so they do not appear in IPython history
+or execution records. A directive may therefore precede a `%%` cell magic.
 
 When the call returns while the cell is still running, use `wait`,
 `execution_status`, `read_output`, `search_output`,

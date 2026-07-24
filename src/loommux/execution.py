@@ -41,20 +41,16 @@ IMAGE_MIME_PREFERENCE = ("image/png", "image/jpeg", "image/webp", "image/gif")
 
 @dataclass
 class Execution:
-    """One accepted cell, addressed for the lifetime of this server process."""
+    """One accepted cell's lifecycle, output, and delivery runtime state."""
 
     execution: int
-    code: str
     kernel_pid: int
-    author_source: str | None = None
-    submitted_source: str | None = None
-    apply_patch_transform: dict[str, Any] | None = None
     submitted_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     status: ExecutionStatus = "running"
-    initial_wait_seconds: float = 10.0
-    full_output_requested: bool = False
-    control_directives: tuple[str, ...] = ()
+    # This flag is the sole request-derived state that a later wait() needs.
+    # Source and initial wait policy have no runtime consumer after submission.
+    _full_output_requested: bool = field(default=False, repr=False)
     stdout: str = ""
     stderr: str = ""
     result_text: str = ""
@@ -71,25 +67,6 @@ class Execution:
     _stderr_normalizer: TerminalTextNormalizer = field(default_factory=TerminalTextNormalizer, init=False, repr=False)
     _result_normalizer: TerminalTextNormalizer = field(default_factory=TerminalTextNormalizer, init=False, repr=False)
     _traceback_normalizer: TerminalTextNormalizer = field(default_factory=TerminalTextNormalizer, init=False, repr=False)
-
-    def __post_init__(self) -> None:
-        # code predates source transforms. Keep it as the submitted-source alias
-        # for in-process callers while retaining author text for observability.
-        if self.author_source is None:
-            self.author_source = self.code
-        if self.submitted_source is None:
-            self.submitted_source = self.code
-        if self.apply_patch_transform is None:
-            self.apply_patch_transform = {
-                "author_source": self.author_source,
-                "submitted_source": self.submitted_source,
-                "applied": False,
-                "literal_count": 0,
-                "author_ranges": [],
-                "submitted_ranges": [],
-                "line_map": [],
-            }
-        self.code = self.submitted_source
 
     def append_stdout(self, text: str) -> str:
         normalized = self._stdout_normalizer.normalize(text)
@@ -205,9 +182,6 @@ class Execution:
             "ok": self.status not in {"error", "killed"},
             "execution": self.execution,
             "status": self.status,
-            "initial_wait_seconds": self.initial_wait_seconds,
-            "full_output_requested": self.full_output_requested,
-            "control_directives": list(self.control_directives),
             "stdout": "" if omitted else self.stdout,
             "stderr": "" if omitted else self.stderr,
             "result_text": "" if omitted else self.result_text,
@@ -227,9 +201,6 @@ class Execution:
             "ok": self.status not in {"error", "killed"},
             "execution": self.execution,
             "status": self.status,
-            "initial_wait_seconds": self.initial_wait_seconds,
-            "full_output_requested": self.full_output_requested,
-            "control_directives": list(self.control_directives),
             "submitted_at": self.submitted_at,
             "updated_at": self.updated_at,
             "completed_at": self.completed_at,
@@ -248,7 +219,7 @@ class Execution:
     def _output_omitted_reason(self, output_line_limit: int | None, output_total_lines: int) -> str | None:
         if self.status == "running":
             return "running"
-        if self.full_output_requested:
+        if self._full_output_requested:
             return None
         if output_line_limit is not None and output_total_lines > output_line_limit:
             return "line_limit_exceeded"

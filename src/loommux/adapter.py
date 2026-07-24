@@ -3,11 +3,11 @@ from __future__ import annotations
 import math
 import sys
 import threading
-from contextvars import ContextVar
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from loommux.cell_control import LoommuxDirectiveError, parse_loommux_cell_control
+from loommux.cell_control import LoommuxDirectiveError, remove_active_directive_lines, scan_active_loommux_directives
 from loommux.execution import Execution
 from loommux.kernel_session import KernelSession
 from loommux.source_transform import prepare_apply_patch_literals
@@ -15,6 +15,30 @@ from loommux.source_transform import prepare_apply_patch_literals
 DEFAULT_OUTPUT_LINE_LIMIT = 300
 KERNEL_START_ATTEMPTS = 2
 OUTPUT_STREAMS = {"combined", "stdout", "stderr", "result", "traceback"}
+
+
+@dataclass(frozen=True)
+class PreparedRunCell:
+    """Transient boundary between MCP transport input and IPython source."""
+
+    kernel_source: str
+    initial_wait_seconds: float
+    full_output_requested: bool
+
+
+def prepare_run_cell(freeform: object) -> PreparedRunCell:
+    """Validate and consume control metadata before preparing Python source."""
+
+    if not isinstance(freeform, str):
+        raise TypeError("freeform must be a string")
+    scan = scan_active_loommux_directives(freeform)
+    source_without_directives = remove_active_directive_lines(freeform, scan.active_directive_ranges)
+    apply_patch = prepare_apply_patch_literals(source_without_directives)
+    return PreparedRunCell(
+        kernel_source=apply_patch.submitted_source,
+        initial_wait_seconds=scan.initial_wait_seconds,
+        full_output_requested=scan.full_output_requested,
+    )
 
 
 class IPythonMCPAdapter:
@@ -29,7 +53,6 @@ class IPythonMCPAdapter:
         self.current_execution: int | None = None
         self.recent_execution: int | None = None
         self._next_execution = 1
-        self._pending_execution_input: ContextVar[tuple[str, dict[str, Any]] | None] = ContextVar("loommux_pending_execution_input", default=None)
         self._lock = threading.RLock()
 
     def close(self) -> None:
@@ -79,26 +102,20 @@ class IPythonMCPAdapter:
         return self.status()
 
     def run_cell(self, freeform: str) -> dict[str, Any]:
-        if not isinstance(freeform, str):
-            return {"ok": False, "status": "invalid_code", "message": "freeform must be a string"}
-        apply_patch_transform = prepare_apply_patch_literals(freeform)
         try:
-            control = parse_loommux_cell_control(apply_patch_transform.submitted_source)
+            prepared = prepare_run_cell(freeform)
+        except TypeError:
+            return {"ok": False, "status": "invalid_code", "message": "freeform must be a string"}
         except LoommuxDirectiveError as exc:
             return {"ok": False, "status": "invalid_loommux_directive", "message": f"invalid_loommux_directive: {exc}"}
-        token = self._pending_execution_input.set((freeform, apply_patch_transform.as_dict()))
-        try:
-            return self._submit_python_cell(
-                apply_patch_transform.submitted_source,
-                control.initial_wait_seconds,
-                control.full_output_requested,
-                control_directives=control.control_directives,
-            )
-        finally:
-            self._pending_execution_input.reset(token)
+        return self._submit_python_cell(
+            prepared.kernel_source,
+            prepared.initial_wait_seconds,
+            prepared.full_output_requested,
+        )
 
-    def _submit_python_cell(self, code: str, timeout_seconds: float, full_output_requested: bool = False, *, control_directives: tuple[str, ...] = ()) -> dict[str, Any]:
-        if not isinstance(code, str):
+    def _submit_python_cell(self, source: str, timeout_seconds: float, full_output_requested: bool = False) -> dict[str, Any]:
+        if not isinstance(source, str):
             return {"ok": False, "status": "invalid_code", "message": "code must be a string"}
         if (error := self._validate_timeout(timeout_seconds)) is not None:
             return error
@@ -110,24 +127,17 @@ class IPythonMCPAdapter:
                 return {"ok": False, "status": "kernel_not_started", "message": "kernel is not started"}
             if self.current_execution is not None:
                 return {"ok": False, "status": "busy", "execution": self.current_execution, "message": "kernel is already executing code"}
-            author_source, apply_patch_transform = self._pending_execution_input.get() or (code, None)
             execution = Execution(
                 execution=self._next_execution,
-                code=code,
                 kernel_pid=kernel.pid or 0,
-                full_output_requested=full_output_requested,
-                author_source=author_source,
-                submitted_source=code,
-                apply_patch_transform=apply_patch_transform,
-                initial_wait_seconds=timeout_seconds,
-                control_directives=control_directives,
+                _full_output_requested=full_output_requested,
             )
             self._next_execution += 1
             self.executions[execution.execution] = execution
             self.current_execution = execution.execution
             self.recent_execution = execution.execution
         try:
-            kernel.submit(execution)
+            kernel.submit(execution, source)
         except Exception as exc:
             with self._lock:
                 self.current_execution = None

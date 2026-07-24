@@ -24,10 +24,11 @@ complete terminal combined-output delivery. The parser rejects unknown,
 duplicated, missing, malformed, or non-positive options as
 `invalid_loommux_directive` before execution allocation and kernel submission.
 
-Distinct options may be declared on separate control comments. Directive lines
-are preserved in author and submitted source. The adapter resolves policy before
-submission; the selected Python or cell-magic body interpreter receives the
-authored source normally.
+Distinct options may be declared on separate control comments. Active directive
+lines are transport-only metadata: the adapter resolves policy, deletes their
+complete physical lines, and then submits the clean source. They do not enter
+IPython history, a cell-magic body, or an execution record. This permits a
+directive to precede `%%bash` or another cell magic without padding before `%`.
 
 ## Apply Patch Transport
 

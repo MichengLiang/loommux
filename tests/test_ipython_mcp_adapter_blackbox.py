@@ -111,7 +111,6 @@ def test_full_output_directive_returns_complete_long_combined_output(adapter: IP
     response = adapter.run_cell("# loommux: --full-output\nprint('\\n'.join(f'line-{number}' for number in range(301)))")
 
     assert response["status"] == "completed"
-    assert response["full_output_requested"] is True
     assert response["output_omitted"] is False
     assert response["output_text"].splitlines() == [f"line-{number}" for number in range(301)]
 
@@ -153,12 +152,9 @@ def test_directive_preserves_rich_display_events(adapter: IPythonMCPAdapter) -> 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="IPython %%bash requires a POSIX shell")
 def test_directive_composes_with_a_bash_cell_magic(adapter: IPythonMCPAdapter) -> None:
-    running = adapter.run_cell("%%bash\n# loommux: --wait 0.1 --full-output\nsleep 0.3\nprintf 'bash-finished\\n'")
+    running = adapter.run_cell("# loommux: --wait 0.1\n# loommux: --full-output\n%%bash\nsleep 0.3\nprintf 'bash-finished\\n'")
 
     assert running["status"] == "running"
-    assert running["initial_wait_seconds"] == 0.1
-    assert running["full_output_requested"] is True
-    assert running["control_directives"] == ["# loommux: --wait 0.1 --full-output"]
 
     completed = adapter.wait(running["execution"], timeout_seconds=3)
 
@@ -172,7 +168,6 @@ def test_unmarked_long_combined_output_keeps_the_default_omission_rule(adapter: 
 
     assert marked["output_omitted"] is False
     assert response["status"] == "completed"
-    assert response["full_output_requested"] is False
     assert response["output_omitted"] is True
     assert response["output_omitted_reason"] == "line_limit_exceeded"
     assert "output_text" not in response
@@ -210,7 +205,7 @@ def test_legacy_key_value_declaration_fails_before_python_execution(adapter: IPy
     assert "unknown option" in response["message"]
 
 
-def test_apply_patch_literal_preserves_raw_value_and_execution_inputs(adapter: IPythonMCPAdapter) -> None:
+def test_apply_patch_literal_preserves_raw_value_without_archiving_request_source(adapter: IPythonMCPAdapter) -> None:
     source = '''# loommux: --wait 2 --full-output
 name = "Ada"
 payload = f"""
@@ -229,17 +224,10 @@ payload = f"""
     record = adapter.executions[submitted["execution"]]
 
     assert submitted["status"] == "completed"
-    assert submitted["initial_wait_seconds"] == 2.0
-    assert submitted["full_output_requested"] is True
-    assert submitted["control_directives"] == ["# loommux: --wait 2 --full-output"]
     assert "C:\\\\new\\\\temp {name}" in inspected["output_text"]
     assert "*** Begin Patch" in inspected["output_text"]
-    assert record.author_source == source
-    assert record.submitted_source != source
-    assert record.apply_patch_transform is not None
-    assert record.apply_patch_transform["applied"] is True
-    assert record.apply_patch_transform["literal_count"] == 1
-    assert record.apply_patch_transform["line_map"][-1] == {"author_line": 10, "submitted_line": 10}
+    for field in ("code", "author_source", "submitted_source", "apply_patch_transform", "initial_wait_seconds", "control_directives"):
+        assert not hasattr(record, field)
 
 
 def test_apply_patch_literal_is_a_function_argument_and_keeps_later_traceback_lines(adapter: IPythonMCPAdapter) -> None:
@@ -263,7 +251,7 @@ raise RuntimeError("mapped")
     received = adapter.run_cell("received")
 
     assert failed["status"] == "error"
-    assert "line 14" in failed["output_text"]
+    assert "line 13" in failed["output_text"]
     assert received["status"] == "completed"
     assert "*** Begin Patch" in received["output_text"]
 
@@ -299,12 +287,76 @@ def test_invalid_directive_has_no_real_kernel_or_sequence_side_effect(adapter: I
     assert after["execution"] == accepted["execution"] + 1
 
 
+def test_invalid_python_indentation_with_a_valid_directive_reaches_the_kernel(adapter: IPythonMCPAdapter) -> None:
+    response = adapter.run_cell("if True:\n    pass\n  pass\n# loommux: --full-output\n")
+
+    assert response["execution"] == 1
+    assert response["status"] == "error"
+    assert response["error"]["ename"] == "IndentationError"
+    assert "unindent does not match any outer indentation level" in response["error"]["evalue"]
+
+
 def test_inner_directive_text_is_python_data_and_cannot_change_outer_policy(adapter: IPythonMCPAdapter) -> None:
     response = adapter.run_cell('# loommux: --wait 2\npayload = """\n# loommux: --full-output\n"""\nprint(payload)')
 
-    assert response["full_output_requested"] is False
-    assert response["initial_wait_seconds"] == 2.0
     assert response["output_text"].strip() == "# loommux: --full-output"
+
+
+def test_lone_cr_string_data_does_not_become_a_control_directive(adapter: IPythonMCPAdapter) -> None:
+    response = adapter.run_cell('payload = """\r# loommux: --wait 0\r"""\rprint(payload)')
+
+    assert response["status"] == "completed"
+    assert response["output_text"].strip() == "# loommux: --wait 0"
+
+
+def test_f_string_data_does_not_become_a_control_directive(adapter: IPythonMCPAdapter) -> None:
+    response = adapter.run_cell('payload = f"""\n# loommux: --wait 0\n"""\nprint(payload)')
+
+    assert response["status"] == "completed"
+    assert response["output_text"].strip() == "# loommux: --wait 0"
+
+
+def test_directives_are_absent_from_real_ipython_history_without_padding(adapter: IPythonMCPAdapter) -> None:
+    source = "# loommux: --wait 2\n# loommux: --full-output\nvalue_for_history = 41\nvalue_for_history + 1"
+
+    response = adapter.run_cell(source)
+    history = adapter.run_cell("get_ipython().history_manager.input_hist_raw[1]")
+
+    assert response["status"] == "completed"
+    assert history["result_text"] == "'value_for_history = 41\\nvalue_for_history + 1'"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="IPython %%bash requires a POSIX shell")
+def test_directive_inside_a_magic_body_is_removed_before_that_body_runs(adapter: IPythonMCPAdapter) -> None:
+    response = adapter.run_cell("%%bash\n# loommux: --full-output\nprintf 'body-clean\\n'")
+
+    assert response["status"] == "completed"
+    assert response["output_text"] == "body-clean\n"
+
+
+def test_directive_is_removed_before_a_non_comment_magic_body_receives_it(adapter: IPythonMCPAdapter) -> None:
+    registered = adapter.run_cell(
+        "from IPython.core.magic import register_cell_magic\n"
+        "@register_cell_magic\n"
+        "def strict_body(_line, cell):\n"
+        "    if '# loommux:' in cell:\n"
+        "        raise RuntimeError('transport metadata leaked into body')\n"
+        "    print(cell)"
+    )
+    response = adapter.run_cell("# loommux: --full-output\n%%strict_body\nbody language text")
+
+    assert registered["status"] == "completed"
+    assert response["status"] == "completed"
+    assert response["output_text"] == "body language text\n\n"
+
+
+def test_public_execution_responses_exclude_consumed_control_details(adapter: IPythonMCPAdapter) -> None:
+    response = adapter.run_cell("# loommux: --wait 2 --full-output\nprint('done')")
+    waited = adapter.wait(response["execution"])
+    status = adapter.execution_status(response["execution"])
+
+    for result in (response, waited, status):
+        assert {"initial_wait_seconds", "full_output_requested", "control_directives"}.isdisjoint(result)
 
 
 def test_stream_read_search_and_invalid_inputs(adapter: IPythonMCPAdapter) -> None:

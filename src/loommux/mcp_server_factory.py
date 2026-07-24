@@ -48,8 +48,9 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
 
         接受一段 loommux IPython cell 源码。普通 Python 文本使用默认策略；若作者
         需要声明本次 cell 的观察策略，使用位于物理行首的 ``# loommux:`` 控制
-        注释。变量、导入和其他 namespace 状态会与同一服务器会话中的后续 cell
-        共享。
+        注释。Loommux 在提交前验证并完全消费有效控制注释，因此它们不会进入
+        IPython history 或下游 cell-magic body。变量、导入和其他 namespace 状态会
+        与同一服务器会话中的后续 cell 共享。
 
         等待上限
         --------
@@ -77,9 +78,9 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
 
         ``--wait`` 与 ``--full-output`` 可以组合为
         ``# loommux: --wait 120 --full-output``。这些选项只作用于本次
-        execution，且 authored directive line 保留在原始 source 中。在明确需要
-        完整阅读某些信息，例如阅读某些文件、资料时，使用该选项避免无意义的
-        反复阅读开销。
+        execution。有效控制注释在提交前被 Loommux 完全消费，不会进入 IPython
+        history、cell magic body 或 execution 响应。在明确需要完整阅读某些信息，
+        例如阅读某些文件、资料时，使用该选项避免无意义的反复阅读开销。
 
         图像展示
         --------
@@ -252,9 +253,10 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         完整输出交付
         ------------
 
-        当所选 execution 的有效 ``# loommux:`` 控制注释含 ``--full-output`` 且
-        已达到终态时，本工具直接返回完整 combined 正文，不应用默认 300 行省略。
-        仍在运行的此类 execution 继续返回 running，而非不完整正文。
+        当所选 execution 的原始 ``run_cell`` 请求含有效 ``--full-output`` 且已达到
+        终态时，本工具直接返回完整 combined 正文，不应用默认 300 行省略。该策略
+        仅保留为 private runtime state；仍在运行的 execution 继续返回 running，
+        而非不完整正文。
 
         Args:
             execution: 要等待的正整数执行编号。省略时使用当前记录，随后

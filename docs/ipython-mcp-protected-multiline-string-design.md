@@ -34,20 +34,22 @@ invalid body remains ordinary Python source and is never transformed.
 
 ## Source Facts
 
-Every accepted execution retains `author_source` and `submitted_source`. They
-are byte-for-byte equal unless the validated Apply Patch conversion is applied.
-In that exception, the execution record retains structured transform facts:
-whether it applied, literal count, author/submitted ranges, and physical-line
-mapping. Newline padding preserves meaningful coordinates for Python
-diagnostics following a transformed literal.
+Apply Patch conversion is transient request preparation. Its transform details
+exist only while Loommux derives the source sent to IPython; an `Execution`
+retains lifecycle, output, displays, and the private delivery policy needed by a
+later `wait`, not request source or transform metadata. Conversion padding still
+preserves meaningful Python coordinates within the submitted source after a
+converted literal.
 
-Control directives remain authored source facts. A valid Apply Patch payload
-cannot contain an active `# loommux:` directive at physical column zero, because
-it is neither a patch control nor a valid hunk-content line.
+Active Loommux control directives are removed before this conversion. A valid
+Apply Patch payload cannot contain an active `# loommux:` directive at physical
+column zero, because it is neither a patch control nor a valid hunk-content
+line.
 
 ## Verification
 
 Tests must prove valid conversion and value preservation; rejection of malformed
-marker-shaped text and ordinary triple-quoted strings; source equality for
-non-patch cells; physical-line continuity; and independence between Apply Patch
-transport and the outer cell-control policy.
+marker-shaped text and ordinary triple-quoted strings; preservation of
+non-directive source after control directives are consumed; physical-line
+continuity; and independence between Apply Patch transport and the outer
+cell-control policy.

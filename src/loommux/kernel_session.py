@@ -42,11 +42,11 @@ class KernelSession:
         self._collector = threading.Thread(target=self._collect_iopub, name="loommux-iopub-collector", daemon=True)
         self._collector.start()
 
-    def submit(self, execution: Execution) -> None:
+    def submit(self, execution: Execution, source: str) -> None:
         with self._lock:
             if self.client is None:
                 raise RuntimeError("kernel client is not started")
-            execution.msg_id = self.client.execute(execution.submitted_source or execution.code)
+            execution.msg_id = self.client.execute(source)
             self.current_execution = execution
 
     def interrupt(self) -> None:

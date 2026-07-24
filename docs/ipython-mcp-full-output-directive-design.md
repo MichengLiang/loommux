@@ -20,9 +20,10 @@ It may be combined with an initial wait:
 build_report()
 ```
 
-The adapter validates all directives before allocating an execution and stores
-the resolved `full_output_requested` fact on that record. The selected body
-interpreter does not interpret the option.
+The adapter validates and consumes all directives before allocating an
+execution. It retains the resolved complete-output policy as private runtime
+state only because a later `wait` needs it; the selected body interpreter and
+public response data do not receive the option.
 
 ## Delivery Behavior
 

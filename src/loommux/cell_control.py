@@ -1,4 +1,4 @@
-"""Parse adapter-owned Loommux control directives from one submitted cell."""
+"""Classify and consume adapter-owned Loommux control directives."""
 
 from __future__ import annotations
 
@@ -16,36 +16,45 @@ _DECIMAL_LITERAL_RE = re.compile(r"(?:0|[1-9][0-9]*|[0-9]+\.[0-9]+)\Z")
 
 
 @dataclass(frozen=True)
-class LoommuxCellControl:
-    """Resolved, immutable control facts for one accepted author cell."""
+class SourceRange:
+    """A half-open character range for one complete directive line."""
+
+    start: int
+    end: int
+
+
+@dataclass(frozen=True)
+class LoommuxDirectiveScan:
+    """Resolved control policy and the exact active source ranges that own it."""
 
     initial_wait_seconds: float
     full_output_requested: bool
-    control_directives: tuple[str, ...]
+    active_directive_ranges: tuple[SourceRange, ...]
 
 
 class LoommuxDirectiveError(ValueError):
     """A concise, safe-to-return validation failure for ``# loommux:``."""
 
 
-def parse_loommux_cell_control(author_source: str) -> LoommuxCellControl:
-    """Resolve every active ``# loommux:`` declaration without touching the kernel.
+def scan_active_loommux_directives(source: str) -> LoommuxDirectiveScan:
+    """Resolve active directives and return their deletion ranges.
 
-    Python-string lines are excluded when the complete source is ordinary Python.
-    A cell magic body is opaque to Python tokenization, so its directives are
-    intentionally recognized as raw physical comment lines for the body language
-    to consume or ignore according to its own syntax.
+    The ranges are the single source of truth for both validation and removal.
+    A magic body is opaque to Python tokenization, but a leading directive may
+    precede the ``%%`` line that establishes that body.
     """
+
+    lines = _physical_lines(source)
+    string_lines = frozenset() if _is_cell_magic_after_candidate_removal(lines) else _python_string_lines(source)
 
     wait_seconds = DEFAULT_INITIAL_WAIT_SECONDS
     full_output_requested = False
     wait_seen = False
-    directives: list[str] = []
-    string_lines = _python_string_lines(author_source)
-    for line_number, line in enumerate(author_source.splitlines(), start=1):
+    active_ranges: list[SourceRange] = []
+    for line_number, (line, source_range) in enumerate(lines, start=1):
         if line_number in string_lines or not line.startswith(_DIRECTIVE_PREFIX):
             continue
-        directives.append(line)
+        active_ranges.append(source_range)
         suffix = line[len(_DIRECTIVE_PREFIX) :]
         if not suffix:
             raise LoommuxDirectiveError("# loommux: requires at least one option")
@@ -57,7 +66,45 @@ def parse_loommux_cell_control(author_source: str) -> LoommuxCellControl:
             full_output_requested,
             wait_seen,
         )
-    return LoommuxCellControl(wait_seconds, full_output_requested, tuple(directives))
+    return LoommuxDirectiveScan(wait_seconds, full_output_requested, tuple(active_ranges))
+
+
+def remove_active_directive_lines(source: str, ranges: tuple[SourceRange, ...]) -> str:
+    """Delete validated directive lines, including each owned terminator.
+
+    Control declarations are transport metadata. They must not become IPython
+    history, downstream magic input, or implicit source-coordinate padding.
+    """
+
+    parts: list[str] = []
+    cursor = 0
+    for source_range in ranges:
+        parts.append(source[cursor : source_range.start])
+        cursor = source_range.end
+    parts.append(source[cursor:])
+    return "".join(parts)
+
+
+def _physical_lines(source: str) -> tuple[tuple[str, SourceRange], ...]:
+    lines: list[tuple[str, SourceRange]] = []
+    cursor = 0
+    for line_with_ending in source.splitlines(keepends=True):
+        end = cursor + len(line_with_ending)
+        lines.append((line_with_ending.rstrip("\r\n"), SourceRange(cursor, end)))
+        cursor = end
+    if cursor < len(source):
+        lines.append((source[cursor:], SourceRange(cursor, len(source))))
+    return tuple(lines)
+
+
+def _is_cell_magic_after_candidate_removal(lines: tuple[tuple[str, SourceRange], ...]) -> bool:
+    """Detect a magic after temporarily removing only directive candidates."""
+
+    for line, _source_range in lines:
+        if line.startswith(_DIRECTIVE_PREFIX) or not line:
+            continue
+        return line.startswith("%%")
+    return False
 
 
 def _parse_options(tokens: list[str], wait_seconds: float, full_output_requested: bool, wait_seen: bool) -> tuple[float, bool, bool]:
@@ -89,19 +136,27 @@ def _parse_options(tokens: list[str], wait_seconds: float, full_output_requested
 
 
 def _python_string_lines(source: str) -> frozenset[int]:
-    """Return Python string-token lines, unless a cell magic owns the body."""
+    """Return physical lines occupied by Python string tokens."""
 
-    if source.startswith("%%"):
-        return frozenset()
     try:
-        tokens = tokenize.generate_tokens(io.StringIO(source).readline)
-        return frozenset(
-            line_number
-            for token in tokens
-            if token.type == tokenize.STRING
-            for line_number in range(token.start[0], token.end[0] + 1)
-        )
-    except tokenize.TokenError:
-        # Invalid Python will subsequently receive its normal kernel syntax
-        # failure. Control parsing must not invent a second source grammar.
+        # ``tokenize`` does not treat a lone CR from StringIO as Python's
+        # universal-newline input does. Normalizing this private classification
+        # view preserves physical line numbers while keeping CR source bytes
+        # untouched for range deletion and kernel submission.
+        token_source = source.replace("\r\n", "\n").replace("\r", "\n")
+        fstring_start = getattr(tokenize, "FSTRING_START", None)
+        fstring_end = getattr(tokenize, "FSTRING_END", None)
+        fstring_starts: list[int] = []
+        string_lines: set[int] = set()
+        for token in tokenize.generate_tokens(io.StringIO(token_source).readline):
+            if token.type == tokenize.STRING:
+                string_lines.update(range(token.start[0], token.end[0] + 1))
+            elif token.type == fstring_start:
+                fstring_starts.append(token.start[0])
+            elif token.type == fstring_end and fstring_starts:
+                string_lines.update(range(fstring_starts.pop(), token.end[0] + 1))
+        return frozenset(string_lines)
+    except (IndentationError, tokenize.TokenError):
+        # Invalid Python gets its normal kernel syntax failure. Directive parsing
+        # must not introduce another language parser for otherwise ordinary code.
         return frozenset()
