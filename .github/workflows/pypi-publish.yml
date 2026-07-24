@@ -1,8 +1,9 @@
-name: Publish to PyPI
+name: Release loommux
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
@@ -11,10 +12,10 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: pypi-publish
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -52,3 +53,55 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
+
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - name: Extract changelog entry
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          python - "$RELEASE_TAG" <<'PY'
+          from pathlib import Path
+          import sys
+
+          tag = sys.argv[1]
+          version = tag.removeprefix("v")
+          lines = Path("CHANGELOG.md").read_text(encoding="utf-8").splitlines()
+          start = next(
+              (index for index, line in enumerate(lines) if line.startswith(f"## [{version}]")),
+              None,
+          )
+          if start is None:
+              raise SystemExit(f"CHANGELOG.md has no entry for {version}")
+          end = next(
+              (
+                  index
+                  for index in range(start + 1, len(lines))
+                  if lines[index].startswith("## [")
+              ),
+              len(lines),
+          )
+          notes_lines = lines[start + 1 : end]
+          while notes_lines and (not notes_lines[-1].strip() or notes_lines[-1].startswith("[")):
+              notes_lines.pop()
+          notes = "\n".join(notes_lines).strip()
+          if not notes:
+              raise SystemExit(f"CHANGELOG.md entry for {version} has no release notes")
+          Path("release-notes.md").write_text(f"{notes}\n", encoding="utf-8")
+          PY
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          title="loommux ${RELEASE_TAG#v}"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --title "$title" --notes-file release-notes.md
+          else
+            gh release create "$RELEASE_TAG" --title "$title" --notes-file release-notes.md
+          fi

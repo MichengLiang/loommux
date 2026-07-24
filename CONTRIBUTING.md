@@ -41,9 +41,11 @@ execution lifecycle rule, or output-reading coordinate.
 
 The package version is declared in [`pyproject.toml`](pyproject.toml). A release
 must update [CHANGELOG.md](CHANGELOG.md), pass the complete local gate, and use
-an annotated `v<version>` tag that exactly matches the package version. The
-PyPI workflow independently verifies that match, reruns the quality gate, and
-checks the built distribution before upload.
+an annotated `v<version>` tag that exactly matches the package version. Pushing
+that tag starts the release workflow: it independently verifies the match,
+reruns the quality gate, checks the built distribution, uploads to PyPI, and
+creates or updates the GitHub Release from the matching changelog entry. A
+manual retry requires an explicit release tag.
 
 ## Reporting defects
 
