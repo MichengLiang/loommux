@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import time
 from pathlib import Path
 
@@ -150,6 +151,7 @@ def test_directive_preserves_rich_display_events(adapter: IPythonMCPAdapter) -> 
     assert record.has_rich_presentation is True
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="IPython %%bash requires a POSIX shell")
 def test_directive_composes_with_a_bash_cell_magic(adapter: IPythonMCPAdapter) -> None:
     running = adapter.run_python("%%bash\n# loommux: --wait 0.1 --full-output\nsleep 0.3\nprintf 'bash-finished\\n'")
 
