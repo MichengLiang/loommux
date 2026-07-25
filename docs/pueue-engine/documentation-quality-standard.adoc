@@ -1,0 +1,473 @@
+= Loommux Pueue 文档质量标准
+:doctype: book
+:toc: left
+:toclevels: 3
+:sectnums:
+:sectnumlevels: 4
+:icons: font
+:source-highlighter: rouge
+:xrefstyle: short
+:experimental:
+
+[abstract]
+本文定义 `docs/pueue-engine/` 文档包的作者边界、语义纪律、证据规则、AsciiDoc 结构、交叉引用、审查方法、完成标准和优秀标准。本文评价的是文档制品，不评价实现是否完成；实现验收由第一阶段交付计划定义。
+
+[#documentation-authority]
+== 文档地位
+
+本文是 Pueue engine 文档制品质量的事实源。xref:design-specification.adoc#document-authority[设计规格]定义系统对象，xref:phase-1-delivery-plan.adoc#delivery-authority[交付计划]定义工程交付，xref:evidence-register.adoc#evidence-policy[证据登记]定义来源。本文不重复它们的规范内容，只规定这些内容如何被准确、可维护和可审计地写成文档。
+
+文档只有在 xref:documentation-done[文档完成标准]与 xref:documentation-excellence[文档优秀标准]全部通过时才构成最终交付。篇幅、作者投入、聊天中获得认可或能被主要作者解释，均不能替代这些标准。
+
+[#audience]
+== 读者与阅读条件
+
+目标读者包括：
+
+* 实现 Pueue engine 的工程师；
+* 审查架构、并发、生命周期和错误语义的 reviewer；
+* 编写测试、CI 和 release gate 的工程师；
+* 维护 Loommux 其他 engine 并需要理解跨 engine contract 的成员；
+* 在没有原始聊天记录的情况下接手项目的后续维护者。
+
+文档不得假设读者知道作者之间的对话、某一轮回答、未保存的实验、作者个人偏好或“大家都明白”的上下文。任何影响对象身份、状态、边界、理由或验收的前提都必须在权威文档或可解析引用中出现。
+
+[#artifact-boundaries]
+== 文档边界
+
+[cols="2,3,3", options="header"]
+|===
+|文件 |唯一职责 |不得承担的职责
+
+|`index.adoc`
+|文档地图、阅读顺序、权威关系、版本和健康状态。
+|不定义新的系统行为或工作包。
+
+|`design-specification.adoc`
+|系统对象、设计决定、状态、工具、错误、不变量和验证契约。
+|不跟踪任务进度，不记录作者写作过程。
+
+|`phase-1-delivery-plan.adoc`
+|WBS、依赖、阶段门、系统完成与优秀标准。
+|不重新定义工具或状态语义。
+
+|`documentation-quality-standard.adoc`
+|文档写作、结构、证据、审查和质量门禁。
+|不评价具体代码是否通过系统验收。
+
+|`evidence-register.adoc`
+|来源定位、观察结果、适用范围和支持关系。
+|不从证据直接创造未经设计文档接受的公共行为。
+
+|`diagrams/*.puml`
+|可维护图源。
+|不使用图中未在正文定义的对象或状态。
+
+|`images/*.svg`
+|由图源确定性生成、供 AsciiDoc 展示的制品。
+|不手工承载图源中不存在的额外语义。
+|===
+
+同一规则只能有一个权威定义。其他文件必须使用 `xref:`，不得复制后改写。摘要可以复述结论，但必须保持同一术语和边界，不得引入第二套参数、状态或验收条件。
+
+[#object-language]
+== 对象语言纪律
+
+[#sentence-classes]
+=== 句子类型
+
+每个规范句必须属于下列至少一种可识别类型：
+
+Object definition:: 定义对象是什么及其作用域。
+Authored surface:: 定义公共名称、语法、字段或书写形式。
+Interpretation prerequisite:: 给出缺少后会产生歧义的坐标、索引、时钟或范围前提。
+Invariant:: 定义任何实现都必须保持的关系。
+State transition:: 定义状态变化的触发、结果和不可发生路径。
+Ownership rule:: 定义对象由谁创建、控制和销毁。
+Failure rule:: 定义条件、稳定分类和 side effect。
+Rationale:: 给出事实前提、逻辑桥梁和设计后果。
+Verification rule:: 定义可证明某项要求成立的外部证据。
+Example:: 实例化已经独立定义的规则。
+
+一个句子同时定义对象和解释历史、同时给规则和示例、同时声明事实和表达作者偏好时必须拆分。示例不能承担唯一规则定义。
+
+[#prohibited-residue]
+=== 禁止的聊天残留
+
+规范正文不得出现依赖对话语境的表达，包括但不限于：
+
+```text
+我觉得
+你说得对
+上一轮
+这一次
+我们先
+以后再说
+大概
+可能可以
+比较好
+最小版本
+巴拉巴拉
+大家都知道
+```
+
+第一人称复数只允许指明明确定义的 actor，例如引用一个外部规范的原文；普通正文使用对象作主语。不得以“我们选择”代替事实前提和设计推导。
+
+历史信息只进入 compatibility/migration note、changelog 或 rejected alternative。timeless object definition 不使用“现在”“新增”“这次修改”“原来”“后来”等版本叙述。
+
+[#transformation-example]
+=== 从聊天命题到规范命题
+
+聊天材料可以表达探索，但正式文档必须投影为稳定结构：
+
+[cols="1a,1a", options="header"]
+|===
+|不合格表达 |合格表达
+
+|我倾向于让 `execution_status` 必须传 execution，因为可能同时跑很多任务。
+|`execution_status` 的 `execution` 参数为必填参数。一个 adapter 可以同时拥有多个 active execution，因此不存在可供缺省规则选择的唯一 current execution。
+
+|Pueue 应该不需要我们去 restart 吧，毕竟是共享的。
+|adapter 不拥有 daemon instance。`restart` 会改变其他 client 共同依赖的对象，因此不属于 execution control plane。
+
+|直接读本地日志感觉更自然也更快。
+|第一阶段从本地 task log 按 byte offset 增量读取。目标 adapter 与 daemon 共用 Pueue settings；该路径避免对累计日志反复进行 protocol 传输、压缩和规范化。
+|===
+
+合格表达必须能够回答“删除其中哪一句会丢失什么”。不能证明必要性的句子应删除或移入非规范说明。
+
+[#terminology-control]
+== 术语控制
+
+[#canonical-terms]
+=== Canonical terms
+
+文档使用 xref:design-specification.adoc#terminology[设计规格术语表]作为 canonical vocabulary。下列规则强制执行：
+
+* `execution` 指 adapter-local public coordinate；
+* `task` 指 Pueue daemon object；
+* `task ID` 只在 backend/internal 语境出现；
+* `daemon instance` 指由 profile/config/connection 确定的实例，不写“全机唯一 daemon”；
+* `combined transcript` 指规范化后的 Loommux 文本；`task log` 指 Pueue 原始文件；
+* `deadline` 或 `observation timeout` 指 MCP wait budget；不得简写为含义不明的“超时”；
+* `cancelled` 与 `killed` 分别表示未启动移除和已启动进程终止；
+* `terminal` 只修饰 execution 状态或完整输出，不表示 MCP 调用返回。
+
+代码标识使用反引号。首次出现的非通用缩写必须展开。中文与英文混合时不得为同一对象轮换使用多个翻译，例如 adapter 不交替写成“适配器”“控制器”“中间层”。正文可以解释中文含义，但 canonical identifier 保持稳定。
+
+[#normative-language]
+=== 规范词
+
+`必须`、`不得`、`仅`、`应`和`可以`按 xref:design-specification.adoc#document-authority[文档地位]解释。每个“必须”应具有 verification 或 acceptance path；每个“不得”应说明会破坏的对象、约束或高成本误读。
+
+不得使用“优雅”“简单”“自然”“合理”“更好”“精巧”“很重”“很轻”等评价词作为决定依据。需要表达这些判断时必须换成可观察属性，例如依赖数量、状态拥有者、protocol round trip、公共地址数量或锁的临界区。
+
+[#decision-writing]
+== 设计决定写法
+
+每个 `DEC-PUEUE-*` 必须包含：
+
+. `决定`：唯一公共规格；
+. `事实前提`：不依赖该决定本身的已验证事实；
+. `逻辑推导`：事实如何约束可成立方案；
+. `拒绝方案`：确实具有混淆风险的主要替代方案；
+. `后果`：采用决定后产生的实现、测试、兼容或范围结果。
+
+决定 ID 永久稳定。决定正文可以修订，但不得把旧 ID 重新用于另一主题。决定被替代时保留原 ID 并标记 superseded，新增替代决定 ID 和双向 xref；不得从索引中删除后让历史引用失效。
+
+拒绝方案只列可能被实现者重新选择、且会产生高成本错误的邻近方案。正文不罗列所有想象中的可能性。拒绝理由必须指向事实、所有权、不变量或验证缺口，不能只写“超出范围”或“不够好”。
+
+[#source-discipline]
+== 来源与证据纪律
+
+[#claim-classification]
+=== Claim classification
+
+每项重要主张必须分类：
+
+* `FACT`：由代码、协议、运行实验或现有公共 contract 证明；
+* `CONSTRAINT`：由一个或多个事实推出、限制设计空间的条件；
+* `DECISION`：在约束允许的方案中形成的公共规格；
+* `REJECTION`：被明确排除的替代方案；
+* `ASSUMPTION`：尚未证明但工作必须依赖的条件；
+* `OPEN`：会改变公共设计且仍未解决的问题。
+
+G0 之后，权威设计正文不得含 `OPEN` 或未明确标记的 `ASSUMPTION`。可运行环境前提应转化为 startup validation，而不是长期 assumption。
+
+[#citation-rules]
+=== Citation rules
+
+外部技术断言通过 `EVD-*` xref 引用 evidence register。evidence record 必须定位版本、repository、file/symbol 或可重复 command。`turn0search0`、搜索结果序号、聊天截图、无版本博客和作者记忆不是有效 citation。
+
+原始聊天只作为需求发现与设计历史来源。它可以支持“讨论要求区分系统完成与文档完成”，不能支持“Pueue protocol 没有 Wait request”。后者必须引用 Pueue source。
+
+运行实验必须记录：环境、版本、命令或程序、输入、观察结果、退出状态和日期。只记录“已验证”“跑通过”不构成可重复证据。
+
+[#traceability]
+== 追踪关系
+
+完整追踪链为：
+
+[source,text]
+----
+EVD source
+  -> FACT / CONSTRAINT
+  -> DEC-PUEUE decision or normative section
+  -> WP output
+  -> VER test scenario
+  -> SYS-DOD / SYS-EXC gate
+----
+
+每个 design decision 至少链接一个 evidence 或内部 constraint；每个 WBS work package 至少链接一个设计章节；每个 system gate 至少链接自动化 test、artifact inspection 或 documented command。不存在验证入口的规范要求不得进入 final 文档。
+
+追踪表只保存关系，不复制节点全文。关系方向和 ID 必须可由 repository search 检查。
+
+[#asciidoc-structure]
+== AsciiDoc 结构规范
+
+[#document-attributes]
+=== 文档属性
+
+reader-facing `.adoc` 使用一致的 document title、TOC、section numbering、source highlighter 和 xref style。每个文件可独立解析，不依赖从另一个 master document include 才能获得必要属性。
+
+所有跨文档引用目标使用显式 anchor：
+
+[source,asciidoc]
+----
+[#example-execution-namespace]
+== Adapter-local execution
+
+参见 xref:phase-1-delivery-plan.adoc#wp-execution-record[WP-04]。
+----
+
+不得依赖标题自动 ID 作为跨文档稳定地址。anchor 使用小写 kebab case；规范 ID 如 `dec-pueue-001` 保持与可见 ID 对应。
+
+[#block-selection]
+=== 区块选择
+
+* 表格用于状态映射、职责矩阵、WBS、门禁和 evidence register；
+* description list 用于术语、决定字段和 work package 字段；
+* source/literal block 用于 grammar、data shape、algorithm 和 command；
+* admonition 只用于不遵守会产生直接错误的限定，不用作装饰；
+* example block 只包裹完整实例，不承载唯一规则；
+* footnote 不保存核心规范或 evidence locator；
+* comment block 可以记录作者 TODO，但最终 G5 时必须为零。
+
+不使用嵌套 card、营销式摘要、FAQ 口吻或折叠块隐藏规范内容。
+
+[#cross-reference-quality]
+=== 交叉引用质量
+
+所有 `xref:` 必须在独立文件解析和站点/书籍组装两种语境下保持有效。链接文本表达目标对象，不使用“点这里”“上面”“下面”等相对位置词。
+
+文件移动必须在同一变更中更新所有 inbound xref。authority 变化必须更新 index 和受影响文件，确保不会留下两份相反的 current definition。
+
+[#diagram-quality]
+=== 图表质量
+
+PlantUML 图源是图表事实源，SVG 是生成物。每张图必须：
+
+* 具有正文 anchor、title、alt text 和解释段落；
+* 只使用正文已经定义的对象、状态和依赖；
+* 方向、owner 和 transition 与表格一致；
+* 使用仓库固定的 PlantUML 版本可重复生成；
+* 生成后无人工 SVG 修改；
+* 在窄屏和普通文档宽度下文字可读。
+
+图不能替代状态表、算法或依赖定义。正文即使不查看图也必须完整成立。
+
+[#review-method]
+== 写作与审查方法
+
+[#batch-writing]
+=== 批次写作
+
+长文按对象依赖分批撰写：先事实与术语，再对象和所有权，再状态与工具，再错误与验证，最后索引和引用。每一批完成后执行局部 anchor、术语、前后定义和未决引用检查；不得在全文完成后才第一次发现早期对象定义与后文不一致。
+
+每批写作只向后引用已经确定存在的目标，或同时创建明确 placeholder anchor。最终文档不得保留 placeholder body。
+
+[#paragraph-audit]
+=== 段落不可约检查
+
+每个段落审查以下问题：
+
+. 中心命题是什么？
+. 每个句子承担 definition、prerequisite、continuation、rationale、boundary 还是 evidence？
+. 删除该句会丢失什么明确语义？
+. 该句能否并入相邻句而不混合角色？
+. 示例或拒绝方案是否抢占了中心命题位置？
+. 是否出现仅用于显得解释充分的重复句？
+
+删除后不损失对象身份、规则、前提、边界、理由或证据的句子必须删除。精简不允许删除坐标系、作用域、时钟、owner 或失败条件。
+
+[#review-passes]
+=== 审查轮次
+
+最终审查至少包含：
+
+. Object audit：对象、owner、scope、state 和 address 是否明确；
+. Terminology audit：canonical term、状态名、tool 名和 error kind 是否一致；
+. Evidence audit：external claim 是否有有效 `EVD-*`；
+. Traceability audit：decision、WP、VER 和 gate 是否连通；
+. Contradiction audit：跨文档是否存在相反 current statement；
+. AsciiDoc audit：parse、warning、xref、anchor、table 和 source block；
+. Chat residue audit：第一人称、轮次语言、模糊评价和 placeholder citation；
+. Stale claim audit：现有 README、旧 design 和 source docstring 是否仍描述被替代规则；
+. Visual audit：SVG 与图源一致、无裁切或不可读文本；
+. Diff audit：生成物、换行、尾随空格和无关 metadata churn。
+
+审查结果必须由 command output 或 checklist artifact 记录，不只在最终回复中声明。
+
+Contradiction 与 stale claim 审查必须先比较主张的时间坐标。描述当前实现的 implemented-baseline 文档与描述第一阶段目标的 target specification 可以在迁移期间并存，但双方职责必须可判定，迁移输入必须登记，发布门必须要求旧入口完成迁移。只有在同一时间坐标和权威范围内仍宣称相反规则，或用当前实现文档冒充第一阶段 target，才构成 stale conflicting claim。
+
+[#documentation-done]
+== 文档完成标准
+
+下列条目必须全部为 true：
+
+[cols="2,6", options="header"]
+|===
+|ID |判定条件
+
+|DOC-DOD-001
+|`index`、设计规格、交付计划、文档质量标准、证据登记和三张图的源/生成物全部存在。
+
+|DOC-DOD-002
+|每个文档的唯一职责、权威范围和冲突处理规则明确。
+
+|DOC-DOD-003
+|设计规格不少于 15,000 `o200k_base` tokens，且内容审查无为满足篇幅添加的空段落。
+
+|DOC-DOD-004
+|所有显式 anchor 和规范 ID 唯一，零重复 ID。
+
+|DOC-DOD-005
+|所有 `xref:` 解析成功，零 missing target，零相对位置式链接文本。
+
+|DOC-DOD-006
+|AsciiDoc 全部文件零 error、零 warning 解析，表格、source block 和 description list 闭合。
+
+|DOC-DOD-007
+|每个 `DEC-PUEUE-*` 具有决定、事实/约束、推导、拒绝方案和后果。
+
+|DOC-DOD-008
+|每个 external behavior claim 具有有效 `EVD-*`，零占位 citation。
+
+|DOC-DOD-009
+|每个 WP 具有 Purpose、Inputs、Dependencies、Outputs、Tasks、Acceptance evidence 和 Not done when。
+
+|DOC-DOD-010
+|系统完成与优秀、文档完成与优秀四套判断彼此分离且最终公式要求同时通过。
+
+|DOC-DOD-011
+|设计 `VER-*`、WBS `WP-*`、系统 `SYS-*` 与证据 `EVD-*` 的关系可搜索。
+
+|DOC-DOD-012
+|raw material 中每个重要主张在 claim ledger 中被分类，零无意遗漏。
+
+|DOC-DOD-013
+|正文零聊天轮次依赖、零作者个人偏好替代设计理由。
+
+|DOC-DOD-014
+|canonical term、tool name、status 和 error kind 在所有文件中一致。
+
+|DOC-DOD-015
+|README 和旧文档中的相关主张已分类为 implemented baseline、phase-one target 或 stale；零同一时间坐标内的相反主张，必要 migration xref 已建立。
+
+|DOC-DOD-016
+|所有 PlantUML source 可由固定命令生成对应 SVG，generated diff 为空。
+
+|DOC-DOD-017
+|文档 token、字符和行数由可重复脚本记录，不手工估算。
+
+|DOC-DOD-018
+|零 TODO、TBD、FIXME、placeholder anchor、placeholder source locator 或未关闭 OPEN。
+
+|DOC-DOD-019
+|文件通过 trailing whitespace、line ending、UTF-8 和 `git diff --check` 审计。
+
+|DOC-DOD-020
+|index 提供推荐阅读顺序、authority map、文档规模和健康检查命令。
+|===
+
+任一 `DOC-DOD` 失败时，文档状态为未完成。
+
+[#documentation-excellence]
+== 文档优秀标准
+
+优秀标准只在全部完成标准通过后评估。下列条目也必须全部为 true：
+
+[cols="2,6", options="header"]
+|===
+|ID |判定条件
+
+|DOC-EXC-001
+|100% normative statement 可归类为 definition、surface、prerequisite、invariant、transition、ownership、failure、rationale 或 verification。
+
+|DOC-EXC-002
+|100% external technical assertion 具有版本化 source locator 或可重复 runtime experiment。
+
+|DOC-EXC-003
+|100% design decision 可以沿 evidence/constraint -> decision -> WP -> VER -> gate 路径追踪。
+
+|DOC-EXC-004
+|100% rejected alternative 指明被破坏的事实、owner、invariant 或验证条件，零纯偏好拒绝。
+
+|DOC-EXC-005
+|每个段落通过不可约检查；抽样删除任一句都会造成可说明的语义损失。
+
+|DOC-EXC-006
+|零规则由示例独占定义，零核心前提藏在 footnote、图或 admonition 中。
+
+|DOC-EXC-007
+|同一规范规则只有一个 authoritative definition；跨文件复述均为摘要并带 xref。
+
+|DOC-EXC-008
+|零模糊评价词承担设计理由，零“可能/大概/以后”等未关闭不确定性。
+
+|DOC-EXC-009
+|三张图与正文对象、方向、状态和依赖逐项一致，SVG 无裁切、重叠或不可读文字。
+
+|DOC-EXC-010
+|reviewer 从 `index.adoc` 最多经过三次 xref 可以到达任一 DEC、WP、VER、SYS 或 EVD 条目。
+
+|DOC-EXC-011
+|repository-wide claim audit 覆盖 README、old docs、tool descriptions 和 comments；零未处置 stale claim，所有仍有效的 implemented-baseline 差异都有 migration record 并映射到 release work package。
+
+|DOC-EXC-012
+|raw material 反向覆盖率为 100%，且 superseded/rejected 主张没有混入 current specification。
+
+|DOC-EXC-013
+|独立 reviewer 不读取聊天记录即可准确复述系统 identity、七工具闭环、双层 ID、wait/cancel、output 和 lifecycle boundary。
+
+|DOC-EXC-014
+|文档 health command 连续运行两次得到相同 parse、xref、ID、token 和 generated diagram 结论。
+
+|DOC-EXC-015
+|文档 diff 只包含有语义必要性的正文、图源、生成物和导航更新，零格式噪声或无关 metadata churn。
+|===
+
+最终文档验收公式为：
+
+[source,text]
+----
+DOCUMENTATION_ACCEPTED =
+    all(DOC-DOD-001 .. DOC-DOD-020)
+    AND all(DOC-EXC-001 .. DOC-EXC-015)
+----
+
+[#documentation-review]
+== 最终审查问题
+
+reviewer 必须对下列问题全部回答“是”：
+
+. 每个文档是否只定义自己拥有的对象？
+. 不读取聊天记录是否能够理解所有规范和理由？
+. 每个外部事实是否能定位到版本化来源或实验？
+. 任一设计决定是否能追踪到工作包和自动化验证？
+. “系统做完”“系统优秀”“文档写完”“文档优秀”是否完全分离？
+. 是否不存在两个 current authority 对同一规则给出不同答案？
+. 所有引用、图、表、ID 和生成命令是否可重复验证？
+. 是否不存在可以删除而不损失语义的解释性填充？
+
+任一回答为“否”“需要作者解释”“大致如此”或“以后补引用”，均表示文档没有达到最终质量门。

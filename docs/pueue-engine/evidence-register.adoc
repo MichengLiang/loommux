@@ -1,0 +1,541 @@
+= Loommux Pueue 执行引擎证据登记
+:doctype: book
+:toc: left
+:toclevels: 3
+:sectnums:
+:sectnumlevels: 4
+:icons: font
+:source-highlighter: rouge
+:xrefstyle: short
+:experimental:
+
+[abstract]
+本文登记 Loommux Pueue 执行引擎设计所依赖的本地代码、上游源码、版本配对、运行实验和原始材料。证据记录只证明事实和观察，不单独定义公共设计；公共规格由设计文档接受并解释。
+
+[#evidence-policy]
+== 证据政策
+
+[#evidence-authority]
+=== 证据与设计的关系
+
+证据回答“对象实际上具有何种行为”或“某次运行观察到了什么”。xref:design-specification.adoc#document-authority[设计规格]回答“Loommux 因此定义何种公共契约”。证据不能跳过设计推导直接成为工具 surface，设计也不能在没有证据的情况下声称外部 library 或 daemon 具有某种行为。
+
+每个 evidence record 使用稳定 `EVD-*` ID。记录至少包含：
+
+Source:: repository、version/tag/commit、file/symbol 或本地路径。
+Observation:: 可从 source 或 experiment 得到的事实。
+Scope:: 事实成立的版本、环境和边界。
+Supports:: 使用该事实的设计决定、规范章节或交付要求。
+Does not prove:: 防止证据被扩张解释的限定。
+Verification:: 复现 source lookup 或 runtime observation 的方法。
+
+[#source-priority]
+=== 来源优先级
+
+发生冲突时按以下顺序处理：
+
+. 当前目标版本的 upstream source 和 protocol types；
+. 当前 Loommux 代码、测试和已生效公共 contract；
+. 在固定版本环境中可重复的真实运行实验；
+. upstream 官方版本化文档；
+. 当前 crates.io package metadata；
+. 原始聊天和调研笔记。
+
+较低优先级来源不能覆盖较高优先级事实。source 与 runtime observation 冲突时，必须先确认实际运行 binary、library 和配置版本；不能选择更符合预期的一方。
+
+[#evidence-status]
+=== 记录状态
+
+`verified`:: 已定位 source 或完成可重复实验，可支持 current design。
+`bounded`:: 事实已验证，但仅适用于明确版本或 local-daemon 边界。
+`superseded`:: 记录曾出现在讨论中，但被更高优先级证据或后续决定替代。
+`historical`:: 只用于解释需求来源，不支持外部技术事实。
+
+G0 后，不允许 `unverified` evidence 支持 normative design。版本升级时，所有与目标版本绑定的记录必须重新验证并更新日期。
+
+[#snapshot]
+== 证据快照
+
+本文当前快照日期为 `2026-07-25`，工作区为 `/home/t103o/workbench`，Loommux repository 为 `/home/t103o/workbench/projects/loommux`。
+
+[cols="2,2,3", options="header"]
+|===
+|对象 |快照 |说明
+
+|Loommux repository
+|`main`，相对 origin ahead 2
+|文档写作开始时 worktree 无未提交修改；文档写入后状态另行审计。
+
+|Installed Pueue
+|`pueue 4.0.1`、`pueued 4.0.1`
+|由 binary `--version` 观察。
+
+|Pueue target source
+|tag `v4.0.1`，commit `4e948cac904837819cf30acad60b8bcb6c50c800`
+|通过 upstream tag ref 获取。
+
+|Pueue reference checkout
+|commit `b3fe223ef0a3c51d95d5c6128700b79442c54af7`
+|上游 `4.0.4` / `pueue-lib 0.31.1`，只用于比较，不定义第一阶段 target。
+
+|rmcp
+|`3.0.0-beta.2`
+|crates.io 当前 beta，Rust version 1.88，具备 server/macros/stdio transport features。
+
+|OpenAI tokenizer
+|`o200k_base`
+|用于记录文档和原始材料规模，不作为内容质量证据。
+|===
+
+[#evidence-raw]
+== 原始材料
+
+[#evidence-raw-pueue]
+=== EVD-RAW-001：Pueue 设计讨论原始资料
+
+Status:: historical
+
+Source::
+`docs/tmp/raw-关于pueue.md`，115,953 bytes，93,625 characters，2,245 lines。
+
+Observation::
+使用 `tiktoken.get_encoding("o200k_base")` 对 UTF-8 文本编码得到 20,247 tokens。材料记录了从泛化 broker/权限方案收敛到 adapter-local execution、共享 Pueue daemon、typed Rust client、七工具闭环、combined log 和 stdio process boundary 的讨论过程。
+
+Scope::
+该文件是需求发现和设计历史输入。其内部包含被后续内容替代的方案、聊天语气、工具输出、占位 citation 和未验证断言。
+
+Supports::
+xref:documentation-quality-standard.adoc#prohibited-residue[聊天残留规则]、设计主题覆盖审计、系统完成/文档完成必须分离的作者要求。
+
+Does not prove::
+Pueue、rmcp、MCP 或 Loommux runtime 的任何外部技术行为。文件中的 `turn0search*` 不是有效 citation。
+
+Verification::
+
+[source,python]
+----
+from pathlib import Path
+import tiktoken
+
+text = Path("docs/tmp/raw-关于pueue.md").read_text(encoding="utf-8")
+assert len(tiktoken.get_encoding("o200k_base").encode(text)) == 20247
+----
+
+[#evidence-raw-terminal]
+=== EVD-RAW-002：纯终端 sibling 调研
+
+Status:: historical
+
+Source::
+`docs/tmp/raw-关于纯终端.md`。
+
+Observation::
+材料比较了自行管理 child process 的纯终端 MCP 与 Pueue backend，提出稳定 execution、保留日志、有界 wait、进程控制和 combined ordering 等控制面问题。
+
+Scope::
+该材料描述的是 Pueue 方案形成前的 sibling process-manager 路线。其 process group、fixed shell 和 server-owned child cleanup 结论不自动适用于 Pueue-owned task。
+
+Supports::
+说明为何公共 control model 可以跨 engine 保持，而 backend ownership 必须重新推导。
+
+Does not prove::
+Pueue engine 应自行 fork shell、拥有 process group 或在 adapter close 时清理 task。
+
+[#evidence-loommux]
+== Loommux 本地事实
+
+[#evidence-loommux-control-plane]
+=== EVD-LOOMMUX-001：现有 execution control plane
+
+Status:: verified
+
+Source::
+`src/loommux/adapter.py`、`src/loommux/execution.py`、`src/loommux/kernel_session.py`、`src/loommux/mcp_server_factory.py` 和 `docs/coding-agent-control-plane-design.md`。
+
+Observation::
+现有 engine 由 adapter 分配从 1 开始的 public execution，并通过 `status`、`execution_status`、`read_output`、`search_output`、`wait`、`interrupt` 和 `restart` 围绕 backend execution 工作。execution record 与 kernel-local execution count 是不同对象。
+
+Scope::
+public execution coordinate、记录、观察与控制的结构可以作为跨 engine control model；current execution、interrupt 和 restart 依赖单 kernel 事实。
+
+Supports::
+xref:design-specification.adoc#loommux-control-model[Loommux 控制模型]、xref:design-specification.adoc#dec-pueue-008[DEC-PUEUE-008]。
+
+Does not prove::
+Pueue engine 必须复制 IPython 的 current selection、多 stream、image、interrupt 或 restart。
+
+Verification::
+读取上述 source，并运行现有 Python black-box tests 验证 execution sequence、wait、output 和 lifecycle。
+
+[#evidence-loommux-line-log]
+=== EVD-LOOMMUX-002：LineLog contract
+
+Status:: verified
+
+Source::
+`src/loommux/output_log.py` 中 `LineLog`、`ResolvedLineRange`、`_resolve_line_range`、`_compile_matcher`。
+
+Observation::
+现有 contract 使用 1-indexed inclusive `start:stop`、omitted endpoints、negative tail-relative endpoints、per-line `max_chars`、literal/regex/auto search 和 context line markers。
+
+Scope::
+这些是 Loommux 文本观察 surface。Pueue engine 可以重现 contract，但 backend output source 只有 combined log。
+
+Supports::
+xref:design-specification.adoc#line-log[Line coordinates]和 xref:design-specification.adoc#search-model[Search]。
+
+Does not prove::
+Python 实现的数据结构或性能适合直接移植到 Rust。
+
+[#evidence-loommux-terminal]
+=== EVD-LOOMMUX-003：Terminal text contract
+
+Status:: verified
+
+Source::
+`src/loommux/terminal_text.py`、`tests/test_terminal_text.py` 和 `docs/coding-agent-control-plane-design.md` 的 Terminal Text 公共契约。
+
+Observation::
+Loommux 公开文本是 append-only transcript，不是 terminal screen；环境变量减少颜色生成，normalizer 保证 escape sequence 不进入公共输出；跨 chunk state 是正确性要求。
+
+Scope::
+Pueue engine 应共享文本 contract 和测试向量，但输入 chunk 来源从 IOPub event 改为 task log append。
+
+Supports::
+xref:design-specification.adoc#terminal-normalization[Terminal text normalization]和 WP-07。
+
+Does not prove::
+Pueue log 的 stdout/stderr 能恢复为 IPython 多 stream。
+
+[#evidence-loommux-migration]
+=== EVD-LOOMMUX-004：Workspace contract 迁移基线
+
+Status:: verified
+
+Source::
+`README.md` 的 workspace resolver 章节、`docs/workspace-configuration.md`、`docs/coding-agent-control-plane-design.md`、`src/loommux/workspace_resolver.py`、`examples/workspace-resolvers/` 和相关 tests。
+
+Observation::
+当前 implemented baseline 将 `LOOMMUX_WORKSPACE_CONFIG` 解释为可信 Python resolver 文件，并要求其提供 `resolve_workspace(launch_cwd)`。第一阶段 target 将同一入口迁移为 versioned TOML contract；当前代码、README 和旧设计文档尚未实现或宣称已实现该迁移。
+
+Scope::
+Python resolver 表述在 WP-02 完成前仍是当前实现事实，不得作为 Pueue engine target。WP-02 负责跨 engine 行为迁移，WP-11 负责 README、示例和旧设计说明的发布级清理；发布后同一环境变量不得保留两种文件语言。
+
+Supports::
+xref:design-specification.adoc#workspace-contract[Workspace contract]、xref:phase-1-delivery-plan.adoc#wp-workspace[WP-02]、xref:phase-1-delivery-plan.adoc#wp-release[WP-11]、xref:documentation-quality-standard.adoc#review-passes[Stale claim audit]。
+
+Does not prove::
+TOML target 已经实现，或当前 Python resolver 可以在发布门后继续作为未限定的主入口。
+
+[#evidence-pueue]
+== Pueue `v4.0.1` 事实
+
+[#evidence-pueue-version]
+=== EVD-PUEUE-001：Pueue 与 pueue-lib 版本配对
+
+Status:: verified
+
+Source::
+https://github.com/Nukesor/pueue/tree/v4.0.1[Pueue tag v4.0.1]；tag commit `4e948cac904837819cf30acad60b8bcb6c50c800`；`pueue/Cargo.toml` 和 `pueue_lib/Cargo.toml`。
+
+Observation::
+tag 中 `pueue` package version 为 `4.0.1`，其 workspace 的 `pueue-lib` package version 为 `0.30.0`。本机 `pueue --version` 与 `pueued --version` 均返回 `4.0.1`。
+
+Scope::
+该配对定义第一阶段 target。上游 `4.0.4` / `pueue-lib 0.31.1` 不能替代 target source 解释运行中 daemon。
+
+Supports::
+xref:design-specification.adoc#typed-client[Typed client]、WP-01 和 WP-03。
+
+Does not prove::
+所有未来 Pueue patch 都与 `pueue-lib 0.30.0` 兼容，也不证明宽松 `0.30` requirement 足够安全。
+
+Verification::
+
+[source,sh]
+----
+pueue --version
+pueued --version
+git show v4.0.1:pueue/Cargo.toml
+git show v4.0.1:pueue_lib/Cargo.toml
+----
+
+[#evidence-pueue-task-model]
+=== EVD-PUEUE-002：TaskStatus 与 TaskResult
+
+Status:: verified
+
+Source::
+https://github.com/Nukesor/pueue/blob/v4.0.1/pueue_lib/src/task.rs[`pueue_lib/src/task.rs`] 中 `TaskStatus`、`TaskResult` 和 `Task`；https://github.com/Nukesor/pueue/blob/v4.0.1/pueue/src/daemon/network/message_handler/edit.rs[`edit.rs`] 中 edit lock 与 restore 逻辑。
+
+Observation::
+`TaskStatus` variants 为 Locked、Stashed、Queued、Running、Paused、Done。Done 携带 Success、Failed(i32)、FailedToSpawn(String)、Killed、Errored 或 DependencyFailed。Task 同时保存 ID、command、path、envs、group、dependencies、priority、label 和 status。`EditRequest` 只接受 queued 或 stashed task，将其状态临时改为 `Locked { previous_status }`；编辑完成或恢复请求随后还原 `previous_status`。
+
+Scope::
+状态与结果枚举适用于 `pueue-lib 0.30.0`。Loommux public status 名称是设计投影，不等同于直接序列化 enum。
+
+Supports::
+xref:design-specification.adoc#pueue-facts[Pueue 执行事实]、xref:design-specification.adoc#state-projection[状态投影]、`VER-006` 至 `VER-008`。
+
+Does not prove::
+Loommux 必须向 agent 暴露完整 Pueue Task，包括 environment 和 task ID。
+
+Verification::
+`git show v4.0.1:pueue_lib/src/task.rs`。
+
+[#evidence-pueue-wait]
+=== EVD-PUEUE-003：Pueue wait 是 client-side state polling
+
+Status:: verified
+
+Source::
+https://github.com/Nukesor/pueue/blob/v4.0.1/pueue/src/client/commands/wait.rs[`pueue/src/client/commands/wait.rs`] 中 `wait` 和 `reached_target_status`；`pueue_lib/src/message/request.rs` 中 `Request` enum。
+
+Observation::
+`Request` 没有 Wait variant。CLI `wait` 重复调用 `get_state(client)`，比较 task status，并在普通环境休眠 2,000 ms；测试环境使用 250 ms。默认 target 是 Done，Success target 对失败 task 退出 1。
+
+Scope::
+两秒是目标 CLI 实现的 polling interval，不是 daemon protocol promise。Loommux 增加自己的 monotonic deadline 和 response semantics。
+
+Supports::
+xref:design-specification.adoc#wait-tool[`wait`]、DEC-PUEUE-008、WP-06。
+
+Does not prove::
+一次 Pueue wait 返回表示 shell success；Done 仍需检查 TaskResult。
+
+Verification::
+`git show v4.0.1:pueue/src/client/commands/wait.rs` 并检索 `get_state`、`sleep_time`。
+
+[#evidence-pueue-log-model]
+=== EVD-PUEUE-004：Pueue combined task log
+
+Status:: bounded
+
+Source::
+https://github.com/Nukesor/pueue/blob/v4.0.1/pueue_lib/src/log.rs[`pueue_lib/src/log.rs`] 中 `get_log_path`、`create_log_file_handles`、`get_log_file_handle` 和 log read helpers；daemon 创建 log directory 的 source。
+
+Observation::
+task log path 为 configured Pueue directory 下 `task_logs/<task_id>.log`。`create_log_file_handles` 创建一个 stdout file handle，并通过 `try_clone` 为 stderr 获取指向同一文件的第二 handle。library 同时提供本地 file handle、last-lines 和 compress-for-protocol helpers。
+
+Scope::
+直接 file access 仅适用于 adapter 与 daemon 共享本地 Pueue data directory 的第一阶段。文件中并不保存可恢复的独立 stdout/stderr channel metadata。
+
+Supports::
+xref:design-specification.adoc#combined-transcript[Combined transcript]、xref:design-specification.adoc#dec-pueue-007[DEC-PUEUE-007]、WP-07。
+
+Does not prove::
+跨不同 OS/filesystem 的并发 write order 等于应用进程产生事件的绝对时间；Loommux 只承诺 backend log byte order。
+
+Verification::
+`git show v4.0.1:pueue_lib/src/log.rs`，并在 isolated daemon 中比较 task output 与 log file bytes。
+
+[#evidence-pueue-protocol]
+=== EVD-PUEUE-005：Typed Request、Response 与 async Client
+
+Status:: verified
+
+Source::
+`pueue_lib/src/message/request.rs`、`pueue_lib/src/message/response.rs`、`pueue_lib/src/network/client.rs` 及 crate feature metadata。
+
+Observation::
+library 定义 Add、Remove、Kill、Status、Log、Stream 等 typed request，以及 AddedTask、Status、Log、Success、Failure 等 typed response。client 通过 mutable connection stream 发送 request 并接收 response。
+
+Scope::
+具体 module path 以 `v4.0.1` source 为准。Loommux gateway 的 mutex 和 response classification 是从 client exchange shape 推出的设计，不是 library 自动提供的高层 transaction。
+
+Supports::
+xref:design-specification.adoc#gateway-exchange[原子请求响应]、xref:design-specification.adoc#dec-pueue-005[DEC-PUEUE-005]、WP-03。
+
+Does not prove::
+side-effect request 可以安全重放，或任意 response variant 自动对应最近 request。
+
+[#evidence-pueue-add]
+=== EVD-PUEUE-006：AddRequest 与 AddedTaskResponse
+
+Status:: verified
+
+Source::
+`pueue_lib/src/message/request.rs` 中 `AddRequest`；`pueue_lib/src/message/response.rs` 中 `AddedTaskResponse`；Pueue CLI add command 的 request construction。
+
+Observation::
+AddRequest 字段为 command、path、envs、start_immediately、stashed、group、enqueue_at、dependencies、priority 和 label。successful response 提供 task_id、enqueue_at 和 group_is_paused。
+
+Scope::
+Loommux 对字段值的选择是设计决定；source 只证明 backend authored shape。
+
+Supports::
+xref:design-specification.adoc#add-request[AddRequest 规格]、xref:design-specification.adoc#submission-atomicity[接受与绑定原子性]、WP-04。
+
+Does not prove::
+Pueue 默认值自动等于 Loommux 设计值，或 task ID 应成为 public execution。
+
+[#evidence-pueue-cancel]
+=== EVD-PUEUE-007：Kill 与 Remove 的状态边界
+
+Status:: verified
+
+Source::
+`pueue_lib/src/message/request.rs` 中 `KillRequest`、`TaskSelection` 和 `Request::Remove`；`pueue/src/daemon/network/message_handler/kill.rs`；`pueue/src/daemon/process_handler/kill.rs`；remove handler。
+
+Observation::
+task-ID kill response helper 只接受 `Task::is_running`，即 Running 或 Paused task。Kill selection 可以是 TaskIds、Group 或 All；无 signal 的 task-ID kill 进入 daemon child kill logic。Remove 用于非 running/paused task，并从 state 删除 task。
+
+Scope::
+Loommux 使用 `TaskIds([task_id])`，不使用 group/all。queued/stashed remove 后的 public cancelled record 由 adapter 保留，是 Loommux 设计语义。虽然 Pueue remove handler 接受 locked task，Loommux 在公共 `cancel` 契约中对 locked 返回 `cancel_blocked`，以避免破坏其他 client 正在进行的三步编辑协议。
+
+Supports::
+xref:design-specification.adoc#cancel-tool[`cancel`]、xref:design-specification.adoc#dec-pueue-009[DEC-PUEUE-009]、WP-06。
+
+Does not prove::
+Kill success response 表示 task 已经进入 Done/Killed；仍需后续状态观察。
+
+[#evidence-pueue-settings]
+=== EVD-PUEUE-008：Daemon instance 由 settings 与 connection 确定
+
+Status:: bounded
+
+Source::
+`pueue_lib/src/settings.rs`、`pueue_lib/src/secret.rs`、network connection settings 和 Pueue service examples。
+
+Observation::
+Pueue client 从 settings/profile 解析 data directory、connection 与 shared secret。多个 profile 或配置可以指向不同 daemon instance；不能把 Pueue backend 描述为一台机器上无条件唯一的 daemon。
+
+Scope::
+第一阶段连接 server environment/config 选择的一个 local daemon instance，不提供 MCP tool 动态 profile selection。
+
+Supports::
+xref:design-specification.adoc#terminology[daemon instance 术语]、xref:design-specification.adoc#dec-pueue-002[DEC-PUEUE-002]、WP-03。
+
+Does not prove::
+adapter 拥有 daemon，或可以管理其他 profile 的 task。
+
+[#evidence-rmcp]
+== MCP Rust SDK
+
+[#evidence-rmcp-package]
+=== EVD-RMCP-001：rmcp package 与 stdio server capability
+
+Status:: bounded
+
+Source::
+https://crates.io/crates/rmcp/3.0.0-beta.2[`rmcp 3.0.0-beta.2` crates.io metadata]、https://docs.rs/rmcp/3.0.0-beta.2[docs.rs]、https://github.com/modelcontextprotocol/rust-sdk[official Rust SDK repository]。
+
+Observation::
+package version 为 `3.0.0-beta.2`，Rust version 为 1.88；default/server features 包含 macros、server、schema 与 async read/write transport；`transport-io` 提供 stdio support。
+
+Scope::
+beta API 可以变化，因此 Cargo 使用 exact version 和 lockfile。stdio process/session decision 来自 Loommux address ownership，不由 crate feature 本身决定。
+
+Supports::
+xref:design-specification.adoc#typed-client[版本矩阵]、xref:design-specification.adoc#stdio-transport[stdio transport]、WP-01 和 WP-08。
+
+Does not prove::
+未经 session contract 的 HTTP handler 能保持 adapter-local execution map，也不证明 beta upgrade 无需重新验证 schema。
+
+Verification::
+
+[source,sh]
+----
+cargo info rmcp@3.0.0-beta.2
+----
+
+[#evidence-asciidoc]
+== 文档工具事实
+
+[#evidence-asciidoc-reference]
+=== EVD-DOC-001：AsciiDoc 表达参考
+
+Status:: verified
+
+Source::
+`micheng-ts/projects/asciidoc-multi-book-workspace/docs/关于Asciidoc的语法速查.md`。
+
+Observation::
+参考覆盖 document attributes、TOC、section、description list、admonition、source block、table、anchor、cross reference、include 和 conditional constructs，并给出可解析示例。
+
+Scope::
+该文件是本地语法速查，不替代 Asciidoctor parser。最终健康检查仍需真实 parser 零 warning。
+
+Supports::
+xref:documentation-quality-standard.adoc#asciidoc-structure[AsciiDoc 结构规范]。
+
+Does not prove::
+当前工作区已经安装 `asciidoctor`。文档写作开始时 shell 中未找到该 executable。
+
+[#claim-ledger]
+== 原始主张处置账本
+
+[cols="3,2,5", options="header"]
+|===
+|原始主张 |处置 |正式结果
+
+|每个 MCP client 维护本地 execution 到 Pueue task ID 的映射。
+|adopted
+|xref:design-specification.adoc#dec-pueue-003[DEC-PUEUE-003]。
+
+|需要新的全局 broker、SQLite mapping、fair scheduler 和 capability handle。
+|rejected
+|Pueue 已拥有共享 task state；第一阶段 adapter scope 不要求持久全局地址。
+
+|Pueue adapter 应通过 CLI 操作 daemon。
+|superseded
+|typed `pueue-lib` 已验证，采用 xref:design-specification.adoc#dec-pueue-005[DEC-PUEUE-005]。
+
+|Pueue 原生 protocol 提供 wait request。
+|corrected
+|`Request` 无 Wait variant；CLI 使用 client-side Status polling，见 EVD-PUEUE-003。
+
+|公共指令前缀可称为 `# pueuemux:`。
+|superseded
+|项目级 authored surface 为 `# loommux:`，见 DEC-PUEUE-006。
+
+|任意物理行上的指令都可以被消费。
+|narrowed
+|只识别 leading control preamble，避免误消费 shell data。
+
+|Pueue daemon 是“全机唯一”的共享对象。
+|corrected
+|对象是由 profile/settings/connection 确定的 daemon instance，见 EVD-PUEUE-008。
+
+|Pueue engine 只能使用 stdio，因为 HTTP 天生 stateless。
+|narrowed
+|第一阶段选择 stdio；HTTP 需要另行定义 session identity/state owner，未声明结构上永远不可能。
+
+|Pueue output 可以使用 IPython 的 stdout/stderr/result/traceback streams。
+|rejected
+|backend 事实是 single combined log，公共对象为 combined transcript。
+
+|adapter shutdown 应同时 shutdown Pueue daemon。
+|rejected
+|adapter 不拥有 daemon instance；task 生命周期独立于 stdio process。
+
+|cancel 只需 kill running task。
+|extended
+|queued/stashed 使用 remove 并形成 cancelled；running/paused 使用 kill 并稍后形成 killed。
+
+|workspace 应成为跨 engine 声明式 contract。
+|adopted
+|第一阶段迁移 Python 与 Rust engine 到 versioned TOML schema。
+
+|`rmcp = 3.0.0-beta.1` 是当前版本。
+|updated
+|文档冻结时 crates.io current beta 为 `3.0.0-beta.2`，使用 exact requirement。
+
+|MCP protocol `2026-07-28` 已可作为 current source。
+|rejected
+|该日期晚于证据快照，不作为已发布事实；设计不依赖该断言。
+|===
+
+[#evidence-maintenance]
+== 维护规则
+
+版本、source file 或 public design 变化时：
+
+. 先更新或新增 evidence record；
+. 标明旧 evidence 的 bounded/superseded 状态，不复用 ID 表示另一事实；
+. 重新审查受支持的 `DEC-PUEUE`、规范章节、WP、VER 和 gate；
+. 运行对应 source lookup、runtime experiment 和 document health checks；
+. 在同一变更中更新 snapshot date 与版本矩阵；
+. 不删除仍被历史决定引用的 evidence，除非提供 replacement xref。
+
+evidence register 不保存 secret、完整 environment、用户私有配置正文或不可公开日志。需要证明敏感配置行为时，使用合成 fixture 和脱敏输出。

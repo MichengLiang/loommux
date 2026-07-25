@@ -1,0 +1,38 @@
+@startuml
+title Loommux Pueue Execution 生命周期
+skinparam shadowing false
+skinparam state {
+  BackgroundColor white
+}
+
+[*] --> Stashed : accepted; initial status Stashed
+[*] --> Queued : accepted; initial status Queued
+Stashed --> Queued : external enqueue or schedule
+Queued --> Running : daemon starts task
+Running --> Paused : external pause
+Paused --> Running : external resume
+Running --> Completed : Success
+Running --> Failed : Failed / FailedToSpawn / Errored / DependencyFailed
+Running --> Killed : task-specific kill reaches Done(Killed)
+Paused --> Killed : task-specific kill reaches Done(Killed)
+Queued --> Cancelled : adapter Remove succeeds
+Stashed --> Cancelled : adapter Remove succeeds
+
+Completed --> [*]
+Failed --> [*]
+Killed --> [*]
+Cancelled --> [*]
+
+note right of Stashed
+  Backend edit overlay:
+  Pueue changes Stashed or Queued
+  to Locked, then restores previous_status.
+  Loommux only observes it;
+  cancel returns cancel_blocked.
+end note
+
+note bottom of Cancelled
+  No process started.
+  Adapter preserves the execution record.
+end note
+@enduml

@@ -1,0 +1,34 @@
+@startuml
+title Loommux Pueue 第一阶段工作包依赖
+top to bottom direction
+skinparam shadowing false
+skinparam componentStyle rectangle
+
+rectangle "WP-00\nEvidence and specification freeze" as wp00
+rectangle "WP-01\nRust crate and quality gates" as wp01
+rectangle "WP-02\nWorkspace contract" as wp02
+rectangle "WP-03\nPueue gateway" as wp03
+rectangle "WP-04\nExecution model" as wp04
+rectangle "WP-05\nDirective preparation" as wp05
+rectangle "WP-06\nState, wait and cancel" as wp06
+rectangle "WP-07\nOutput projection" as wp07
+rectangle "WP-08\nMCP surface" as wp08
+rectangle "WP-09\nLifecycle hardening" as wp09
+rectangle "WP-10\nVerification system" as wp10
+rectangle "WP-11\nIntegration and release" as wp11
+
+wp00 --> wp01
+wp00 --> wp02
+wp01 --> wp03
+wp01 --> wp05
+wp02 --> wp04
+wp03 --> wp04
+wp04 --> wp06
+wp04 --> wp07
+wp05 --> wp08
+wp06 --> wp08
+wp07 --> wp08
+wp08 --> wp09
+wp09 --> wp10
+wp10 --> wp11
+@enduml
