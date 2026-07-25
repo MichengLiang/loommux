@@ -82,6 +82,7 @@ xref:documentation-quality-standard.adoc#artifact-boundaries[文件边界] -> xr
 == 核心结论
 
 * `loommux-pueue` 是 Loommux 项目下以 Pueue 为 backend 的 execution engine；
+* 第一阶段目标配对是 Pueue `4.0.4` 与 exact `pueue-lib 0.31.1`；
 * 一个 stdio process 拥有一个 adapter-local execution namespace；
 * 多个 adapter 可以连接同一个 Pueue daemon instance；
 * execution 是唯一公共地址，Pueue task ID 是 private backend identity；
@@ -103,24 +104,24 @@ xref:documentation-quality-standard.adoc#artifact-boundaries[文件边界] -> xr
 |文件 |行数 |字符数 |Tokens
 
 |`design-specification.adoc`
-|1827
-|53050
-|18738
+|2050
+|71168
+|24663
 
 |`phase-1-delivery-plan.adoc`
-|837
-|28495
-|9418
+|944
+|37740
+|12834
 
 |`documentation-quality-standard.adoc`
-|473
-|11700
-|5333
+|474
+|11762
+|5351
 
 |`evidence-register.adoc`
-|541
-|17677
-|6028
+|654
+|23926
+|8160
 |===
 
 最终审计会重新生成该表，禁止手工调整 token 数以满足门禁。
@@ -132,21 +133,21 @@ xref:documentation-quality-standard.adoc#artifact-boundaries[文件边界] -> xr
 
 [source,sh]
 ----
-# AsciiDoc parse/render
-asciidoctor -D tmp/pueue-engine-docs docs/pueue-engine/*.adoc
-
 # PlantUML deterministic generation
 plantuml -tsvg -o ../images docs/pueue-engine/diagrams/*.puml
 
+# Structured ID, xref, traceability, residue, scale and SVG drift audit
+uv run --project ../.. python scripts/audit_pueue_engine_docs.py
+
+# AsciiDoc parse/render with the workbench Node toolchain
+pnpm --package=@asciidoctor/cli@4.0.0 dlx asciidoctor \
+  --failure-level WARN -D tmp/pueue-engine-docs docs/pueue-engine/*.adoc
+
 # Whitespace and patch integrity
 git diff --check
-
-# Placeholder and chat-residue audit
-rg -n 'TODO|TBD|FIXME|turn0search|我觉得|上一轮|这一次|大概|也许' \
-  docs/pueue-engine
 ----
 
-ID uniqueness、xref resolution、token statistics 和 claim traceability 由结构化审计脚本执行。健康检查连续运行两次应产生相同结论和零 generated diagram diff。
+以上命令从 `projects/loommux/` 执行。结构化审计脚本负责 ID uniqueness、xref resolution、token statistics、两张显式 traceability table、placeholder/chat residue、未关闭 claim marker、旧目标版本残留和 PlantUML/SVG 字节一致性；它只豁免质量规则中的受控反例以及 EVD-PUEUE-010 的历史版本比较。健康检查连续运行两次应产生相同结论和零 generated diagram diff。
 
 [#acceptance-summary]
 == 最终验收

@@ -27,14 +27,14 @@
 [#phase-objective]
 === 交付目标
 
-第一阶段交付一个可由 MCP host 通过 stdio 启动的 `loommux-pueue` Rust binary。一个 binary process 服务一个 MCP client，维护一个 adapter-local execution namespace，并通过 `pueue-lib` 连接已经运行的 Pueue `v4.0.1` daemon。agent 可以提交 shell script，观察多个并发 execution，读取和搜索保留日志，执行有界等待，并定向取消未启动或已启动 task。
+第一阶段交付一个可由 MCP host 通过 stdio 启动的 `loommux-pueue` Rust binary。一个 binary process 服务一个 MCP client，维护一个 adapter-local execution namespace，并通过 `pueue-lib` 连接已经运行的 Pueue `v4.0.4` daemon。agent 可以提交 shell script，观察多个并发 execution，读取和搜索保留日志，执行有界等待，并对最近观察为 queued/stashed 或 running/paused 的 task 发起状态敏感的定向控制。
 
 交付包包括：
 
 * `engines/pueue/` Rust crate 与锁定依赖；
 * `run_shell`、`status`、`execution_status`、`read_output`、`search_output`、`wait` 和 `cancel` 七个 MCP tools；
 * 声明式 workspace config 及既有 Python engine 的一致性迁移；
-* 与 Pueue `v4.0.1` / `pueue-lib 0.30.0` 配对的 typed gateway；
+* 与 Pueue `v4.0.4` / `pueue-lib 0.31.1` 配对的 typed gateway；
 * execution 状态投影、combined transcript、控制指令和 result schema；
 * pure、component、isolated daemon 和 MCP black-box 四层自动化测试；
 * 安装、配置、使用、设计与验证文档；
@@ -63,9 +63,9 @@
 工作开始时必须确认：
 
 . `projects/loommux` 当前 Python test、lint 和 type-check 基线可重复；
-. Pueue `4.0.1` CLI 与 daemon 可在本机运行；
-. Pueue `v4.0.1` tag 和 `pueue-lib 0.30.0` source 可定位；
-. Rust stable toolchain、`cargo-nextest`、`cargo-llvm-cov`、Clippy 和 rustfmt 可用；
+. Pueue `4.0.4` CLI 与 daemon 可在本机运行；
+. Pueue `v4.0.4` tag 和 `pueue-lib 0.31.1` source 可定位；
+. 与 Pueue target 相容的 Rust stable toolchain（最低 `1.88`）、`cargo-nextest`、`cargo-llvm-cov`、Clippy 和 rustfmt 可用；
 . `rmcp 3.0.0-beta.2` 的 stdio server API 可通过最小 probe 编译；
 . 项目当前 workspace resolver、terminal normalizer、LineLog 和 result policy contract 已建立基线测试；
 . 本文档包通过 xref:documentation-quality-standard.adoc#documentation-done[文档完成标准]后，设计才可标记 frozen。
@@ -89,15 +89,15 @@
 
 |ART-03
 |声明式 Loommux workspace config schema 与两 engine 一致实现。
-|cross-engine workspace contract suite。
+|cross-engine canonical workspace contract suite 与 `VER-040`。
 
 |ART-04
 |Pueue typed gateway 与 isolated daemon harness。
-|Pueue `v4.0.1` integration suite。
+|Pueue `v4.0.4` integration suite。
 
 |ART-05
 |execution record、state projection 和七工具控制闭环。
-|design verification matrix `VER-001` 至 `VER-017`。
+|design verification matrix `VER-001` 至 `VER-017`、`VER-036` 至 `VER-039`。
 
 |ART-06
 |combined transcript、normalizer、LineLog、read 和 search。
@@ -109,7 +109,7 @@
 
 |ART-08
 |测试、coverage report、lint report 和 release verification log。
-|quality gate manifest。
+|完整 `VER-001` 至 `VER-041` traceability report 与 quality gate manifest。
 
 |ART-09
 |`docs/pueue-engine/` 权威文档包及 README/安装入口迁移。
@@ -193,7 +193,7 @@ image::images/phase-1-dependencies.svg[WP-00 至 WP-11 的有向依赖图, align
 
 |G1
 |工程与握手
-|正式 Rust crate locked build 成功；真实 isolated `pueued v4.0.1` handshake 和 `Status` exchange 通过。
+|正式 Rust crate locked build 成功；真实 isolated `pueued v4.0.4` handshake 和 `Status` exchange 通过。
 
 |G2
 |垂直执行路径
@@ -221,7 +221,7 @@ Purpose::
 将讨论材料中的事实、推导、决定、被替代方案和待验证断言转化为具有来源的规范，并建立实现不可绕过的公共词汇和 ID。
 
 Inputs::
-原始 Pueue 讨论材料、相邻纯终端调研、现有 Loommux 代码/测试/设计文档、Pueue `v4.0.1` source、目标 `rmcp` source 与本机 probe。
+原始 Pueue 讨论材料、相邻纯终端调研、现有 Loommux 代码/测试/设计文档、Pueue `v4.0.4` source、目标 `rmcp` source 与本机 probe。
 
 Dependencies::
 无。
@@ -232,7 +232,7 @@ xref:design-specification.adoc#document-authority[设计规格]、本文、xref:
 Tasks::
 
 * 为所有重要技术断言建立 `EVD-*` 记录并固定 source locator；
-* 明确 Pueue version pairing、task state、wait、log、kill/remove 和 connection 行为；
+* 明确 Pueue version pairing、task state、wait、log、kill/remove、working-directory canonicalization、process wrapper 和 connection 行为；
 * 将 CLI wrapper、任意 directive scan、task-ID public surface 和无 session HTTP 等方案记录为 rejected；
 * 冻结 `DEC-PUEUE-*`、`VER-*`、`WP-*`、`SYS-DOD-*`、`SYS-EXC-*` ID；
 * 审计设计正文中所有 normative term、状态名、工具名和 error kind；
@@ -267,7 +267,7 @@ Cargo manifest、lockfile、module skeleton、binary startup、test layout、lin
 Tasks::
 
 * 创建 package `loommux-pueue` 与 crate `loommux_pueue`；
-* exact pin `pueue-lib = "=0.30.0"` 和 `rmcp = "=3.0.0-beta.2"`；
+* exact pin `pueue-lib = "=0.31.1"` 和 `rmcp = "=3.0.0-beta.2"`；
 * 只启用运行时需要的 crate features，并用 `cargo deny` 检查来源与 license；
 * 建立 `main`、`server`、`adapter`、`execution`、`pueue_gateway`、`workspace`、`directive`、`terminal_text`、`output`、`result`、`error` 模块；
 * 配置 `cargo fmt --check`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo nextest run` 和 `cargo llvm-cov`；
@@ -307,19 +307,21 @@ Tasks::
 * 将现有 Python callback resolver 迁移到同一 TOML contract，删除一个环境变量两种文件语言的长期歧义；
 * 更新 examples，使 Codex marker 规则显式由 host 配置授权；
 * 保证 workspace 只在 startup 解析一次；
+* 对 resolver 最终候选目录执行 filesystem canonicalization，并将 canonical absolute path 传给 status 与每个 `AddRequest.path`；
+* 将 missing、not-directory 与 canonicalization I/O failure 分类为不同 startup error；
 * 在两个 engine 的 status 中使用 `launch_cwd` / `explicit_config` 相同 authored surface；
-* 建立路径、symlink、root、marker missing、file/directory mismatch 和 malformed TOML tests。
+* 建立路径、symlink、broken symlink、permission failure、root、marker missing、file/directory mismatch 和 malformed TOML tests。
 
 Acceptance evidence::
 
 * 同一 fixture/config 在 Python 与 Rust resolver 中返回相同 canonical path 和 resolution；
 * 配置错误在 tool ready 前失败且不 silent fallback；
-* Pueue integration test 证明 `AddRequest.path` 等于 resolved workspace；
+* Pueue integration test 证明 `AddRequest.path` 等于 canonical resolved workspace；
 * repository search 不再宣称 `LOOMMUX_WORKSPACE_CONFIG` 必然执行 Python file；
 * migration note 明确旧 resolver 的替换方式，但当前对象定义不含版本历史叙述。
 
 Not done when::
-两个 engine 对同一环境变量使用不同 grammar、Rust 自动扫描 `.git`/`.codex`、工具允许逐次 cwd override，或错误配置静默使用 launch cwd。
+两个 engine 对同一环境变量使用不同 grammar、Rust 自动扫描 `.git`/`.codex`、工具允许逐次 cwd override、symlink path 未规范化，或错误配置静默使用 launch cwd。
 
 [#wp-gateway]
 == WP-03：Pueue Gateway 与 isolated daemon harness
@@ -328,7 +330,7 @@ Purpose::
 建立唯一 typed protocol boundary，并证明目标 library 与真实 daemon 的连接、request/response 和 failure behavior。
 
 Inputs::
-xref:design-specification.adoc#pueue-gateway[Pueue Gateway 与协议边界]、Pueue `v4.0.1` source 与 crate pairing evidence。
+xref:design-specification.adoc#pueue-gateway[Pueue Gateway 与协议边界]、Pueue `v4.0.4` source 与 crate pairing evidence。
 
 Dependencies::
 WP-00、WP-01。
@@ -373,7 +375,7 @@ Dependencies::
 WP-00、WP-01、WP-02 的 Rust workspace API、WP-03 的 Add/Status operation。
 
 Outputs::
-`PueueMCPAdapter` core、`PueueExecution`、sequence/map/recent/active logic、submission atomicity、state/result projection 和 fake-gateway component suite。
+`PueueMCPAdapter` core、`PueueExecution`、sequence/map/recent/active logic、submission atomicity、task identity fingerprint、terminal freeze、state/result projection 和 fake-gateway component suite。
 
 Tasks::
 
@@ -382,6 +384,9 @@ Tasks::
 * 保持 task ID private；
 * 投影 Locked、Stashed、Queued、Running、Paused 与全部 Done result；
 * 区分 completed、failed、killed、cancelled 和 backend task missing；
+* 保存 canonical task identity fingerprint，排除 Pueue start 时注入的 runtime environment 字段；
+* 在每次 nonterminal observation 中先验证 fingerprint，再投影状态或追加日志；
+* 冻结已公开 terminal record，不因同一 task ID 被外部 in-place restart 而重新打开；
 * 保存 public lifecycle metadata，不保存 request archive、environment 或 secret；
 * 使用单次 Status snapshot 刷新多个 local execution；
 * 保证 recent 与 active collection 规则稳定；
@@ -389,14 +394,14 @@ Tasks::
 
 Acceptance evidence::
 
-* `VER-001` 至 `VER-008` 与 `VER-017` 通过；
+* `VER-001` 至 `VER-008`、`VER-017`、`VER-036` 至 `VER-039` 通过；
 * property test 对任意 accepted/rejected sequence 证明 public ID 单调且无重复；
 * state projection exhaustive match 在 Pueue enum 新增 variant 时造成 compile failure；
 * response snapshot 不含 task ID 和 private fields；
 * 两 adapter fixture 中 execution namespace 相互独立。
 
 Not done when::
-task ID 进入 public schema、rejected Add 消耗编号、使用 scalar current execution、unknown task 被猜测为 killed，或状态映射散落在多个 tool handler。
+task ID 进入 public schema、rejected Add 消耗编号、使用 scalar current execution、unknown task 被猜测为 killed、external restart 重新打开 terminal record，或状态映射散落在多个 tool handler。
 
 [#wp-directive]
 == WP-05：控制指令与提交准备
@@ -456,16 +461,17 @@ Tasks::
 * 实现 timeout validation、monotonic deadline、first observation 和两秒上限 polling interval；
 * 保证 sleep 期间释放 gateway mutex；
 * 为 locked/stashed/queued/running/paused 定义一致 nonterminal wait；
-* 对 queued/stashed 使用 task-specific Remove 并建立 local cancelled terminal record；
+* 观察外部 task-specific start 造成的 stashed-to-running 或 stashed-to-failed 转换；
+* 对最近观察为 queued/stashed 的 task 使用 task-specific Remove；明确 success 时建立 local cancelled 控制终态，并保持 `output_complete = false`；
 * 对 running/paused 使用 task-specific Kill，区分 request accepted 与 later killed；
-* 对 locked、terminal、backend missing 和 refresh/control race 返回规定结果；
+* 对 locked、terminal、backend missing、stashed force-start/remove race 和其他 refresh/control race 返回规定结果，不从 Remove success 推断未观察到的 backend result；
 * side-effect response loss 返回 outcome unknown，不自动重放；
 * cancel selection 始终为单个 task ID，禁止 group/all；
 * wait/cancel 后刷新输出，但输出失败不改写 lifecycle result。
 
 Acceptance evidence::
 
-* `VER-009` 至 `VER-017` 全部通过；
+* `VER-009` 至 `VER-017` 与 `VER-039` 全部通过；
 * deterministic clock unit tests 不依赖真实两秒 sleep；
 * isolated daemon tests 使用真实时间验证 polling 与 task continuation；
 * long wait 与 concurrent Add/Status/Read/Kill exchange 无 deadlock；
@@ -473,7 +479,7 @@ Acceptance evidence::
 * gateway operation log 证明没有 group/all control request。
 
 Not done when::
-wait deadline 会 kill task、wait 持锁 sleep、queued task 无法取消、kill success 被直接标记 killed、control request 自动重放，或 cancel 可能影响同 group 的其他 task。
+wait deadline 会 kill task、wait 持锁 sleep、queued task 无法发起删除控制、Remove success 被解释为“task 从未启动”、kill success 被直接标记 killed、control request 自动重放，或 cancel 可能影响同 group 的其他 task。
 
 [#wp-output]
 == WP-07：日志同步、文本规范化、读取与搜索
@@ -610,12 +616,14 @@ pure/component/integration/black-box suites、coverage config、test manifest、
 
 Tasks::
 
-* 为 `VER-001` 至 `VER-035` 建立唯一 automated test mapping；
+* 为 `VER-001` 至 `VER-041` 建立唯一 automated test mapping；
 * 建立 deterministic fake clock、script fixtures、daemon harness 和 MCP client harness；
 * exhaustive 测试 Pueue status/result projection 与 public error kind；
 * property/fuzz 测试 directive ranges、LineLog ranges、search context、normalizer chunk boundaries 和 ID monotonicity；
 * 并发测试 gateway exchange、wait sleep、multiple adapter namespace 和 cancel race；
 * fault injection 覆盖 send-before-disconnect、response loss、unexpected response、log truncate 和 task removal；
+* 使用独立 Pueue client 驱动 stashed force-start、pause 与 resume，并通过 Loommux cancel 驱动 task-specific kill；
+* 使用记录 descendant PID 的多层进程 fixture，验证 pause/resume 信号作用范围和 kill 后零存活 descendant；
 * 生成 line/function/region coverage；
 * 对标记 integration/black-box 的 tests 使用 nextest group 控制隔离资源，不通过全局串行掩盖不必要锁；
 * 测试失败保存最小可诊断日志，但不保存 secret 或完整 environment；
@@ -623,7 +631,7 @@ Tasks::
 
 Acceptance evidence::
 
-* `VER-001` 至 `VER-035` traceability coverage 为 100%；
+* `VER-001` 至 `VER-041` traceability coverage 为 100%；
 * public error kind test coverage 为 100%；
 * Done result 和 nonterminal TaskStatus variant coverage 为 100%；
 * crate line coverage 不低于 90%、function coverage 不低于 95%、region coverage 不低于 85%；
@@ -638,7 +646,7 @@ coverage 达标但 verification matrix 有 unmapped case、真实 daemon 行为�
 == WP-11：集成、文档迁移与发布验证
 
 Purpose::
-将 Rust engine、Python workspace migration、文档、安装入口和 quality gates组合成一个无冲突的可交付包。
+将 Rust engine、Python workspace migration、文档、安装入口和 quality gates 组合成一个无冲突的可交付包。
 
 Inputs::
 WP-00 至 WP-10 outputs、项目 README、pyproject/Cargo distribution strategy、现有 CI 和 release conventions。
@@ -647,12 +655,12 @@ Dependencies::
 WP-00 至 WP-10；只有所有上游 acceptance evidence 仍通过时可以完成。
 
 Outputs::
-README 与安装说明、engine selection说明、配置示例、release checklist、最终 verification log、变更记录和 scoped commit。
+README 与安装说明、engine selection 说明、配置示例、release checklist、最终 verification log、变更记录和 scoped commit。
 
 Tasks::
 
 * 在项目 README 中定义 IPython 与 Pueue engine 的不同执行世界和选择入口；
-* 记录 `pueued 4.0.1` 前置条件、binary 启动、result mode 和 workspace config；
+* 记录 `pueued 4.0.4` 前置条件、binary 启动、result mode 和 workspace config；
 * 提供短 task、长 task、read/search/wait/cancel 示例，但不把示例写成第二份规范；
 * 更新所有与 Python resolver、terminal output 和 control directive 相关的冲突文档；
 * 建立 Rust binary 的本地安装和 release packaging 路径；
@@ -674,6 +682,105 @@ Acceptance evidence::
 Not done when::
 只有开发者本地隐式状态可运行、文档示例与 tool schema 不符、旧文档保留相反规则、generated diagrams 过期、quality command 未执行，或提交混入无关项目变更。
 
+[#requirement-traceability]
+== 需求追踪矩阵
+
+本节只定义节点之间的验证关系，不复制各节点的规范内容。`VER-*` 的场景和预期结果以 xref:design-specification.adoc#verification-matrix[设计验证矩阵]为准；`WP-*` 是实现与证据的责任单元；`SYS-*` 是发布判定。每个 ID 均显式列出，使单个 ID 可以通过 repository search 定位其上游和下游关系。
+
+[#verification-ownership]
+=== Verification ownership
+
+[cols="1,2,3,4", options="header"]
+|===
+|Verification |Owner |Related gates |Primary authority
+
+|VER-001 |WP-04、WP-08 |SYS-DOD-003、SYS-DOD-004、SYS-DOD-006、SYS-DOD-012 |xref:design-specification.adoc#execution-record[Execution record]与 xref:design-specification.adoc#automatic-output-delivery[自动输出交付]
+|VER-002 |WP-04 |SYS-DOD-004、SYS-DOD-005 |xref:design-specification.adoc#submission-atomicity[接受与绑定原子性]
+|VER-003 |WP-04、WP-05 |SYS-DOD-004、SYS-DOD-013 |xref:design-specification.adoc#directive-validation[指令验证规则]
+|VER-004 |WP-03、WP-04 |SYS-DOD-005、SYS-DOD-015、SYS-EXC-006 |xref:design-specification.adoc#connection-failures[连接失败与重连]
+|VER-005 |WP-04、WP-08 |SYS-DOD-003、SYS-DOD-007 |xref:design-specification.adoc#active-selection[Active 与 recent]
+|VER-006 |WP-04 |SYS-DOD-006、SYS-EXC-001、SYS-EXC-003 |xref:design-specification.adoc#state-projection[状态投影]
+|VER-007 |WP-04、WP-08 |SYS-DOD-006、SYS-EXC-001 |xref:design-specification.adoc#state-projection[状态投影]
+|VER-008 |WP-04 |SYS-DOD-006、SYS-EXC-001、SYS-EXC-010 |xref:design-specification.adoc#state-projection[状态投影]
+|VER-009 |WP-06 |SYS-DOD-008 |xref:design-specification.adoc#wait-tool[`wait`]
+|VER-010 |WP-06 |SYS-DOD-008、SYS-EXC-001 |xref:design-specification.adoc#wait-tool[`wait`]
+|VER-011 |WP-03、WP-06 |SYS-DOD-015、SYS-EXC-004 |xref:design-specification.adoc#gateway-exchange[原子请求响应]
+|VER-012 |WP-06、WP-07 |SYS-DOD-009、SYS-DOD-010、SYS-EXC-001、SYS-EXC-010 |xref:design-specification.adoc#cancel-tool[`cancel`]与 xref:design-specification.adoc#output-collector[增量收集]
+|VER-013 |WP-06 |SYS-DOD-009、SYS-EXC-001、SYS-EXC-010 |xref:design-specification.adoc#cancel-tool[`cancel`]
+|VER-014 |WP-06 |SYS-DOD-009、SYS-EXC-001 |xref:design-specification.adoc#cancel-tool[`cancel`]
+|VER-015 |WP-06 |SYS-DOD-009、SYS-EXC-001 |xref:design-specification.adoc#cancel-tool[`cancel`]
+|VER-016 |WP-03、WP-06 |SYS-DOD-009、SYS-DOD-015、SYS-EXC-001、SYS-EXC-006 |xref:design-specification.adoc#cancel-tool[`cancel`]与 xref:design-specification.adoc#connection-failures[连接失败与重连]
+|VER-017 |WP-04、WP-09 |SYS-DOD-006、SYS-EXC-001、SYS-EXC-010 |xref:design-specification.adoc#mapped-task-mutation[Mapped task 外部变更]
+|VER-018 |WP-07 |SYS-DOD-010 |xref:design-specification.adoc#combined-transcript[Combined transcript]
+|VER-019 |WP-07 |SYS-DOD-010、SYS-EXC-008 |xref:design-specification.adoc#output-collector[增量收集]
+|VER-020 |WP-07 |SYS-DOD-011、SYS-EXC-007 |xref:design-specification.adoc#terminal-normalization[Terminal text normalization]
+|VER-021 |WP-07 |SYS-DOD-010、SYS-EXC-001 |xref:design-specification.adoc#output-collector[增量收集]
+|VER-022 |WP-07 |SYS-DOD-010 |xref:design-specification.adoc#line-log[Line coordinates]
+|VER-023 |WP-07 |SYS-DOD-010 |xref:design-specification.adoc#search-model[Search]
+|VER-024 |WP-07、WP-08 |SYS-DOD-012、SYS-EXC-008 |xref:design-specification.adoc#automatic-output-delivery[自动输出交付]
+|VER-025 |WP-05、WP-07、WP-08 |SYS-DOD-012、SYS-DOD-013 |xref:design-specification.adoc#automatic-output-delivery[自动输出交付]
+|VER-026 |WP-05 |SYS-DOD-013、SYS-EXC-002 |xref:design-specification.adoc#directive-consumption[指令消费与保留]
+|VER-027 |WP-05 |SYS-DOD-013、SYS-EXC-002 |xref:design-specification.adoc#directive-surface[Canonical directive surface]
+|VER-028 |WP-02 |SYS-DOD-014 |xref:design-specification.adoc#workspace-contract[Workspace contract]
+|VER-029 |WP-04、WP-05、WP-08 |SYS-DOD-005、SYS-DOD-013 |xref:design-specification.adoc#task-environment[Task environment]
+|VER-030 |WP-03、WP-09 |SYS-DOD-002、SYS-DOD-015、SYS-EXC-010 |xref:design-specification.adoc#stdio-transport[stdio transport]
+|VER-031 |WP-03、WP-09 |SYS-DOD-015、SYS-EXC-006、SYS-EXC-010 |xref:design-specification.adoc#connection-failures[连接失败与重连]
+|VER-032 |WP-09 |SYS-DOD-016、SYS-EXC-010、SYS-EXC-011 |xref:design-specification.adoc#ownership[对象所有权与生命周期]
+|VER-033 |WP-04、WP-09 |SYS-DOD-004、SYS-DOD-005、SYS-EXC-005 |xref:design-specification.adoc#execution-namespace[Adapter-local execution]
+|VER-034 |WP-08 |SYS-DOD-003 |xref:design-specification.adoc#result-channels[Content 与 structured content]
+|VER-035 |WP-08 |SYS-DOD-005 |xref:design-specification.adoc#sensitive-data[不公开数据]
+|VER-036 |WP-04 |SYS-DOD-005、SYS-DOD-006、SYS-EXC-001、SYS-EXC-014 |xref:design-specification.adoc#mapped-task-mutation[Mapped task 外部变更]
+|VER-037 |WP-04 |SYS-DOD-005 |xref:design-specification.adoc#task-identity[Daemon-global task ID]
+|VER-038 |WP-04 |SYS-DOD-006 |xref:design-specification.adoc#mapped-task-mutation[Mapped task 外部变更]
+|VER-039 |WP-04、WP-06 |SYS-DOD-006、SYS-DOD-009、SYS-EXC-001、SYS-EXC-010 |xref:design-specification.adoc#execution-lifecycle[Execution 生命周期]
+|VER-040 |WP-02 |SYS-DOD-014 |xref:design-specification.adoc#workspace-contract[Workspace contract]
+|VER-041 |WP-06、WP-10 |SYS-DOD-009、SYS-EXC-010、SYS-EXC-011 |xref:design-specification.adoc#derived-constraints[推导约束]
+|===
+
+[#system-gate-ownership]
+=== System gate ownership
+
+[cols="1,2,5", options="header"]
+|===
+|Gate |Owner |Required evidence
+
+|SYS-DOD-001 |WP-01 |locked build、binary artifact 与 startup smoke test。
+|SYS-DOD-002 |WP-03 |版本配对审计、真实 handshake 与 VER-030。
+|SYS-DOD-003 |WP-08 |tool discovery/schema snapshot、VER-001、VER-005 与 VER-034。
+|SYS-DOD-004 |WP-04 |VER-001、VER-002、VER-003 与 VER-033。
+|SYS-DOD-005 |WP-04、WP-08 |binding/property tests、VER-002、VER-035、VER-036 与 VER-037。
+|SYS-DOD-006 |WP-04 |VER-006、VER-007、VER-008、VER-017、VER-038 与 VER-039。
+|SYS-DOD-007 |WP-04、WP-08 |VER-005 与 specific-tool schema inspection。
+|SYS-DOD-008 |WP-06 |VER-009 与 VER-010。
+|SYS-DOD-009 |WP-06 |VER-012、VER-013、VER-014、VER-015、VER-016、VER-039 与 VER-041。
+|SYS-DOD-010 |WP-07 |VER-018、VER-019、VER-021、VER-022 与 VER-023。
+|SYS-DOD-011 |WP-07 |VER-020 与跨 chunk normalization contract suite。
+|SYS-DOD-012 |WP-07、WP-08 |VER-024 与 VER-025。
+|SYS-DOD-013 |WP-05 |VER-003、VER-026 与 VER-027。
+|SYS-DOD-014 |WP-02 |跨 engine fixtures、VER-028 与 VER-040。
+|SYS-DOD-015 |WP-03、WP-06 |VER-004、VER-011、VER-016 与 VER-031。
+|SYS-DOD-016 |WP-09 |VER-032 与 shutdown request audit。
+|SYS-DOD-017 |WP-10 |本节 41 个 verification mapping 的 automated-test traceability report。
+|SYS-DOD-018 |WP-10 |line、function、region coverage report 与 mapping gap audit。
+|SYS-DOD-019 |WP-01、WP-11 |versioned quality entrypoint 的全部 exit status 与 `git diff --check`。
+|SYS-DOD-020 |WP-00、WP-11 |文档结构审计、stale-claim scan 与 release review。
+|SYS-EXC-001 |WP-04、WP-06、WP-07、WP-10 |每个状态、result 和 error branch 的直接 test mapping。
+|SYS-EXC-002 |WP-05 |VER-026、VER-027 与 active-line matcher source audit。
+|SYS-EXC-003 |WP-04 |VER-006 与 exhaustive state projection compile boundary。
+|SYS-EXC-004 |WP-03、WP-06 |VER-011、mutex scope inspection 与 concurrency test。
+|SYS-EXC-005 |WP-04、WP-06、WP-10 |VER-033 与四 adapter 并发重复套件。
+|SYS-EXC-006 |WP-03、WP-06 |VER-004、VER-016 与 VER-031 的 response-loss fault injection。
+|SYS-EXC-007 |WP-07 |VER-020 与全部 byte split position contract suite。
+|SYS-EXC-008 |WP-07 |VER-019、VER-024 与 10 MiB mixed-output fixture。
+|SYS-EXC-009 |WP-10 |严格 coverage report、排除项清单与 gate exit status。
+|SYS-EXC-010 |WP-03、WP-04、WP-06、WP-09 |真实 daemon integration manifest，包含 VER-006、VER-007、VER-008、VER-012、VER-013、VER-017、VER-030、VER-031、VER-032、VER-036、VER-039 与 VER-041。
+|SYS-EXC-011 |WP-09、WP-10 |VER-032、VER-041 与 suite 后资源清单审计。
+|SYS-EXC-012 |WP-01、WP-11 |changed-code comment audit；每条保留注释均关联不可见约束。
+|SYS-EXC-013 |WP-11 |scoped diff、changed-path allowlist 与 release commit inspection。
+|SYS-EXC-014 |WP-00、WP-10、WP-11 |本节追踪矩阵、test manifest 与最终 traceability report。
+|SYS-EXC-015 |WP-11 |clean-checkout release verification 连续两次运行及 artifact hash comparison。
+|===
+
 [#system-done]
 == 系统完成标准
 
@@ -687,7 +794,7 @@ Not done when::
 |`engines/pueue/` 为正式 Rust crate，`cargo build --locked` 产生 `loommux-pueue` binary。
 
 |SYS-DOD-002
-|目标 `pueued 4.0.1` 与 exact `pueue-lib 0.30.0` 完成真实 handshake；不使用 CLI wrapper。
+|目标 `pueued 4.0.4` 与 exact `pueue-lib 0.31.1` 完成真实 handshake；不使用 CLI wrapper。
 
 |SYS-DOD-003
 |stdio MCP 精确暴露七个规范工具，参数 required/optional surface 与设计一致。
@@ -696,7 +803,7 @@ Not done when::
 |每个 adapter execution 从 1 开始，accepted-only advance，严格递增且不复用。
 
 |SYS-DOD-005
-|execution 发布时已经绑定 task；task ID、secret、environment 和其他 adapter task 不进入公共 schema。
+|execution 发布时已经绑定 task identity fingerprint；task ID、secret、environment 和其他 adapter task 不进入公共 schema。
 
 |SYS-DOD-006
 |Locked、Stashed、Queued、Running、Paused 和全部 Done result 的公共投影完整且唯一。
@@ -708,7 +815,7 @@ Not done when::
 |run_shell initial wait 与 wait deadline 只限制 observation，不改变 task。
 
 |SYS-DOD-009
-|queued/stashed cancel 进入 cancelled；running/paused cancel 请求 kill 并稍后观察 killed；其他状态行为明确。
+|最近观察为 queued/stashed 的 cancel 在 Remove success 后进入 cancelled 控制终态且 `output_complete = false`；running/paused cancel 请求 kill 并稍后观察 killed；stashed force-start 与 cancel 的竞态 backend result 不被猜测；其他状态行为明确。
 
 |SYS-DOD-010
 |combined transcript 增量读取、可重复 read/search、行坐标稳定且不消费历史。
@@ -723,7 +830,7 @@ Not done when::
 |control preamble 只在 leading 区域识别、验证后完全删除，无效输入零 side effect。
 
 |SYS-DOD-014
-|workspace TOML contract 在 Python 与 Rust engine 中一致，配置失败阻止 tool ready。
+|workspace TOML contract 在 Python 与 Rust engine 中产生相同 canonical absolute path，配置与 canonicalization failure 阻止 tool ready。
 
 |SYS-DOD-015
 |gateway exchange 原子，poll sleep 不持锁，side-effect unknown outcome 不自动重放。
@@ -732,7 +839,7 @@ Not done when::
 |adapter close 不 shutdown/reset/clean daemon，也不停止已提交 task。
 
 |SYS-DOD-017
-|设计 `VER-001` 至 `VER-035` 全部具有自动化测试并通过。
+|设计 `VER-001` 至 `VER-041` 全部具有自动化测试并通过。
 
 |SYS-DOD-018
 |line coverage >= 90%、function coverage >= 95%、region coverage >= 85%，且无 verification mapping 缺口。
@@ -783,7 +890,7 @@ Not done when::
 |crate line coverage >= 95%、function coverage = 100%、region coverage >= 90%；排除项只允许第三方 macro/generated code，并有书面清单。
 
 |SYS-EXC-010
-|真实 daemon integration 覆盖 success、所有 failure result、queued/running/paused control、external removal、disconnect 和 adapter close task persistence。
+|真实 daemon integration 覆盖 success、所有 failure result、stashed force-start、queued/running/paused control、external removal、disconnect、adapter close task persistence，以及多层 process tree pause/resume/kill 后无存活 descendant。
 
 |SYS-EXC-011
 |运行完整 test suite 后无残留 server、isolated daemon、socket、temporary profile、task log 或 child process。
@@ -798,7 +905,7 @@ Not done when::
 |reviewer 可以从每个 `DEC-PUEUE` 和 `SYS-DOD/EXC` 追踪到模块、测试和 evidence，不依赖聊天记录。
 
 |SYS-EXC-015
-|clean checkout release verification 连续执行两次产生相同 tool schema、测试结果、coverage gate结论和 generated diagram diff。
+|clean checkout release verification 连续执行两次产生相同 tool schema、测试结果、coverage gate 结论和 generated diagram diff。
 |===
 
 优秀标准不是 optional stretch goal。G5 要求 `SYS-DOD` 与 `SYS-EXC` 同时全部通过。
@@ -827,7 +934,7 @@ ENGINE_ACCEPTED =
 . 是否能证明每个 execution 只属于创建它的 adapter？
 . 是否能证明 task ID 和 daemon-global state 没有成为未设计的公共 surface？
 . 是否能在 wait 运行期间继续提交、读取和取消其他 execution？
-. 是否能取消尚未启动与已经启动的 task，并区分 cancelled 与 killed？
+. 是否能对 queued/stashed task 发起删除控制、对 running/paused task 发起进程终止，并区分 cancelled 控制终态与 killed backend result？
 . 是否能重复读取和搜索运行中及已终态的同一 transcript？
 . 是否能证明 adapter 退出不会终止 task 或关闭 daemon？
 . 是否能在 response loss 时避免重复 Add/Remove/Kill？

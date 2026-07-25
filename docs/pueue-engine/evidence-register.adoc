@@ -67,16 +67,16 @@ G0 后，不允许 `unverified` evidence 支持 normative design。版本升级�
 |文档写作开始时 worktree 无未提交修改；文档写入后状态另行审计。
 
 |Installed Pueue
-|`pueue 4.0.1`、`pueued 4.0.1`
+|`pueue 4.0.4`、`pueued 4.0.4`
 |由 binary `--version` 观察。
 
 |Pueue target source
-|tag `v4.0.1`，commit `4e948cac904837819cf30acad60b8bcb6c50c800`
-|通过 upstream tag ref 获取。
+|annotated tag object `6ec3f189fae72be4cf137aaccbc3e4bb29d34fa0`；source commit `0d10739a6431bd853195dc7730056fce79faeee1`
+|通过 upstream `v4.0.4` tag ref 及其 dereferenced commit 获取。
 
 |Pueue reference checkout
 |commit `b3fe223ef0a3c51d95d5c6128700b79442c54af7`
-|上游 `4.0.4` / `pueue-lib 0.31.1`，只用于比较，不定义第一阶段 target。
+|`v4.0.4` 之后的 upstream `main` 比较材料；不作为 release source 或第一阶段 target。
 
 |rmcp
 |`3.0.0-beta.2`
@@ -228,7 +228,7 @@ Does not prove::
 TOML target 已经实现，或当前 Python resolver 可以在发布门后继续作为未限定的主入口。
 
 [#evidence-pueue]
-== Pueue `v4.0.1` 事实
+== Pueue `v4.0.4` 事实
 
 [#evidence-pueue-version]
 === EVD-PUEUE-001：Pueue 与 pueue-lib 版本配对
@@ -236,19 +236,19 @@ TOML target 已经实现，或当前 Python resolver 可以在发布门后继续
 Status:: verified
 
 Source::
-https://github.com/Nukesor/pueue/tree/v4.0.1[Pueue tag v4.0.1]；tag commit `4e948cac904837819cf30acad60b8bcb6c50c800`；`pueue/Cargo.toml` 和 `pueue_lib/Cargo.toml`。
+https://github.com/Nukesor/pueue/tree/v4.0.4[Pueue tag v4.0.4]；annotated tag object `6ec3f189fae72be4cf137aaccbc3e4bb29d34fa0`；source commit `0d10739a6431bd853195dc7730056fce79faeee1`；`pueue/Cargo.toml` 和 `pueue_lib/Cargo.toml`。
 
 Observation::
-tag 中 `pueue` package version 为 `4.0.1`，其 workspace 的 `pueue-lib` package version 为 `0.30.0`。本机 `pueue --version` 与 `pueued --version` 均返回 `4.0.1`。
+tag 中 `pueue` package version 为 `4.0.4`，其 workspace 的 `pueue-lib` package version 为 `0.31.1`。本机 `pueue --version` 与 `pueued --version` 均返回 `4.0.4`。
 
 Scope::
-该配对定义第一阶段 target。上游 `4.0.4` / `pueue-lib 0.31.1` 不能替代 target source 解释运行中 daemon。
+该配对定义第一阶段 target。post-release `main` checkout 不能替代 release tag 解释目标 daemon；其他 Pueue/pueue-lib 配对也不属于本记录的兼容性结论。
 
 Supports::
 xref:design-specification.adoc#typed-client[Typed client]、WP-01 和 WP-03。
 
 Does not prove::
-所有未来 Pueue patch 都与 `pueue-lib 0.30.0` 兼容，也不证明宽松 `0.30` requirement 足够安全。
+所有未来 Pueue patch 都与 `pueue-lib 0.31.1` 兼容，也不证明宽松 `0.31` requirement 足够安全。
 
 Verification::
 
@@ -256,8 +256,8 @@ Verification::
 ----
 pueue --version
 pueued --version
-git show v4.0.1:pueue/Cargo.toml
-git show v4.0.1:pueue_lib/Cargo.toml
+git show v4.0.4:pueue/Cargo.toml
+git show v4.0.4:pueue_lib/Cargo.toml
 ----
 
 [#evidence-pueue-task-model]
@@ -266,22 +266,30 @@ git show v4.0.1:pueue_lib/Cargo.toml
 Status:: verified
 
 Source::
-https://github.com/Nukesor/pueue/blob/v4.0.1/pueue_lib/src/task.rs[`pueue_lib/src/task.rs`] 中 `TaskStatus`、`TaskResult` 和 `Task`；https://github.com/Nukesor/pueue/blob/v4.0.1/pueue/src/daemon/network/message_handler/edit.rs[`edit.rs`] 中 edit lock 与 restore 逻辑。
+https://github.com/Nukesor/pueue/blob/v4.0.4/pueue_lib/src/task.rs[`pueue_lib/src/task.rs`] 中 `TaskStatus`、`TaskResult` 和 `Task`；tag `v4.0.4` 的 `pueue/src/daemon/network/message_handler/edit.rs`、`stash.rs`、`enqueue.rs` 及 `pueue/src/daemon/task_handler.rs`。
 
 Observation::
-`TaskStatus` variants 为 Locked、Stashed、Queued、Running、Paused、Done。Done 携带 Success、Failed(i32)、FailedToSpawn(String)、Killed、Errored 或 DependencyFailed。Task 同时保存 ID、command、path、envs、group、dependencies、priority、label 和 status。`EditRequest` 只接受 queued 或 stashed task，将其状态临时改为 `Locked { previous_status }`；编辑完成或恢复请求随后还原 `previous_status`。
+`TaskStatus` variants 为 Locked、Stashed、Queued、Running、Paused、Done。Done 携带 Success、Failed(i32)、FailedToSpawn(String)、Killed、Errored 或 DependencyFailed。Task 同时保存 ID、command、path、envs、group、dependencies、priority、label 和 status。`EditRequest` 只接受 queued 或 stashed task，将其状态临时改为 `Locked { previous_status }`；编辑完成或恢复请求随后还原 `previous_status`。带 `enqueue_at` 的 stashed task 在时间到达后由 daemon 转为 queued。stash 和 enqueue handler 还接受 Locked task，并会直接覆盖 Locked 及其 `previous_status`。
 
 Scope::
-状态与结果枚举适用于 `pueue-lib 0.30.0`。Loommux public status 名称是设计投影，不等同于直接序列化 enum。
+状态与结果枚举适用于 `pueue-lib 0.31.1`。Loommux public status 名称是设计投影，不等同于直接序列化 enum。
 
 Supports::
 xref:design-specification.adoc#pueue-facts[Pueue 执行事实]、xref:design-specification.adoc#state-projection[状态投影]、`VER-006` 至 `VER-008`。
 
 Does not prove::
-Loommux 必须向 agent 暴露完整 Pueue Task，包括 environment 和 task ID。
+Loommux 必须向 agent 暴露完整 Pueue Task，包括 environment 和 task ID；也不证明多个 client 同时对 mapped Locked task 执行状态写入是受支持的协作行为。
 
 Verification::
-`git show v4.0.1:pueue_lib/src/task.rs`。
+
+[source,sh]
+----
+git show v4.0.4:pueue_lib/src/task.rs
+git show v4.0.4:pueue/src/daemon/network/message_handler/edit.rs
+git show v4.0.4:pueue/src/daemon/network/message_handler/stash.rs
+git show v4.0.4:pueue/src/daemon/network/message_handler/enqueue.rs
+git show v4.0.4:pueue/src/daemon/task_handler.rs
+----
 
 [#evidence-pueue-wait]
 === EVD-PUEUE-003：Pueue wait 是 client-side state polling
@@ -289,7 +297,7 @@ Verification::
 Status:: verified
 
 Source::
-https://github.com/Nukesor/pueue/blob/v4.0.1/pueue/src/client/commands/wait.rs[`pueue/src/client/commands/wait.rs`] 中 `wait` 和 `reached_target_status`；`pueue_lib/src/message/request.rs` 中 `Request` enum。
+https://github.com/Nukesor/pueue/blob/v4.0.4/pueue/src/client/commands/wait.rs[`pueue/src/client/commands/wait.rs`] 中 `wait` 和 `reached_target_status`；`pueue_lib/src/message/request.rs` 中 `Request` enum。
 
 Observation::
 `Request` 没有 Wait variant。CLI `wait` 重复调用 `get_state(client)`，比较 task status，并在普通环境休眠 2,000 ms；测试环境使用 250 ms。默认 target 是 Done，Success target 对失败 task 退出 1。
@@ -304,7 +312,7 @@ Does not prove::
 一次 Pueue wait 返回表示 shell success；Done 仍需检查 TaskResult。
 
 Verification::
-`git show v4.0.1:pueue/src/client/commands/wait.rs` 并检索 `get_state`、`sleep_time`。
+`git show v4.0.4:pueue/src/client/commands/wait.rs` 并检索 `get_state`、`sleep_time`。
 
 [#evidence-pueue-log-model]
 === EVD-PUEUE-004：Pueue combined task log
@@ -312,7 +320,7 @@ Verification::
 Status:: bounded
 
 Source::
-https://github.com/Nukesor/pueue/blob/v4.0.1/pueue_lib/src/log.rs[`pueue_lib/src/log.rs`] 中 `get_log_path`、`create_log_file_handles`、`get_log_file_handle` 和 log read helpers；daemon 创建 log directory 的 source。
+https://github.com/Nukesor/pueue/blob/v4.0.4/pueue_lib/src/log.rs[`pueue_lib/src/log.rs`] 中 `get_log_path`、`create_log_file_handles`、`get_log_file_handle` 和 log read helpers；daemon 创建 log directory 的 source。
 
 Observation::
 task log path 为 configured Pueue directory 下 `task_logs/<task_id>.log`。`create_log_file_handles` 创建一个 stdout file handle，并通过 `try_clone` 为 stderr 获取指向同一文件的第二 handle。library 同时提供本地 file handle、last-lines 和 compress-for-protocol helpers。
@@ -327,7 +335,7 @@ Does not prove::
 跨不同 OS/filesystem 的并发 write order 等于应用进程产生事件的绝对时间；Loommux 只承诺 backend log byte order。
 
 Verification::
-`git show v4.0.1:pueue_lib/src/log.rs`，并在 isolated daemon 中比较 task output 与 log file bytes。
+`git show v4.0.4:pueue_lib/src/log.rs`，并在 isolated daemon 中比较 task output 与 log file bytes。
 
 [#evidence-pueue-protocol]
 === EVD-PUEUE-005：Typed Request、Response 与 async Client
@@ -335,13 +343,13 @@ Verification::
 Status:: verified
 
 Source::
-`pueue_lib/src/message/request.rs`、`pueue_lib/src/message/response.rs`、`pueue_lib/src/network/client.rs` 及 crate feature metadata。
+Pueue tag `v4.0.4` 的 `pueue_lib/src/message/request.rs`、`pueue_lib/src/message/response.rs`、`pueue_lib/src/network/client.rs` 及 crate feature metadata。
 
 Observation::
 library 定义 Add、Remove、Kill、Status、Log、Stream 等 typed request，以及 AddedTask、Status、Log、Success、Failure 等 typed response。client 通过 mutable connection stream 发送 request 并接收 response。
 
 Scope::
-具体 module path 以 `v4.0.1` source 为准。Loommux gateway 的 mutex 和 response classification 是从 client exchange shape 推出的设计，不是 library 自动提供的高层 transaction。
+具体 module path 以 `v4.0.4` source 为准。Loommux gateway 的 mutex 和 response classification 是从 client exchange shape 推出的设计，不是 library 自动提供的高层 transaction。
 
 Supports::
 xref:design-specification.adoc#gateway-exchange[原子请求响应]、xref:design-specification.adoc#dec-pueue-005[DEC-PUEUE-005]、WP-03。
@@ -349,13 +357,23 @@ xref:design-specification.adoc#gateway-exchange[原子请求响应]、xref:desig
 Does not prove::
 side-effect request 可以安全重放，或任意 response variant 自动对应最近 request。
 
+Verification::
+
+[source,sh]
+----
+git show v4.0.4:pueue_lib/src/message/request.rs
+git show v4.0.4:pueue_lib/src/message/response.rs
+git show v4.0.4:pueue_lib/src/network/client.rs
+git show v4.0.4:pueue_lib/Cargo.toml
+----
+
 [#evidence-pueue-add]
 === EVD-PUEUE-006：AddRequest 与 AddedTaskResponse
 
 Status:: verified
 
 Source::
-`pueue_lib/src/message/request.rs` 中 `AddRequest`；`pueue_lib/src/message/response.rs` 中 `AddedTaskResponse`；Pueue CLI add command 的 request construction。
+Pueue tag `v4.0.4` 的 `pueue_lib/src/message/request.rs` 中 `AddRequest`、`pueue_lib/src/message/response.rs` 中 `AddedTaskResponse`，以及 `pueue/src/client/commands/add.rs` 中 CLI request construction。
 
 Observation::
 AddRequest 字段为 command、path、envs、start_immediately、stashed、group、enqueue_at、dependencies、priority 和 label。successful response 提供 task_id、enqueue_at 和 group_is_paused。
@@ -369,25 +387,44 @@ xref:design-specification.adoc#add-request[AddRequest 规格]、xref:design-spec
 Does not prove::
 Pueue 默认值自动等于 Loommux 设计值，或 task ID 应成为 public execution。
 
+Verification::
+
+[source,sh]
+----
+git show v4.0.4:pueue_lib/src/message/request.rs
+git show v4.0.4:pueue_lib/src/message/response.rs
+git show v4.0.4:pueue/src/client/commands/add.rs
+----
+
 [#evidence-pueue-cancel]
 === EVD-PUEUE-007：Kill 与 Remove 的状态边界
 
 Status:: verified
 
 Source::
-`pueue_lib/src/message/request.rs` 中 `KillRequest`、`TaskSelection` 和 `Request::Remove`；`pueue/src/daemon/network/message_handler/kill.rs`；`pueue/src/daemon/process_handler/kill.rs`；remove handler。
+Pueue tag `v4.0.4` 的 `pueue_lib/src/message/request.rs` 中 `KillRequest`、`TaskSelection` 和 `Request::Remove`，以及 `pueue/src/daemon/network/message_handler/kill.rs`、`pueue/src/daemon/process_handler/kill.rs` 和 `pueue/src/daemon/network/message_handler/remove.rs`。
 
 Observation::
-task-ID kill response helper 只接受 `Task::is_running`，即 Running 或 Paused task。Kill selection 可以是 TaskIds、Group 或 All；无 signal 的 task-ID kill 进入 daemon child kill logic。Remove 用于非 running/paused task，并从 state 删除 task。
+task-ID kill response helper 只接受 `Task::is_running`，即 Running 或 Paused task。Kill selection 可以是 TaskIds、Group 或 All；无 signal 的 task-ID kill 进入 daemon child kill logic。Remove 接受 queued、stashed、done 和 locked task，并在同一个 daemon state lock 内删除被选 task 及其 log。Status observation 与 Remove 是独立 exchange；task 可以在两者之间从 queued/stashed 快速进入 Done，随后 Remove 仍返回 success。因此 Remove success 证明删除成功，不证明删除前未形成 terminal result。
 
 Scope::
-Loommux 使用 `TaskIds([task_id])`，不使用 group/all。queued/stashed remove 后的 public cancelled record 由 adapter 保留，是 Loommux 设计语义。虽然 Pueue remove handler 接受 locked task，Loommux 在公共 `cancel` 契约中对 locked 返回 `cancel_blocked`，以避免破坏其他 client 正在进行的三步编辑协议。
+Loommux 使用 `TaskIds([task_id])`，不使用 group/all。最近一次观察为 queued/stashed 后的 Remove success 建立 public cancelled 控制终态；该终态不携带竞态期间可能形成但未观察到的 backend result，冻结 transcript 的 `output_complete` 保持 false。虽然 Pueue remove handler 接受 locked task，Loommux 在公共 `cancel` 契约中对 locked 返回 `cancel_blocked`，以避免破坏其他 client 正在进行的三步编辑协议。
 
 Supports::
-xref:design-specification.adoc#cancel-tool[`cancel`]、xref:design-specification.adoc#dec-pueue-009[DEC-PUEUE-009]、WP-06。
+xref:design-specification.adoc#cancel-tool[`cancel`]、xref:design-specification.adoc#dec-pueue-009[DEC-PUEUE-009]、WP-06、`VER-012`、`VER-016` 和 `VER-039`。
 
 Does not prove::
-Kill success response 表示 task 已经进入 Done/Killed；仍需后续状态观察。
+Kill success response 不证明 task 已经进入 Done/Killed；Remove success 不证明被删除 task 在 refresh/remove 竞态期间未形成 `Done` result。
+
+Verification::
+
+[source,sh]
+----
+git show v4.0.4:pueue_lib/src/message/request.rs
+git show v4.0.4:pueue/src/daemon/network/message_handler/kill.rs
+git show v4.0.4:pueue/src/daemon/process_handler/kill.rs
+git show v4.0.4:pueue/src/daemon/network/message_handler/remove.rs
+----
 
 [#evidence-pueue-settings]
 === EVD-PUEUE-008：Daemon instance 由 settings 与 connection 确定
@@ -395,7 +432,7 @@ Kill success response 表示 task 已经进入 Done/Killed；仍需后续状态�
 Status:: bounded
 
 Source::
-`pueue_lib/src/settings.rs`、`pueue_lib/src/secret.rs`、network connection settings 和 Pueue service examples。
+Pueue tag `v4.0.4` 的 `pueue_lib/src/settings.rs`、`pueue_lib/src/secret.rs`、network connection settings 和 Pueue service examples。
 
 Observation::
 Pueue client 从 settings/profile 解析 data directory、connection 与 shared secret。多个 profile 或配置可以指向不同 daemon instance；不能把 Pueue backend 描述为一台机器上无条件唯一的 daemon。
@@ -408,6 +445,82 @@ xref:design-specification.adoc#terminology[daemon instance 术语]、xref:design
 
 Does not prove::
 adapter 拥有 daemon，或可以管理其他 profile 的 task。
+
+Verification::
+
+[source,sh]
+----
+git show v4.0.4:pueue_lib/src/settings.rs
+git show v4.0.4:pueue_lib/src/secret.rs
+git show v4.0.4:pueue_lib/src/network/client.rs
+----
+
+[#evidence-pueue-generation]
+=== EVD-PUEUE-009：Task generation、直接失败转换与破坏性操作
+
+Status:: verified
+
+Source::
+Pueue tag `v4.0.4` 的 `pueue/src/daemon/process_handler/spawn.rs`、`pueue/src/daemon/process_handler/finish.rs`、`pueue/src/daemon/task_handler.rs`、`pueue/src/daemon/network/message_handler/restart.rs`、`pueue/src/daemon/network/message_handler/remove.rs` 和 `pueue_lib/src/log.rs`。
+
+Observation::
+spawn failure 将 queued task 或被 task-specific start 强制启动的 stashed task 直接写为 `Done(FailedToSpawn)`；failed dependency 检查将 queued task 直接写为 `Done(DependencyFailed)`。finished-process handler 同时接受 Running 与 Paused 作为 child 的有效前态，并形成 Success、Failed、Killed 或 Errored。successful spawn 将 `PUEUE_GROUP` 和 `PUEUE_WORKER_ID` 注入 environment，并把注入后的 map 保存回 task。in-place restart 只接受 done task，保留 task ID，将状态重置为 queued 或 stashed，并可替换 original command、path、label 和 priority。task 再次 spawn 时，`File::create` 重新创建同一 task ID 的 log path，因此已有 log 被截断。successful remove 从 task map 删除 task，并调用 `clean_log_handles` 删除同一 task ID 的 log file。
+
+Scope::
+这些行为适用于 Pueue `v4.0.4` / `pueue-lib 0.31.1`。Loommux 的 identity fingerprint、terminal freeze、`backend_task_modified` 和 cancelled transcript 是基于这些事实建立的 adapter contract，不是 Pueue 原生 generation API。
+
+Supports::
+xref:design-specification.adoc#mapped-task-mutation[Mapped task 的外部变更边界]、xref:design-specification.adoc#execution-lifecycle[生命周期]、xref:design-specification.adoc#output-collector[增量收集]、xref:design-specification.adoc#cancel-tool[`cancel`]、DEC-PUEUE-011、`VER-008`、`VER-012`、`VER-036` 至 `VER-039`。
+
+Does not prove::
+Pueue 提供可观察的 generation number，或 adapter 能检测在两次 observation 之间完整发生且 identity 字段不变的 in-place restart。
+
+Verification::
+
+[source,sh]
+----
+git show v4.0.4:pueue/src/daemon/process_handler/spawn.rs
+git show v4.0.4:pueue/src/daemon/process_handler/finish.rs
+git show v4.0.4:pueue/src/daemon/task_handler.rs
+git show v4.0.4:pueue/src/daemon/network/message_handler/restart.rs
+git show v4.0.4:pueue/src/daemon/network/message_handler/remove.rs
+git show v4.0.4:pueue_lib/src/log.rs
+----
+
+[#evidence-pueue-patch-delta]
+=== EVD-PUEUE-010：Pueue 4.0.1 至 4.0.4 patch delta
+
+Status:: verified
+
+Source::
+Pueue `v4.0.4` 的 `CHANGELOG.md`、root `Cargo.toml`、`pueue/Cargo.toml`、`pueue_lib/Cargo.toml`、`pueue/src/client/commands/add.rs`、`pueue/src/daemon/network/message_handler/start.rs`、`pueue/src/daemon/process_handler/spawn.rs` 和 platform process helpers；release compare `v4.0.1...v4.0.4`。
+
+Observation::
+`pueue add --working-directory` 在 client-side request construction 中 canonicalize 显式目录；typed `AddRequest` 和 daemon 不自动执行该步骤。task-specific `StartRequest` 接受 stashed task，spawn handler 为其建立当前 enqueue time，并将成功启动投影为 `Running`、将 spawn failure 投影为 `Done(FailedToSpawn)`。task process wrapper 从 `command-group` 迁移到 `process-wrap v9`：Unix 使用 process-group leader，Windows 使用 Job Object；这些对象提供 daemon 持有的受管 process control，不证明任意自行脱离 process group 或 Job Object 的 descendant 仍受控制。release workspace 的 Rust minimum version 为 `1.88`；package pairing 为 Pueue `4.0.4` 与 `pueue-lib 0.31.1`。`4.0.4` 没有为 x86_64 Linux 增加新的 task status variant 或 Loommux 所需的命令类别。
+
+Scope::
+本记录描述 `v4.0.1` 到 `v4.0.4` 的发行差异以及目标 `v4.0.4` source。CLI canonicalization 只约束 CLI 生成的 request；Loommux 直接构造 typed request，必须独立满足 canonical path contract。process wrapper 的 source shape 不能替代目标平台的真实 descendant-process 验证。
+
+Supports::
+xref:design-specification.adoc#typed-client[Typed client]、xref:design-specification.adoc#workspace-contract[Workspace contract]、xref:design-specification.adoc#execution-lifecycle[生命周期]、xref:phase-1-delivery-plan.adoc#wp-workspace[WP-02]、xref:phase-1-delivery-plan.adoc#wp-control[WP-06]、xref:phase-1-delivery-plan.adoc#wp-verification[WP-10]、`VER-039` 至 `VER-041`。
+
+Does not prove::
+任意 Pueue patch 可以与任意 pueue-lib minor version 配对；CLI path behavior 自动适用于 typed client；或仅凭 dependency migration 即可证明每个目标 OS 上不存在 orphan descendant。
+
+Verification::
+
+[source,sh]
+----
+git rev-parse v4.0.4 'v4.0.4^{}'
+git show v4.0.4:Cargo.toml
+git show v4.0.4:pueue/Cargo.toml
+git show v4.0.4:pueue_lib/Cargo.toml
+git diff v4.0.1..v4.0.4 -- CHANGELOG.md Cargo.toml \
+  pueue/src/client/commands/add.rs \
+  pueue/src/daemon/network/message_handler/start.rs \
+  pueue/src/daemon/process_handler/spawn.rs \
+  pueue/src/process_helper
+----
 
 [#evidence-rmcp]
 == MCP Rust SDK
@@ -511,7 +624,7 @@ Does not prove::
 
 |cancel 只需 kill running task。
 |extended
-|queued/stashed 使用 remove 并形成 cancelled；running/paused 使用 kill 并稍后形成 killed。
+|最近观察为 queued/stashed 时使用 remove，并在 Remove success 后形成 cancelled 控制终态；running/paused 使用 kill 并稍后形成 killed。
 
 |workspace 应成为跨 engine 声明式 contract。
 |adopted

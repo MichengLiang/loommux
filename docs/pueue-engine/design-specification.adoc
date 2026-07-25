@@ -101,12 +101,12 @@ Pueue 执行引擎不负责：
 |不得笼统表述为整台机器上唯一的 daemon。
 
 |active execution
-|所绑定 task 尚未进入 `Done` 的 execution，包括 locked、stashed、queued、running 和 paused 投影。
+|状态尚未进入终态且 backend presence 仍为 present 的 execution，包括 locked、stashed、queued、running 和 paused 投影。
 |不得缩减为仅 running execution。
 
 |terminal state
-|execution 不会再发生正常生命周期转换的状态，包括 completed、failed、killed 和 cancelled。
-|不得把等待调用返回视为 terminal state。
+|execution 已观察到 Pueue `Done` 结果，或已由本 adapter 确认取消的状态，包括 completed、failed、killed 和 cancelled。
+|不得把等待调用返回视为 terminal state；已观察到的终态 record 不跟随不受支持的 backend in-place restart 重新打开。
 
 |observation
 |读取 task 状态或输出而不改变 task 的操作。
@@ -121,8 +121,8 @@ Pueue 执行引擎不负责：
 |不是 task runtime limit。
 
 |cancel
-|针对一个明确 execution 阻止未启动 task 开始执行，或请求 Pueue 终止其已有进程的 Loommux 控制原语。
-|remove 成功可以立即建立 cancelled；kill 请求被接受不等于 task 已经进入 killed 终态。
+|针对一个明确 execution 删除最近观察为 queued/stashed 的 task，或请求 Pueue 终止其已有进程的 Loommux 控制原语。
+|Remove success 建立 cancelled 控制终态，但不证明 refresh/remove 竞态期间未出现 backend terminal result；Kill request 被接受不等于 task 已经进入 killed 终态。
 |===
 
 公共文档统一使用 `execution`、`task`、`adapter`、`daemon` 和 `combined transcript`。不得使用“进程编号”指代 execution，不得使用“当前任务”指代多个 active execution 中的某一个，也不得使用“超时”而不说明是 MCP observation timeout 还是 task 自身行为。
@@ -150,15 +150,19 @@ IPython engine 的唯一 `current_execution`、`interrupt` 无参数选择和 `r
 [#pueue-facts]
 === Pueue 执行事实
 
-Pueue daemon 维护 task 表。一个 task 具有 task ID、command、working directory、environment、group、dependency、priority、label 和 `TaskStatus`。Pueue `v4.0.1` 的 `TaskStatus` 包含 `Locked`、`Stashed`、`Queued`、`Running`、`Paused` 和 `Done`；`Done` 携带 `Success`、`Failed(exit_code)`、`FailedToSpawn(message)`、`Killed`、`Errored` 或 `DependencyFailed` 结果。对应证据见 xref:evidence-register.adoc#evidence-pueue-task-model[EVD-PUEUE-002]。
+Pueue daemon 维护 task 表。一个 task 具有 task ID、command、working directory、environment、group、dependency、priority、label 和 `TaskStatus`。Pueue `v4.0.4` 的 `TaskStatus` 包含 `Locked`、`Stashed`、`Queued`、`Running`、`Paused` 和 `Done`；`Done` 携带 `Success`、`Failed(exit_code)`、`FailedToSpawn(message)`、`Killed`、`Errored` 或 `DependencyFailed` 结果。对应证据见 xref:evidence-register.adoc#evidence-pueue-task-model[EVD-PUEUE-002]。
 
-一个 daemon instance 可以同时被多个 client 连接并持有多个 queued 或 running task。不同 task 不共享一个持续 shell namespace；每个 task 的 command 由 daemon 配置的 shell 独立执行。
+一个 daemon instance 可以同时被多个 client 连接并持有多个 queued 或 running task。instance 由 settings、secret 与 connection 共同确定，见 xref:evidence-register.adoc#evidence-pueue-settings[EVD-PUEUE-008]。不同 task 不共享一个持续 shell namespace；每个 task 的 command 由 daemon 配置的 shell 独立执行。
 
 Pueue task ID 在 daemon state 中标识 task。它不表达创建该 task 的 MCP client，也不从每个 MCP client 的 `1` 开始。因此它不能直接替代 adapter-local execution。
 
 Pueue 将 stdout 和 stderr 的文件句柄指向同一个 task log 文件。该文件构成 Pueue 的合并日志事实；Loommux 不在该事实之上伪造可精确分离的 stdout 和 stderr 历史。对应证据见 xref:evidence-register.adoc#evidence-pueue-log-model[EVD-PUEUE-004]。
 
 Pueue protocol 没有独立的 `Wait` request。Pueue CLI 的 wait 通过重复读取 state、判断目标状态并在轮询之间休眠实现。Loommux 的有界等待必须采用同一类观察算法，同时增加 MCP deadline。对应证据见 xref:evidence-register.adoc#evidence-pueue-wait[EVD-PUEUE-003]。
+
+Pueue 的 queued task 可以因 process spawn 失败或 dependency 失败直接进入 `Done`，不必先进入 `Running`。Pueue `4.0.4` 还允许 task-specific start 强制启动 stashed task；该 task 可以直接进入 `Running`，也可以在 process spawn 失败时直接进入 `Done(FailedToSpawn)`。in-place restart 保留 task ID，将 `Done` 重置为 queued 或 stashed，并可替换 command、path、label 和 priority；后续 spawn 会重新创建同一 task ID 的 log。successful remove 同时删除 task state 和该 task 的 log。对应证据见 xref:evidence-register.adoc#evidence-pueue-generation[EVD-PUEUE-009]和 xref:evidence-register.adoc#evidence-pueue-patch-delta[EVD-PUEUE-010]。
+
+Pueue `4.0.4` CLI 会 canonicalize 显式 `add --working-directory`，但该逻辑位于 CLI request construction，不属于 typed `AddRequest` 或 daemon validation。Pueue daemon 的 Unix task process 由 `process-wrap v9` 的 process-group leader 管理；Windows 使用 Job Object。Loommux 直接构造 typed request，因此必须自行保证 `AddRequest.path` 是 canonical directory，并通过真实进程树测试验证目标 daemon 的 pause、resume 和 kill 边界。对应证据见 xref:evidence-register.adoc#evidence-pueue-patch-delta[EVD-PUEUE-010]。
 
 [#derived-constraints]
 === 推导约束
@@ -173,6 +177,9 @@ Pueue protocol 没有独立的 `Wait` request。Pueue CLI 的 wait 通过重复�
 . Pueue 日志是合并日志，因此公共输出对象必须是 combined transcript。
 . Pueue wait 是状态观察，因此 observation timeout 不得向 task 发送控制请求。
 . Pueue client 的请求与响应共享连接，因此单轮 protocol exchange 必须保持原子；轮询 sleep 不得持有连接锁。
+. Pueue task ID 不携带运行 generation，因此 mapped task 的外部 in-place restart 不能作为原 execution 的正常生命周期转换。
+. Pueue CLI 的 working-directory canonicalization 不属于 typed protocol，因此 adapter 必须在提交前 canonicalize 最终 workspace。
+. daemon 持有 task 的受管 process-group 或 Job Object 控制，因此 adapter 不实现第二套 process control；目标平台仍必须使用明确 fixture 验证 task-specific control 的 descendant 边界。
 
 这些约束共同决定后续系统结构和七工具控制闭环。
 
@@ -186,7 +193,7 @@ Pueue protocol 没有独立的 `Wait` request。Pueue CLI 的 wait 通过重复�
 Pueue 实现位于 `engines/pueue/`，Cargo package 与 binary 名为 `loommux-pueue`，Rust crate 名为 `loommux_pueue`。MCP server identity 使用 `Loommux Pueue execution engine`。
 
 事实前提::
-Loommux 的稳定身份是面向 coding agent 的 execution control plane；IPython 是既有 backend，Pueue 是新增 backend。Pueue task 的被执行语言是 shell，但系统的持久状态、调度和日志来自 Pueue，而不是一个自行管理 child process 的普通 shell server。
+Loommux 的稳定身份是面向 coding agent 的 execution control plane；IPython 是既有 backend，Pueue 是本文的目标 backend。Pueue task 的被执行语言是 shell，但系统的持久状态、调度和日志来自 Pueue，而不是一个自行管理 child process 的普通 shell server。
 
 逻辑推导::
 名称必须同时表达项目身份与 backend 身份。`loommux-pueue` 能够与未来其他 engine 并列，并且不会把系统误写为 Pueue 的 fork 或通用 shell process manager。
@@ -335,7 +342,34 @@ daemon instance 可以服务其他 Pueue CLI 和其他 Loommux adapter，并持�
 adapter 自动启动并在退出时关闭 daemon 会使 task persistence 与多 client 共享失效；暴露 `restart` 工具会把单 execution 控制与 daemon administration 混合；关闭时清理本 adapter task 会把 stdio transport 生命周期错误地解释为 task runtime limit。
 
 后果::
-daemon 不可连接或版本不兼容时，server 必须在暴露可用工具前失败，或者进入明确的 unavailable startup result；不得静默启动第二个 daemon。
+daemon 不可连接或协议版本不匹配时，server 必须在暴露工具前终止初始化；不得进入工具已可用但 backend 尚不可用的半启动状态，也不得静默启动第二个 daemon。
+
+[#mapped-task-mutation]
+=== Mapped task 的外部变更边界
+
+共享 daemon 表示多个 client 可以各自创建 task，不表示多个 client 可以共同改写同一个 Loommux execution 所绑定的 task。第一阶段要求其他 Pueue client 不对 mapped task 执行 command、path、environment、group、dependency、priority 或 label 编辑，不执行 in-place restart、remove、clean 或 reset。该要求是 execution identity 的协作边界，不是权限系统或 sandbox。
+
+外部 client 可以改变不替换 task identity 的调度状态，例如 stash、enqueue、task-specific force-start、pause 和 resume；adapter 按 Pueue 当前状态进行投影。带 enqueue time 的 stashed task 也可以由 daemon 按计划自动进入 queued。`Locked` 只表示 Pueue 正在执行 edit protocol，不能证明 edit 完成后的 task identity 仍然有效。Pueue 允许 stash/enqueue request 覆盖 Locked，但该操作会丢失 edit protocol 保存的 `previous_status`；第一阶段协作边界禁止其他 client 对 mapped Locked task 执行 stash、enqueue、start、remove 或其他状态写入。task 按受支持路径离开 `Locked` 后，adapter 必须比较提交时保存的 identity fingerprint；command、path、非运行时 environment、group、dependency、priority 或 label 发生变化时返回 `backend_task_modified`，并停止将后续 backend 状态或日志追加到原 execution。
+
+Pueue `v4.0.4` 的 in-place restart 复用 task ID，并可将 `Done` task 重新置为 queued 或 stashed。Loommux 一旦公开 terminal state，就冻结该 execution 的生命周期和 transcript；后续 observation 不因同一 task ID 被 restart 而重新打开 record。若外部 restart 完整发生在两次 observation 之间，且 identity 字段保持不变，Pueue `v4.0.4` 不提供可用于证明 generation 变化的计数器。第一阶段因此把“不对 mapped task 执行外部 in-place restart”作为运行前提，不承诺恢复或合并这种不可观察的 generation 替换。
+
+[#dec-pueue-011]
+=== DEC-PUEUE-011：mapped task identity 与 generation 具有单一写入所有者
+
+决定::
+adapter 是 mapped task identity、运行 generation 与删除操作的唯一写入所有者。其他 client 可以观察 task，也可以改变不替换 identity 的调度状态；改变 identity、复用 task ID 开始新 generation 或删除 task 不属于受支持的协作行为。
+
+事实前提::
+Pueue 允许 edit、in-place restart、remove、clean 和 reset 改变或删除既有 task。in-place restart 保留 task ID，但会替换运行 generation，并可能修改 command、path、label 和 priority；task log 在再次 spawn 时被截断重建。
+
+逻辑推导::
+execution 只有在一个 task ID 始终代表同一提交 generation 时才是稳定公共地址。允许其他 client 原地重启或改写 mapped task 会使同一 execution 先后表示不同程序，并使 append-only transcript 与 terminal-state 不变量失效。
+
+拒绝方案::
+把 execution 定义为“当前 task ID 的任何 generation”会撤销终态和输出稳定性；为 Pueue `v4.0.4` 推断不存在的 generation number 会制造假坐标；引入 broker 或权限系统阻止外部操作超出第一阶段对象边界。
+
+后果::
+execution record 保存不含原始字段值的 task identity fingerprint；terminal observation 冻结 record；可观察的 identity 变化返回 `backend_task_modified`；task 消失继续返回 `backend_task_missing`。xref:phase-1-delivery-plan.adoc#wp-execution-record[WP-04]、xref:phase-1-delivery-plan.adoc#wp-control[WP-06]、xref:phase-1-delivery-plan.adoc#wp-output[WP-07]和 xref:phase-1-delivery-plan.adoc#wp-lifecycle[WP-09]必须实现并验证这些边界；部署说明必须声明 mapped task 的外部写入前提。
 
 [#identity-model]
 == 双层标识模型
@@ -408,7 +442,7 @@ task ID 的作用域、序列和生命周期由共享 daemon 决定；execution 
 公共坐标必须表达调用方能够稳定选择的对象范围。直接公开 task ID 会允许调用方跨越 adapter map，并使工具在语义上扩张为全局 Pueue client。
 
 拒绝方案::
-直接使用 task ID 会暴露其他 client 的 task space；为 task ID增加 adapter 前缀会重新发明全局 broker identity；把 task ID 作为隐藏兼容参数会形成两个公共地址并引入冲突选择规则。
+直接使用 task ID 会暴露其他 client 的 task space；为 task ID 增加 adapter 前缀会重新发明全局 broker identity；把 task ID 作为隐藏兼容参数会形成两个公共地址并引入冲突选择规则。
 
 后果::
 adapter 退出后本地 execution 失效，即使 task 仍存在。跨 session 恢复必须作为新的地址模型设计，不得通过非文档化 task ID 后门实现。
@@ -426,6 +460,7 @@ execution record 是生命周期和输出记录，不是请求归档。概念结
 struct PueueExecution {
     execution: u64,
     task_id: usize,
+    task_identity: TaskIdentityFingerprint,
     submitted_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
     completed_at: Option<DateTime<Utc>>,
@@ -438,6 +473,12 @@ struct PueueExecution {
 ----
 
 record 必须保存后续观察和结果投影所必需的状态。它不得保存原始 MCP request、包含控制指令的 author source、Pueue secret、完整 environment 或 daemon state snapshot。清理后的 shell script 已由 Pueue task 持有，Loommux 不建立第二份长期 source archive。
+
+`TaskIdentityFingerprint` 从 Pueue `Task.original_command`、path、group、dependencies、priority、label 和非 Pueue 运行时 environment 构造。构造前对 map 和 set 按 key 排序并使用无歧义的长度前缀编码，再对 canonical bytes 计算 SHA-256 digest；字段迭代顺序不得造成 fingerprint 漂移。fingerprint 只用于证明后续 state snapshot 仍指向同一 submission identity，不得用于恢复 script、environment 或 task ID，也不得出现在公共 result 或 tracing 中。Pueue 在 process start 时注入的 `PUEUE_GROUP` 和 `PUEUE_WORKER_ID` 不参与比较；否则正常 start 会被误判为外部修改。
+
+`BackendPresence` 使用 `present`、`missing`、`modified` 和 `removed_by_adapter` 四个内部值。只有 nonterminal 且 `present` 的 record 可以继续读取 backend state 和 log；confirmed cancel 使用 `removed_by_adapter`，外部 task 缺失或 identity 不匹配分别使用 `missing` 与 `modified`。terminal `Done` record 保留最后一次 `present` 事实但已冻结，不因后续 task ID 复用改变。
+
+所有公共时间使用 RFC 3339 表面。adapter 产生的时间使用 UTC；Pueue `DateTime<Local>` 在投影时转换为同一绝对时间的 UTC 表示。时间转换不得改变 instant，也不得把 `updated_at` 伪装成 backend transition time。
 
 `full_output_requested` 是唯一需要从提交控制元数据延续到后续 `wait` 的 delivery policy。它是 private execution state，不作为 `execution_status` 字段回显。
 
@@ -484,10 +525,10 @@ record 必须保存后续观察和结果投影所必需的状态。它不得保�
 
 |`cancelled`
 |是
-|尚未启动的 queued 或 stashed task 由当前 adapter 明确从 Pueue state 删除；该终态由 adapter 的成功取消操作建立。
+|当前 adapter 在最近一次观察为 queued 或 stashed 后收到 task-specific Remove success；该状态只证明删除控制操作成功，不证明 refresh/remove 竞态期间 task 从未启动或未形成未观察到的 `Done` result。
 |===
 
-`backend_task_missing` 不是正常生命周期状态。若一个未被本 adapter 取消的 task 从 daemon state 消失，execution record 保留最后一次已知状态，观察操作返回 `backend_task_missing` 错误并将 `backend_presence` 标记为 `missing`。不得把外部 remove、clean 或 reset 猜测成 completed、failed 或 cancelled。
+`backend_task_missing` 和 `backend_task_modified` 不是正常生命周期状态。若一个未被本 adapter 取消的 task 从 daemon state 消失，execution record 保留最后一次已知状态，观察操作返回 `backend_task_missing` 错误并将 `backend_presence` 标记为 `missing`。若 identity fingerprint 不再匹配，观察操作返回 `backend_task_modified` 并停止刷新该 execution。不得把外部 edit、restart、remove、clean 或 reset 猜测成正常 execution transition。
 
 [#state-projection]
 === Pueue 状态投影
@@ -522,11 +563,11 @@ record 必须保存后续观察和结果投影所必需的状态。它不得保�
 
 |`Done { result: Failed(code) }`
 |`failed`
-|`exit_code = code`
+|`exit_code = code`、`failure_kind = nonzero_exit`
 
 |`Done { result: FailedToSpawn(message) }`
 |`failed`
-|`failure_kind = failed_to_spawn`、`error_summary = message`
+|`failure_kind = failed_to_spawn`、稳定且不含 backend identity 的 `error_summary`
 
 |`Done { result: Errored }`
 |`failed`
@@ -541,41 +582,45 @@ record 必须保存后续观察和结果投影所必需的状态。它不得保�
 |`failure_kind = killed`
 |===
 
-`updated_at` 表示 adapter 最近一次成功刷新 backend 状态的时间，不冒充 Pueue 内部每次转换的发生时间。`completed_at` 使用 Pueue `Done.end`。只有 `Failed(code)` 和 `Success` 具有 shell exit code；其他失败不得伪造 exit code。
+所有 `Done` variant 还将 Pueue 的 `enqueued_at`、`start` 和 `end` 分别投影为 `enqueued_at`、`started_at` 和 `completed_at`。`started_at` 表示 backend 记录的执行尝试起点；`FailedToSpawn` 与 `DependencyFailed` 即使没有成功创建 process 也可以具有该时间，因此它不是 process-existed 证明。
+
+`updated_at` 表示 adapter 最近一次成功刷新 backend 状态的时间，不冒充 Pueue 内部每次转换的发生时间。`completed_at` 使用 Pueue `Done.end`。只有 `Failed(code)` 和 `Success` 具有 shell exit code；其他失败不得伪造 exit code。`FailedToSpawn(message)` 的 backend string 可能包含 private task ID；公共 `error_summary` 使用稳定说明 `Pueue could not spawn the task process`，不直接回显该 string。
 
 [#execution-lifecycle]
 === 生命周期
 
 [source,text]
 ----
-submission accepted -> {stashed | queued}
-stashed -> queued -> running <-> paused
-    |         |          |
-    |         |          +--> completed
-    |         |          +--> failed
-    |         |          +--> killed
-    |         |
-    +---------+-------------> cancelled
+submission accepted -> queued
+queued <-> stashed
+queued | stashed -> running <-> paused
+queued -----------> failed (failed_to_spawn | dependency_failed)
+stashed ----------> failed (force-start failed_to_spawn)
+running --------------------> completed | failed | killed
+paused ---------------------> completed | failed | killed
+queued | stashed -----------> cancelled (Remove control outcome)
 
 external edit: {stashed | queued} -> locked -> previous_status
 ----
 
 [#execution-lifecycle-diagram]
 .Execution 生命周期
-image::images/execution-lifecycle.svg[Submission accepted 后，Execution 经 Pueue nonterminal state 进入 completed、failed、killed 或 cancelled 的状态图, align="center"]
+image::images/execution-lifecycle.svg[Submission accepted 后，Execution 经 Pueue nonterminal state 进入 completed、failed、killed 或 cancelled 控制终态的状态图, align="center"]
 
-图中的 submission accepted 是 execution 发布边界，不是 `ExecutionStatus` 成员。公共状态从 map publication 后首次投影的 stashed 或 queued 开始。Pueue 只允许 queued 或 stashed task 进入 `Locked`；`previous_status` 决定编辑结束后的恢复路径。Loommux 不通过公共工具主动进入 locked、stashed 或 paused。
+图中的 submission accepted 是 execution 发布边界，不是 `ExecutionStatus` 成员。第一阶段 `AddRequest.stashed = false` 且 `enqueue_at = None`，因此 record 发布时的已知初始状态为 queued。Pueue 只允许 queued 或 stashed task 进入 `Locked`；`previous_status` 决定编辑结束后的恢复路径。Loommux 不通过公共工具主动进入 locked、stashed 或 paused。
 
-Pueue 可以由外部 client 改变 task 状态，因此 Loommux 不将上图限制为只由自身工具触发的路径。每次 execution observation 必须读取当前 daemon state，并按 xref:state-projection[状态投影]刷新 record。
+Pueue 可以由外部 client 改变不替换 task identity 的调度状态，因此 Loommux 不将上图限制为只由自身工具触发的路径。task-specific start 可以强制启动 stashed task，并忽略通常的队列并行度与依赖约束。每次 nonterminal execution observation 必须读取当前 daemon state、验证 identity fingerprint，并按 xref:state-projection[状态投影]刷新 record。已公开 terminal state 的 record 不再读取 backend lifecycle 或追加可能属于新 generation 的日志。
 
-`locked` 是 backend 对 queued 或 stashed task 执行外部编辑时使用的临时保护状态。它恢复到其 `previous_status`，但 Loommux 不通过公共工具进入或退出该状态。`stashed` 和 `paused` 也可由外部 Pueue client 改变；第一阶段 Loommux 只观察它们，不提供 stash、enqueue、pause 或 resume 工具。
+`locked` 是 backend 对 queued 或 stashed task 执行外部编辑时使用的临时保护状态。在受支持的协作边界内，它只通过 edit completion 或 restore 回到 `previous_status`；外部 client 不得用 stash、enqueue 或其他 state-changing request 覆盖 mapped Locked task。`stashed` 和 `paused` 可由外部 Pueue client 改变，带 enqueue time 的 stashed task 还会由 daemon 自动进入 queued；第一阶段 Loommux 只观察这些转换，不提供 stash、enqueue、pause 或 resume 工具。
 
-`cancelled` 只由当前 adapter 对尚未启动 task 的成功 `Remove` response 建立。若 remove response 丢失，结果为 `cancel_outcome_unknown`，不得直接标记 cancelled。
+`cancelled` 只由当前 adapter 的 task-specific `Remove` success response 建立。它是控制结果，不是 Pueue `TaskResult`：task 可能在最近一次 queued/stashed observation 与 Remove handler 取得 daemon state lock 之间快速启动并结束，而 Remove 仍会删除其 `Done` state 和 log。该竞态不可由 response 区分，因此 cancelled 不携带 backend success/failure 结论，冻结 transcript 的 `output_complete` 必须为 false。若 remove response 丢失，结果为 `cancel_outcome_unknown`，不得直接标记 cancelled。
+
+`FailedToSpawn` 与 `DependencyFailed` 不要求 task 先进入 running。spawn 失败可由 queued task 或被强制启动的 stashed task 直接形成 `Done(FailedToSpawn)`；依赖失败由 queued task 直接形成 `Done(DependencyFailed)`。`Success`、非零 `Failed`、`Errored` 和 `Killed` 来自已经拥有 child process 的 running 或 paused task。状态图和测试不得把所有失败归入 running 分支。
 
 [#active-selection]
 === Active 与 recent
 
-`active_executions` 是 execution map 中所有非终态且 backend presence 未被确认 missing 的 execution，按 execution 升序返回。它不是从整个 daemon task 表构造的列表。
+`active_executions` 是 execution map 中所有非终态且 `backend_presence = present` 的 execution，按 execution 升序返回。它不是从整个 daemon task 表构造的列表。
 
 `recent_execution` 是最近一次 accepted submission。task 终态、取消或从 backend 消失不改变 recent selection。该字段只用于 `status` 概览；execution-specific 工具不得使用它作为省略参数时的隐式选择。
 
@@ -605,6 +650,8 @@ adapter 不保存 `current_execution`，所有 execution-specific 工具要求�
 
 Rust engine 必须直接使用与目标 daemon 协议匹配的 `pueue-lib` async client。它不得为每个工具调用 spawn `pueue` CLI、解析人类表格输出或将 CLI exit text 作为 protocol response。
 
+Pueue protocol 类型和 async client 的版本化来源见 xref:evidence-register.adoc#evidence-pueue-protocol[EVD-PUEUE-005]。
+
 第一阶段目标版本矩阵为：
 
 [cols="2,2,3", options="header"]
@@ -612,17 +659,19 @@ Rust engine 必须直接使用与目标 daemon 协议匹配的 `pueue-lib` async
 |组件 |版本 |约束
 
 |`pueued`
-|`4.0.1`
+|`4.0.4`
 |部署时已经运行的 daemon。
 
 |`pueue-lib`
-|`=0.30.0`
-|与 Pueue `v4.0.1` workspace 配对的 library；使用 exact Cargo requirement。
+|`=0.31.1`
+|与 Pueue `v4.0.4` workspace 配对的 library；使用 exact Cargo requirement。
 
 |`rmcp`
 |`=3.0.0-beta.2`
 |文档冻结时 crates.io 的当前 Rust SDK beta；由 `Cargo.lock` 固定完整传递依赖。
 |===
+
+该版本配对由 xref:evidence-register.adoc#evidence-pueue-version[EVD-PUEUE-001]固定。
 
 Pueue daemon 与 `pueue-lib` 的升级必须在同一兼容性变更中完成。只放宽 library semver 或只升级 daemon 均不满足版本契约。`rmcp` beta 升级必须重新通过工具 schema、stdio lifecycle 和 result-channel 集成验证；其版本不构成 Loommux 公共 MCP surface 的一部分。
 
@@ -657,7 +706,7 @@ async fn exchange(&self, request: Request) -> Result<Response, GatewayError> {
 
 每个 gateway operation 必须验证 response variant。`AddRequest` 只接受 `AddedTaskResponse`；state 查询只接受 `Status`; log 或 control request 只接受其声明的 success、failure 或 typed response。收到与 request 不匹配的 variant 时，gateway 返回 `unexpected_backend_response` 并废弃当前 connection。
 
-Pueue `Response::Failure(message)` 必须映射为稳定 Loommux error kind，并将 backend message 作为 detail，而不是把不稳定的人类文本当作 error kind。
+Pueue `Response::Failure(message)` 必须映射为稳定 Loommux error kind。raw backend message 只作为内部 error source，不直接进入公共 result 或 tracing；result layer 生成不含 task ID、路径、command 或 secret 的稳定 `message`，不得把 backend 人类文本当作 error kind。
 
 [#connection-failures]
 === 连接失败与重连
@@ -746,9 +795,32 @@ workspace 配置错误必须在 MCP tools 可用前失败，不得静默回退�
 
 |`workspace_not_directory`
 |解析结果不是目录。
+
+|`workspace_canonicalize_failed`
+|最终候选目录的 canonicalization 返回非 not-found I/O error。
 |===
 
+resolver 得到候选目录后，必须在 startup 阶段对最终目录执行 filesystem canonicalization。canonicalization 返回 not-found 类错误时使用 `workspace_not_found`，返回其他 I/O error 时使用 `workspace_canonicalize_failed`；canonicalization 成功后再验证结果是目录，否则使用 `workspace_not_directory`。`workspace`、后续每个 `AddRequest.path` 以及 Python 与 Rust parity observation 均使用该 canonical absolute path；`workspace_resolution` 仍表示选择路径的规则来源，不因 symlink 展开而改变。
+
 该 TOML schema 是 Loommux 跨 engine 的 workspace contract。现有 Python resolver 格式的迁移属于第一阶段交付的一部分，见 xref:phase-1-delivery-plan.adoc#wp-workspace[WP-02]；同一个环境变量不得长期根据 engine 解释为两种不兼容文件语言。
+
+[#dec-pueue-012]
+=== DEC-PUEUE-012：workspace 使用跨 engine 声明式 contract
+
+决定::
+`LOOMMUX_WORKSPACE_CONFIG` 指向 versioned TOML 文件；Python/IPython 与 Rust/Pueue engine 在第一阶段发布门后使用同一 schema 和 resolution 分类。
+
+事实前提::
+当前 Python engine 将该环境变量解释为可执行 Python resolver，见 xref:evidence-register.adoc#evidence-loommux-migration[EVD-LOOMMUX-004]。Rust engine 不能在不引入 Python process、Python embedding 或第二套配置语言的情况下直接执行该 resolver。workspace 的输入和输出是 launch cwd、声明式查找规则、resolved directory 与 resolution category，不依赖 execution backend 的程序语言。
+
+逻辑推导::
+同名配置入口必须具有唯一 authored surface。将 workspace rule 表达为 versioned data，使两个 engine 可以独立实现相同解析规则，而不让某个 engine 的运行时语言成为跨 engine contract。
+
+拒绝方案::
+让 Rust engine 执行 Python resolver 会把 Python runtime 引入轻量 Rust process；让两个 engine 按文件内容猜测 Python 或 TOML 会产生歧义和降级路径；为 Pueue 新增第二个环境变量会使同一 Loommux 概念拥有两套配置入口；自动搜索 `.codex`、`.git` 或项目文件会把 workspace 树变成隐式配置来源。
+
+后果::
+xref:phase-1-delivery-plan.adoc#wp-workspace[WP-02]必须完成 schema、两个 engine 的 parser、迁移错误和兼容测试；xref:phase-1-delivery-plan.adoc#wp-release[WP-11]必须更新 README、examples 和旧 workspace 文档。迁移完成前，现有 Python resolver 只描述 implemented baseline，不得被误报为 Pueue target 已实现。
 
 [#task-environment]
 === Task environment
@@ -776,6 +848,8 @@ workspace 通过 `AddRequest.path` 传递。script 内显式 `cd` 只影响该 t
 [#add-request]
 === AddRequest 规格
 
+字段及 response variant 的上游定义见 xref:evidence-register.adoc#evidence-pueue-add[EVD-PUEUE-006]。
+
 第一阶段 `AddRequest` 使用下列确定值：
 
 [cols="2,3", options="header"]
@@ -786,7 +860,7 @@ workspace 通过 `AddRequest.path` 传递。script 内显式 `cd` 只影响该 t
 |移除有效 Loommux control preamble 后的完整 shell script。
 
 |`path`
-|startup 时解析的 workspace。
+|startup 时解析并 canonicalize 的 workspace。
 
 |`envs`
 |按 xref:task-environment[Task environment]构造的环境快照。
@@ -871,7 +945,7 @@ Pueue engine 使用项目级 `# loommux:` control preamble；active directive �
 指令控制的是 MCP observation 和 delivery，而不是 shell program；shell source 可以在 here-document 等数据区域包含 directive-shaped text。
 
 逻辑推导::
-限定为 leading preamble 能在不实现完整 shell parser 的前提下给出无歧义 authored surface。完全删除防止 Loommux metadata 进入 Pueue command、task log诊断或 shell history surface。
+限定为 leading preamble 能在不实现完整 shell parser 的前提下给出无歧义 authored surface。完全删除防止 Loommux metadata 进入 Pueue command、task log 诊断或 shell history surface。
 
 拒绝方案::
 `# pueuemux:` 创造第二个项目身份；在任意物理行识别会误消费 shell data；保留为 shell comment 会把 control metadata 错写为 backend program source；独立结构化字段会破坏既有 Freeform 提交 surface。
@@ -898,17 +972,20 @@ Pueue engine 不公开 `stdout`、`stderr`、`result` 或 `traceback` stream。�
 ----
 struct OutputCollector {
     next_offset: u64,
+    decoder: Utf8StreamDecoder,
     normalizer: TerminalTextNormalizer,
     log: LineLog,
     finalized: bool,
 }
 ----
 
-每次 `execution_status`、`read_output`、`search_output` 或 `wait` 观察 execution 时，collector 打开由 Pueue settings data directory 与 task ID 确定的 log file，从 `next_offset` 读取新增字节，规范化后追加到 `LineLog`，再更新 offset。
+每次 `execution_status`、`read_output`、`search_output` 或 `wait` 观察 nonterminal execution 时，collector 打开由 Pueue settings data directory 与 task ID 确定的 log file，从 `next_offset` 读取新增字节，先经增量 UTF-8 decoder，再经 terminal normalizer 追加到 `LineLog`，最后按实际读取字节数更新 offset。
 
 读取期间文件可以增长。一次 refresh 只消费打开或 metadata snapshot 后实际成功读取的字节；后续增长由下一次 refresh 获取。短读不是 EOF 终态证据。只有 task 已为 terminal state，且在该状态观察后完成一次到当前 EOF 的 refresh，collector 才标记 `finalized`。
 
-若 log file 尚未创建且 task 未开始，refresh 产生空 transcript 而不是错误。task 已 running 或 terminal 但预期 log file 无法读取时返回 `backend_log_unavailable`。文件长度小于已记录 offset 表示 backend log 被截断或替换，返回 `backend_log_replaced`；第一阶段不得静默重建 transcript 或产生重复行。
+若 log file 尚未创建且 task 未开始，refresh 产生空 transcript 而不是错误。`FailedToSpawn` 与 `DependencyFailed` 未必创建可读 log；这两个结果在没有 log 且 collector 仍为空时形成 complete empty transcript。已经观察到 process start，或 collector 已读取过字节后预期 log file 却无法读取时，返回 `backend_log_unavailable`。文件长度小于已记录 offset 表示 backend log 被截断或替换，返回 `backend_log_replaced`；第一阶段不得静默重建 transcript 或产生重复行。identity fingerprint 改变时不得读取同一路径的新内容，因为该日志可能属于被外部 edit 或 restart 替换的程序。
+
+execution 最近观察为 queued 或 stashed 且本 adapter 收到 task-specific Remove success 后，Pueue 中对应的 task state 和已有 log file 已被删除。adapter 必须在发送 remove 前完成一次当时可用字节的 refresh；明确 success 后将 collector 冻结，并只从本地 `LineLog` 服务后续 status、read、search 和 wait。cancelled execution 不再查询已删除 task，也不尝试重新打开 backend log。
 
 [#terminal-normalization]
 === Terminal text normalization
@@ -917,9 +994,9 @@ struct OutputCollector {
 
 normalizer 必须跨 refresh chunk 保存不完整 escape sequence。一个 sequence 的前半部分出现在本次 refresh、后半部分出现在下次 refresh 时，不得泄漏任何残片。文件最终结束于不完整 sequence 时，该残片按不可解释 terminal control data 丢弃，并记录 internal diagnostic；不得将 escape byte 暴露给 agent。
 
-task log 按 UTF-8 解码。有效 UTF-8 可以跨 chunk 分割，decoder 必须保存尾部不完整 code unit。最终无效 UTF-8 使用 U+FFFD replacement character，并在 result metadata 中增加 `output_decode_replacements` 计数；不得使整个 execution 因单个无效字节失去其余日志。
+task log 按 UTF-8 解码。有效 UTF-8 可以跨 chunk 分割，decoder 必须保存尾部不完整 code unit。已确认无效的 byte sequence 与 EOF 时仍不完整的 sequence 使用 U+FFFD replacement character，并在 result metadata 中按 replacement character 数量增加 `output_decode_replacements`；不得使整个 execution 因局部无效字节失去其余日志。
 
-backspace、carriage return 和 cursor movement 不用于重建 screen。carriage return 在 transcript 中规范化为换行，使进度输出形成可引用的 append-only observation；backspace 及其终端编辑意图被移除。该规则必须与既有 Loommux terminal text contract 通过共享测试向量保持一致。
+backspace 与 carriage return control character 直接移除；表示 cursor movement 的 terminal escape sequence 按前述 sequence 规则移除。它们不转换为换行，不删除已经保留的 printable character，也不回写已经公开的文本。该规则与既有 Loommux terminal text contract 一致，并由两个 engine 共享同一组测试向量。
 
 [#line-log]
 === Line coordinates
@@ -933,7 +1010,7 @@ backspace、carriage return 和 cursor movement 不用于重建 screen。carriag
 [#search-model]
 === Search
 
-`search_output` 在 refresh 后的完整当前 `LineLog` 上工作。它支持 `literal`、`regex` 和 `auto` query mode、前后上下文、忽略大小写和单行 `max_chars`。`auto` 先按 regex 编译，编译失败时回退 literal；显式 regex 编译失败返回 `invalid_query`。
+`search_output` 在 refresh 后的完整当前 `LineLog` 上工作。它支持 `literal`、`regex` 和 `auto` query mode、前后上下文、忽略大小写和单行 `max_chars`。regex 语义由 Rust `regex` crate 定义，不支持 backreference 或 look-around；`auto` 先按 regex 编译，编译失败时回退 literal；显式 regex 编译失败返回 `invalid_query`。
 
 返回行使用原始 transcript 行号，以 `M` 标记命中行、以 `C` 标记上下文行。上下文区间重叠时每一行只返回一次。搜索不改变 task、execution selection、output offset 以外的生命周期状态。
 
@@ -992,18 +1069,38 @@ Pueue engine 的公共工具集合为：
 |不把 deadline 当作 task runtime limit，不取消 task。
 
 |`cancel`
-|阻止一个明确 execution 的尚未启动 task 运行，或请求结束其已启动 process。
+|删除一个最近观察为 queued/stashed 的明确 execution，或请求结束其已启动 process。
 |不关闭 daemon，不取消其他 execution，不承诺 request response 即为终态。
 |===
 
 决定::
 七个工具共同构成 submission、addressing、aggregate observation、single-execution observation、output retrieval、bounded synchronization 和 directed control 的闭环。
 
+事实前提::
+调用方必须能够创建 execution、观察 adapter 全局状态、观察单个 execution、按稳定行坐标读取或搜索输出、在有限时间内同步终态，并终止不再需要的 execution。Pueue 的 daemon administration、group administration 和完整 scheduler control 不属于 Loommux execution control plane。
+
 逻辑推导::
 删除 `run_shell` 后没有创建入口；删除 `status` 后没有 adapter 与 connection 概览；删除 `execution_status` 后调用方必须读取日志才能观察生命周期；删除 read 或 search 后大型日志不能可靠消费；删除 wait 后调用方只能高频自行轮询；删除 cancel 后控制面只能观察不能控制。read 与 search 不可合并，因为定位少量相关行与读取已知范围是不同输入和输出契约。
 
 拒绝方案::
 增加 `restart`、`shutdown`、`clean` 或 `reset` 会越过 adapter 对 daemon 的所有权；增加 `pause`、`resume`、`stash`、`enqueue`、`group` 和 `priority` 会把第一阶段 execution control plane 扩张为完整 Pueue 管理界面；将所有操作合并为 `poll` 会混合状态、等待、输出消费和取消副作用。
+
+后果::
+第一阶段只注册这七个工具。工具之间共享 execution 地址、状态投影、输出 collector、错误分类和 result schema；不得为单个工具建立含义不同的同名字段或隐式 execution selection。
+
+[#observation-gate]
+=== Execution observation gate
+
+execution-specific 工具在执行各自职责前使用同一 observation gate：
+
+. 在 adapter map 中解析 execution；不存在时返回 `execution_not_found`。
+. record 已 terminal 时使用冻结的本地 lifecycle 与 transcript，不访问 backend。
+. nonterminal record 的 `backend_presence` 已为 `missing` 或 `modified` 时，返回对应的稳定错误，不重复导入或接受该 task。
+. nonterminal 且 present 的 record 从一个 daemon state snapshot 定位 task；task 不存在时将 presence 置为 `missing` 并返回 `backend_task_missing`。
+. 在状态投影和日志 refresh 前比较 identity fingerprint；不匹配时将 presence 置为 `modified` 并返回 `backend_task_modified`。
+. task 仍有效时投影状态；若本次首次观察到 terminal result，则完成最后一次受支持的 output refresh 并冻结 record。
+
+`status` 对同一 snapshot 中的所有 nonterminal present record 批量执行 task 定位、identity 验证和状态投影；首次投影出 terminal state 时仍执行本地 terminal output refresh，但不在 `AdapterStatus` 中返回 transcript 正文。`cancel` 在选择 control request 前执行同一完整性检查。该 gate 是 task ID 到 execution identity 的验证边界，不是权限检查。
 
 [#run-shell]
 === `run_shell`
@@ -1041,22 +1138,9 @@ Canonical signature：
 status() -> AdapterStatus
 ----
 
-`status` 对 daemon 进行一次 state refresh。成功时，它使用同一 state snapshot 刷新本地 map 中所有仍可对应 task 的 execution，避免对每个 execution 单独发送 request。失败时，它返回 `daemon_connected = false`、稳定 connection error 和本地最后已知概要；该工具在运行期断连时仍必须可调用。
+`status` 对 daemon 进行一次 state refresh。成功时，它按 xref:observation-gate[execution observation gate]使用同一 state snapshot 刷新本地 map 中所有 nonterminal present execution，并跳过已冻结或 presence 已失效的 record，避免对每个 execution 单独发送 request。task 缺失或 identity 不匹配时，分别把 execution 加入 `backend_missing_executions` 或 `backend_modified_executions`，且不再把它计入 active 集合。失败时，它返回 `daemon_connected = false`、稳定 connection error 和本地最后已知概要；该工具在运行期断连时仍必须可调用。
 
-返回字段至少包括：
-
-[source,text]
-----
-workspace
-workspace_resolution
-daemon_connected
-daemon_profile
-execution_count
-active_execution_count
-active_executions
-recent_execution
-backend_missing_executions
-----
+返回结果严格使用 xref:adapter-status-schema[`AdapterStatus`] schema。
 
 `daemon_profile` 是公开的 profile 名或稳定类别，不公开 secret、socket credential 或用户 home 中的配置绝对路径。`active_executions` 只包含本 adapter 的 execution。`execution_count` 是 map 大小，不是 daemon task 数。
 
@@ -1070,27 +1154,9 @@ Canonical signature：
 execution_status(execution: positive integer) -> ExecutionObservation
 ----
 
-工具首先在本地 map 解析 execution。不存在时返回 `execution_not_found`，并且不得把参数当作 Pueue task ID 查询。存在时获取一次 daemon state、定位对应 task、刷新 execution status，再刷新可用的新日志。
+工具按 xref:observation-gate[execution observation gate]解析并刷新 record。不存在时不得把参数当作 Pueue task ID 查询。返回结果严格使用 xref:execution-observation-schema[`ExecutionObservation`] schema，并且不返回 transcript 正文。
 
-返回生命周期和元数据，不返回 transcript 正文。字段至少包括：
-
-[source,text]
-----
-execution
-status
-submitted_at
-updated_at
-started_at
-completed_at
-exit_code
-failure_kind
-error_summary
-output_total_lines
-output_complete
-output_decode_replacements
-----
-
-不适用于当前状态的 optional 字段为 `null` 或省略，选择方式必须在所有工具中一致。工具不得返回 task ID、original command、environment 或 `full_output_requested`。
+不适用于当前状态的字段按 xref:null-policy[公共 null 与 omission 规则]返回显式 `null`。工具不得返回 task ID、original command、environment 或 `full_output_requested`。
 
 [#read-output-tool]
 === `read_output`
@@ -1106,9 +1172,9 @@ read_output(
 ) -> OutputRead
 ----
 
-工具解析 execution、刷新一次 task 状态与增量日志，然后对当前 `LineLog` 执行范围读取。省略 `line_range` 表示调用方明确请求全部当前 transcript，不应用 300 行自动交付限制。
+工具按 xref:observation-gate[execution observation gate]解析并刷新 record，然后对当前 `LineLog` 执行范围读取。省略 `line_range` 表示调用方明确请求全部当前 transcript，不应用 300 行自动交付限制。
 
-返回字段至少包括 `execution`、`status`、`line_range`、`total_lines`、`returned_lines`、`omitted_before`、`omitted_after`、`partial_final_line` 和 `text`。空 transcript 是成功结果，`total_lines = 0`、`text = ""`。
+返回结果严格使用 xref:output-read-schema[`OutputRead`] schema。空 transcript 是成功结果，`total_lines = 0`、`text = ""`。
 
 `max_chars` 逐行限制模型响应中的可见字符，不修改已保存 `LineLog`。被裁切行必须显示该行省略字符数。非正值返回 `invalid_max_chars`。
 
@@ -1130,9 +1196,9 @@ search_output(
 ) -> OutputSearch
 ----
 
-工具解析 execution、刷新一次 task 状态与增量日志，然后搜索完整当前 transcript。空 query 在 literal mode 中匹配每一行一次；regex mode 使用所选 Rust regex engine 的文本语义，不支持 backreference 或 look-around 时必须在工具描述中声明，并以 `invalid_query` 返回不受支持表达式。
+工具按 xref:observation-gate[execution observation gate]解析并刷新 record，然后搜索完整当前 transcript。空 query 在 literal mode 中匹配每一行一次；regex mode 使用 Rust `regex` crate 的文本语义，不支持 backreference 或 look-around；不受支持或不能编译的显式 regex 返回 `invalid_query`。
 
-返回字段至少包括 `execution`、`status`、`query`、`query_interpretation`、`matched_lines`、`matches`、`context_before`、`context_after`、`total_lines` 和带原始行号的 `text`。
+返回结果严格使用 xref:output-search-schema[`OutputSearch`] schema。
 
 [#wait-tool]
 === `wait`
@@ -1152,10 +1218,15 @@ wait(
 [source,text]
 ----
 resolve execution
+if record is terminal:
+    return frozen local observation with terminal
+if backend_presence is missing or modified:
+    return the corresponding stable error
 compute monotonic deadline
 
 loop:
     exchange Request::Status
+    locate target task and validate identity fingerprint
     project target task state
     refresh available log bytes
     if terminal:
@@ -1168,7 +1239,7 @@ loop:
 
 deadline 使用 monotonic clock，不受 wall-clock 调整影响。第一次状态观察在 sleep 前发生；deadline 到达时执行最后一次不会越过 deadline 的本地判断，并返回最近成功观察的状态。backend exchange 自身超过 deadline 时由 gateway timeout 产生 `backend_timeout`，不得伪装为普通 `deadline_elapsed`。
 
-每次 loop 只在 `Status` exchange 期间持有 gateway lock。两秒是与目标 Pueue `v4.0.1` CLI 一致的普通 polling interval，不构成 MCP response 最小粒度；剩余预算小于两秒时 sleep 必须缩短。
+每次 loop 只在 `Status` exchange 期间持有 gateway lock。两秒是与目标 Pueue `v4.0.4` CLI 一致的普通 polling interval，不构成 MCP response 最小粒度；剩余预算小于两秒时 sleep 必须缩短。
 
 任何 nonterminal 状态都可以 wait，包括 locked、stashed、queued 和 paused。wait 不自动 enqueue、start 或 resume，因此这些状态可以一直持续到 deadline。
 
@@ -1180,12 +1251,14 @@ deadline 使用 monotonic clock，不受 wall-clock 调整影响。第一次状�
 * transcript 不超过 300 行时，返回完整当前 terminal transcript；
 * 超过 300 行且未请求 `--full-output` 时，不返回正文，设置 `output_omitted_reason = "line_limit_exceeded"`、`output_line_limit = 300` 和 `output_total_lines`；
 * 请求 `--full-output` 时返回完整 terminal transcript，不受 300 行限制；
-* output refresh 或 normalization 失败时，生命周期 terminal result 仍然返回，并附加稳定 output error；不得把 task success 改写为 task failure。
+* terminal output refresh 失败时，生命周期 terminal result 仍然返回，并附加稳定 output error；不得把 task success 改写为 task failure。
 
 自动交付只在 execution 已 terminal 且 collector 已完成 terminal EOF refresh 时发生。running、queued、paused、stashed 和 locked response 不携带自动 transcript；调用方使用 `read_output` 获取当前部分日志。
 
 [#cancel-tool]
 === `cancel`
+
+Kill 与 Remove 的上游状态边界见 xref:evidence-register.adoc#evidence-pueue-cancel[EVD-PUEUE-007]。
 
 Canonical signature：
 
@@ -1194,7 +1267,7 @@ Canonical signature：
 cancel(execution: positive integer) -> CancelObservation
 ----
 
-`cancel` 先刷新目标 task 状态，再按状态选择唯一 backend operation：
+`cancel` 先按 xref:observation-gate[execution observation gate]解析并验证本地 record。record 已 terminal 时不查询 backend，直接返回 frozen state 与 `already_terminal`；nonterminal present record 刷新目标 task 状态后按状态选择唯一 backend operation：
 
 [cols="2,2,3", options="header"]
 |===
@@ -1202,7 +1275,7 @@ cancel(execution: positive integer) -> CancelObservation
 
 |`queued`、`stashed`
 |发送 `Request::Remove([task_id])`。
-|明确 success 后将 record 标记 `cancelled`，`cancel_outcome = "terminal"`。
+|明确 success 后将 record 标记 `cancelled`，`cancel_outcome = "terminal"`；不推断竞态期间是否出现 `Done` result。
 
 |`running`、`paused`
 |发送 `KillRequest`，selection 仅含该 task ID，signal 为 `None`。
@@ -1217,14 +1290,14 @@ cancel(execution: positive integer) -> CancelObservation
 |返回当前终态，`cancel_outcome = "already_terminal"`。
 |===
 
-对 queued 或 stashed task 使用 remove 是必要的，因为 Pueue kill 只选择 running 或 paused task。adapter 在成功 remove 后保留本地 record 与已收集 transcript，因此 execution 仍可被 status、read、search 和 wait 观察为 cancelled。
+对 queued 或 stashed task 使用 remove 是必要的，因为 Pueue kill 只选择 running 或 paused task。adapter 在 remove 前刷新当时可用的日志；成功 remove 后保留本地 record 与已收集 transcript 并冻结 collector，因此 execution 仍可被 status、read、search 和 wait 观察为 cancelled，且这些观察不再访问已被 Pueue 删除的 task 或 log。由于 refresh/remove 之间可能形成未收集的 terminal bytes，cancelled transcript 始终使用 `output_complete = false`。remove 前 refresh 失败时不得发送 remove，以免在已有读取错误上继续执行不可逆删除。
 
-运行状态可能在 refresh 与 control request 之间改变。Pueue failure response 到达时，adapter 必须再执行一次只读 state refresh：若 task 已 terminal，返回该终态；若仍 active，返回 `cancel_rejected` 与当前状态；若 task 消失且本次 remove outcome 不明确，返回 `cancel_outcome_unknown`，不得猜测 cancelled。
+运行状态可能在 refresh 与 control request 之间改变。Remove success 只建立 cancelled 控制终态；不把不可观察的竞态结果猜测为 completed、failed 或 killed。Pueue failure response 到达时，adapter 必须再执行一次只读 state refresh：若 task 已 terminal，返回该终态；若仍 active，返回 `cancel_rejected` 与当前状态；若 task 消失且本次 remove outcome 不明确，返回 `cancel_outcome_unknown`，不得猜测 cancelled。
 
 cancel 的 operation selection 始终是 `TaskIds([task_id])`。不得使用 group 或 all selection，因此 cancel 一个 execution 不暂停 group，不影响其他 adapter task。
 
 [#dec-pueue-009]
-=== DEC-PUEUE-009：`cancel` 统一未启动移除与已启动终止
+=== DEC-PUEUE-009：`cancel` 统一删除控制与进程终止
 
 决定::
 公共工具名为 `cancel`，按 execution 当前状态使用 Pueue remove 或 kill。
@@ -1236,7 +1309,7 @@ queued/stashed task 没有 process 可 kill；running/paused task 不能在不�
 公共对象是 execution，而不是具体 backend operation。一个状态敏感的 cancel 能覆盖完整 active state space，同时保留 cancelled 与 killed 的事实差异。
 
 拒绝方案::
-仅提供 `kill` 会使 queued task 无法取消；同时公开 remove 与 kill 会迫使 agent理解 backend state machine 并制造竞态；使用 `interrupt` 会暗示 SIGINT 和 IPython current execution 语义。
+仅提供 `kill` 会使 queued task 无法取消；同时公开 remove 与 kill 会迫使 agent 理解 backend state machine 并制造竞态；使用 `interrupt` 会暗示 SIGINT 和 IPython current execution 语义。
 
 后果::
 cancel response 必须区分 terminal、requested、already terminal、blocked、rejected 和 unknown outcome。测试必须覆盖 refresh 与 control 间状态变化。
@@ -1259,53 +1332,147 @@ loommux-pueue --result-mode structured
 
 server 不根据 client capability 自动改变 mode。所有 tool 在同一 process 中使用相同 mode。
 
-[#common-observation]
-=== 公共 observation 字段
+[#public-result-schemas]
+=== 公共结果 schema
 
-execution-specific success response 共享下列核心字段：
+下列 schema 定义 `structuredContent` 的完整字段集合，也定义 `content` mode 必须表达的同一语义。`uint` 表示非负整数，`execution` 使用正整数；`timestamp` 表示 RFC 3339 UTC 字符串。`failed`、`killed` 和 `cancelled` 均是已建立的 public terminal state，不使 observation 的 `ok` 变为 false。
 
-[cols="2,3", options="header"]
-|===
-|字段 |语义
+[#adapter-status-schema]
+==== `AdapterStatus`
 
-|`ok`
-|工具操作是否形成成功 observation 或已接受 control result；task failed 不使 observation 的 `ok` 自动为 false。
+[source,text]
+----
+AdapterStatus {
+    ok: true,
+    workspace: string,
+    workspace_resolution: "launch_cwd" | "explicit_config",
+    daemon_connected: boolean,
+    daemon_profile: string,
+    daemon_error_kind: ErrorKind | null,
+    execution_count: uint,
+    active_execution_count: uint,
+    active_executions: uint[],
+    recent_execution: uint | null,
+    backend_missing_executions: uint[],
+    backend_modified_executions: uint[],
+}
+----
 
-|`execution`
-|adapter-local 正整数地址。
+`active_executions` 按 execution 升序排列；`active_execution_count` 必须等于其长度。`recent_execution` 在尚无 accepted submission 时为 `null`。daemon refresh 失败时，`status` 仍返回 `ok = true` 的本地概要，同时设置 `daemon_connected = false` 和 `daemon_error_kind`；此时 execution 集合来自最后已知 record，不暗示 backend snapshot 是新的。
 
-|`status`
-|xref:execution-statuses[公共状态集合]中的值。
+[#execution-observation-schema]
+==== `ExecutionObservation`
 
-|`submitted_at`
-|adapter 接受 task 的时间。
+[source,text]
+----
+ExecutionObservation {
+    ok: true,
+    execution: uint,
+    status: ExecutionStatus,
+    submitted_at: timestamp,
+    updated_at: timestamp,
+    enqueue_at: timestamp | null,
+    enqueued_at: timestamp | null,
+    started_at: timestamp | null,
+    completed_at: timestamp | null,
+    backend_previous_status: "stashed" | "queued" | null,
+    exit_code: integer | null,
+    failure_kind: "nonzero_exit" | "failed_to_spawn" |
+                  "backend_io_error" | "dependency_failed" |
+                  "killed" | null,
+    error_summary: string | null,
+    wait_outcome: "terminal" | "deadline_elapsed" | null,
+    output_total_lines: uint,
+    output_complete: boolean,
+    output_decode_replacements: uint,
+    output_text: string | null,
+    output_omitted_reason: "line_limit_exceeded" | null,
+    output_line_limit: uint | null,
+    output_error_kind: "backend_log_unavailable" |
+                       "backend_log_replaced" | null,
+}
+----
 
-|`updated_at`
-|最近一次成功 backend observation 时间。
+`run_shell` 与 `wait` 设置 `wait_outcome`；`execution_status` 将其设为 `null`。两种等待入口在观察到终态时使用 `terminal`，在 observation deadline 到达时使用 `deadline_elapsed`。`Failed(code)` 使用 `failure_kind = "nonzero_exit"`；success 与非失败状态使用 `null`。
 
-|`started_at`
-|Pueue state 提供的 task start time。
+`submitted_at` 是 adapter 接受 task 的时间，`updated_at` 是最后一次成功 backend observation 的时间。`enqueue_at` 只承载 stashed schedule，`enqueued_at` 承载 Pueue 已入队时间。`started_at`、`completed_at` 和 `backend_previous_status` 按 xref:state-projection[状态投影]解释；它们不得被调用方用来推断未由字段本身表达的 process 或 edit 结果。
 
-|`completed_at`
-|Pueue `Done.end`，或 adapter 建立 cancelled 的时间。
+`output_text` 只承载 xref:automatic-output-delivery[自动输出交付]。已交付的空 transcript 使用空字符串；未触发自动交付或因行数限制省略时使用 `null`。只有 `output_omitted_reason = "line_limit_exceeded"` 时 `output_line_limit` 才为 `300`。terminal lifecycle 已成功观察、但最终 output refresh 失败时，observation 保持 `ok = true` 并设置 `output_error_kind`；这不改写 task result。
 
-|`exit_code`
-|success 为 0，`Failed(code)` 为 code，其他状态为 null。
+[#output-read-schema]
+==== `OutputRead`
 
-|`failure_kind`
-|稳定的 Loommux failure classification。
+[source,text]
+----
+OutputRead {
+    ok: true,
+    execution: uint,
+    status: ExecutionStatus,
+    line_range: string | null,
+    total_lines: uint,
+    returned_lines: uint,
+    omitted_before: uint,
+    omitted_after: uint,
+    partial_final_line: boolean,
+    output_complete: boolean,
+    output_decode_replacements: uint,
+    text: string,
+}
+----
 
-|`error_summary`
-|backend 提供且适合公开的简要 detail；不作为机器分类。
+`line_range` 原样回显调用方提供的 authored surface；省略输入时为 `null`。`omitted_before` 与 `omitted_after` 按当前完整 transcript 中位于已选范围之前和之后的行数计算，不把 `max_chars` 造成的行内裁切计为省略行。`partial_final_line` 描述整个当前 transcript 的最后一行是否尚无换行终止符。
 
-|`output_total_lines`
-|当前 combined transcript 行数。
+[#output-search-schema]
+==== `OutputSearch`
 
-|`output_complete`
-|task terminal 且 collector 已完成 terminal EOF refresh。
-|===
+[source,text]
+----
+OutputSearch {
+    ok: true,
+    execution: uint,
+    status: ExecutionStatus,
+    query: string,
+    query_interpretation: "literal" | "regex",
+    context_before: uint,
+    context_after: uint,
+    ignore_case: boolean,
+    total_lines: uint,
+    matched_lines: uint,
+    matches: uint,
+    returned_lines: uint,
+    partial_final_line: boolean,
+    output_complete: boolean,
+    output_decode_replacements: uint,
+    text: string,
+}
+----
 
-task 的 `failed`、`killed` 或 `cancelled` 是成功观察到的 execution terminal state，因此工具 result 可以 `ok = true`。`ok = false` 表示工具无法完成其地址解析、验证、backend exchange、输出读取或控制请求职责。
+`matched_lines` 是至少命中一次的原始行数，`matches` 是所有命中行中的非重叠 occurrence 总数，`returned_lines` 是去重后的 match 与 context 行数。没有命中时三个计数均为 `0`，`text` 为空字符串。`text` 中的每一行保留原始行号和 `M` 或 `C` marker。
+
+[#cancel-observation-schema]
+==== `CancelObservation`
+
+[source,text]
+----
+CancelObservation {
+    ok: true,
+    execution: uint,
+    status: ExecutionStatus,
+    cancel_outcome: "terminal" | "requested" | "already_terminal",
+    completed_at: timestamp | null,
+    output_total_lines: uint,
+    output_complete: boolean,
+}
+----
+
+`terminal` 表示 remove 已明确成功并建立 `cancelled` 控制终态；它不表示 backend terminal result 已被观察。`requested` 表示 task-specific kill 已被接受但 record 尚未观察到 `killed`；`already_terminal` 表示调用开始时本地 record 已为终态。blocked、rejected 和 unknown outcome 是 `ok = false` 的 error response，不伪装成成功的 `CancelObservation`。
+
+[#null-policy]
+=== 公共 null 与 omission 规则
+
+structured success response 必须包含其 result schema 声明的全部字段。不适用于当前状态的 scalar 使用显式 `null`，集合使用空数组，文本只有在“已交付且内容为空”时使用空字符串。实现不得在不同工具或不同 result mode 中交替使用 field omission 与 `null` 表示同一事实。
+
+`output_complete` 表示 execution 已 terminal，且 collector 已证明已经取得该 execution 的全部 backend log bytes。Pueue `Done` 使用 terminal EOF refresh。cancelled record 的 Remove 会删除 backend log，且 refresh/remove 竞态可能产生未观察 bytes，因此即使 collector 已冻结也必须为 false。nonterminal record、output refresh 失败的 terminal record，以及因 backend task identity 失效而停止刷新的 record 同样为 false。
 
 [#error-taxonomy]
 === 稳定错误分类
@@ -1354,6 +1521,10 @@ task 的 `failed`、`killed` 或 `cancelled` 是成功观察到的 execution ter
 |execution 绑定的 task 不在 daemon state，且不是本地 confirmed cancel。
 |需外部诊断，不自动导入 task。
 
+|`backend_task_modified`
+|nonterminal execution 绑定 task 的 identity fingerprint 与提交时记录不一致。
+|需外部诊断；不读取替换后的状态或日志。
+
 |`backend_log_unavailable`
 |按状态应存在的 log 无法打开或读取。
 |文件恢复后可重试。
@@ -1391,11 +1562,24 @@ task 的 `failed`、`killed` 或 `cancelled` 是成功观察到的 execution ter
 |刷新状态后决定。
 
 |`cancel_outcome_unknown`
-|remove/kill 可能已生效但 response 未可靠取得。
+|remove/kill 可能已生效但 response 未可靠取得；或删除结果无法建立。
 |不得自动重复 control request。
 |===
 
-所有 error response 必须包含 `ok = false`、稳定 `error_kind` 和简明 `message`。如果 execution 已解析，还应包含 execution 和最后已知 status。不得在 `error_kind` 中嵌入 backend message、路径、task ID 或时间。
+所有 error response 使用固定基础 schema：
+
+[source,text]
+----
+ErrorResult {
+    ok: false,
+    error_kind: ErrorKind,
+    message: string,
+    execution: uint | null,
+    status: ExecutionStatus | null,
+}
+----
+
+execution 已解析时返回其地址和最后已知 status，否则显式返回 `null`。`ErrorResult` 不附加未定义的工具专属字段；不得在 `error_kind` 中嵌入 backend message、路径、task ID 或时间。`message` 是供人阅读的简要说明，不构成机器分类。
 
 [#sensitive-data]
 === 不公开数据
@@ -1548,6 +1732,10 @@ server -> result -> error
 . active directive 在 AddRequest 前完全删除；directive-shaped shell data 不被误消费。
 . cancel 只选择一个明确 task ID，不使用 group 或 all。
 . task failure 是成功观察到的 terminal execution，不等同于 tool transport failure。
+. mapped task 的 identity、generation 与删除操作只有 adapter 一个受支持写入者；外部 client 只能观察或改变不替换 identity 的调度状态。
+. 每次 nonterminal backend observation 在状态投影和日志追加前验证 task identity fingerprint；缺失或 modified record 不再作为 active execution。
+. execution 一旦公开 terminal state，其 lifecycle 与 transcript 即冻结，不因 backend task ID 被原地重启、复用、编辑或删除而重新打开。
+. confirmed cancelled record 在 remove 前收集当时可用的日志；remove 成功后只从本地冻结 transcript 服务 observation，并保持 `output_complete = false`。
 . secret、完整 environment、其他 client task 和 private task ID 不进入公共 result。
 
 任一不变量被违反时，不能以“主要路径可用”或“现有测试通过”声明第一阶段完成。
@@ -1562,7 +1750,7 @@ server -> result -> error
 
 . pure unit tests：directive、workspace、state projection、line range、search、normalizer、result formatting；
 . component tests：fake typed gateway、execution map、wait clock、cancel race 和 reconnect policy；
-. isolated Pueue integration：真实 `pueued v4.0.1`、隔离 profile/data directory、真实 socket 和 task log；
+. isolated Pueue integration：真实 `pueued v4.0.4`、隔离 profile/data directory、真实 socket、task log 和 task process tree；
 . MCP black-box：真实 `loommux-pueue` stdio process、tool discovery、schema、content/structured result 和 shutdown。
 
 只 mock adapter 内部变量不能证明 Pueue protocol、task state、log ordering 或 stdio lifecycle。只运行真实 daemon happy path 也不能替代 pure edge-case coverage。
@@ -1604,7 +1792,7 @@ server -> result -> error
 
 |VER-008
 |failed to spawn、I/O error、dependency failure
-|failure kind 稳定且不伪造 exit code。
+|failed to spawn 与 dependency failure 可从 queued 直接进入 failed；failure kind 稳定且不伪造 exit code。
 
 |VER-009
 |initial wait 到期
@@ -1620,7 +1808,7 @@ server -> result -> error
 
 |VER-012
 |queued 与 stashed cancel
-|使用 task-specific remove，record 进入 cancelled 且仍可读取既有日志。
+|remove 前收集当时可用字节；Remove success 后 record 进入 cancelled，status/read/search/wait 只使用冻结的本地 transcript，且 `output_complete = false`。该结果不证明 refresh/remove 竞态期间未形成 backend `Done` result。
 
 |VER-013
 |running 与 paused cancel
@@ -1636,7 +1824,7 @@ server -> result -> error
 
 |VER-016
 |cancel refresh/control race
-|backend rejection 后刷新，准确返回新终态、仍 active 或 unknown outcome。
+|Remove/Kill rejection 后刷新并返回已观察的新终态或仍 active；response loss 或 task disappearance 无法确定控制结果时返回 unknown outcome。若竞态中的 backend `Done` 在 Remove success 前未被观察，cancelled 不推断其 result。
 
 |VER-017
 |task 被外部 remove/clean/reset
@@ -1713,6 +1901,30 @@ server -> result -> error
 |VER-035
 |response 数据审计
 |无 task ID、secret、完整 env、author source、private policy 或其他 adapter task。
+
+|VER-036
+|nonterminal mapped task 被外部 edit
+|command、path、environment、group、dependency、priority 或 label 任一变化均产生 backend task modified；不得投影替换后的状态或追加其日志。另一个 client 对 mapped Locked task 执行 stash/enqueue/start/remove 属于不受支持的协作写入；identity 与 presence 未变化时 adapter 可能只能投影覆盖后的状态，不承诺重建丢失的 `previous_status` 或产生专用诊断。
+
+|VER-037
+|正常 start 注入 PUEUE runtime environment
+|`PUEUE_GROUP` 与 `PUEUE_WORKER_ID` 不造成 identity fingerprint false positive。
+
+|VER-038
+|已观察 terminal task 被外部 in-place restart
+|execution 保持原 terminal state、时间与 transcript；后续 status/read/search/wait 不重新查询或合并新 generation。
+
+|VER-039
+|stashed task 被外部 task-specific start 强制启动
+|观察到 stashed 直接进入 running，或在 spawn 失败时直接进入 failed。force-start 形成 `Done(FailedToSpawn)` 后，Remove success 仍只建立 cancelled 控制终态；Remove failure 后的 refresh 返回实际 terminal result，任何分支均不从时序猜测 result。
+
+|VER-040
+|workspace 候选路径包含 symlink、缺失目录或不可解析组件
+|symlink 路径以 canonical absolute path 进入 workspace observation 和 AddRequest；缺失、非目录与 canonicalization failure 使用各自稳定 startup error。
+
+|VER-041
+|多层 descendant process 的 pause、resume 与 kill
+|task-specific control 作用于受管 process tree；kill 进入 `Done(Killed)` 后没有仍存活的 fixture descendant process。
 |===
 
 [#explicit-rejections]
@@ -1764,6 +1976,9 @@ server -> result -> error
 |公共 `restart`、`reset`、`clean` 或 daemon shutdown
 |这些操作控制共享 daemon 或全局 state，不属于 adapter-owned execution。
 
+|把外部 in-place restart 解释为原 execution 的正常转换
+|Pueue 复用 task ID 且没有 generation coordinate；重新打开 record 会破坏终态、程序 identity 与 transcript 稳定性。
+
 |未经 session 设计直接添加 HTTP
 |请求无法稳定路由到创建 execution 的 adapter state。
 
@@ -1811,12 +2026,20 @@ server -> result -> error
 |完整 submission/observation/control 原语。
 
 |xref:dec-pueue-009[DEC-PUEUE-009]
-|cancel 统一未启动移除与已启动终止
+|cancel 统一删除控制与进程终止
 |状态敏感 backend control。
 
 |xref:dec-pueue-010[DEC-PUEUE-010]
 |第一阶段只提供 stdio
 |execution namespace session owner。
+
+|xref:dec-pueue-011[DEC-PUEUE-011]
+|mapped task identity 与 generation 具有单一写入所有者
+|外部变更边界与 terminal freeze。
+
+|xref:dec-pueue-012[DEC-PUEUE-012]
+|workspace 使用跨 engine 声明式 contract
+|同名配置入口使用唯一 TOML surface。
 |===
 
 [#completion-reference]

@@ -96,7 +96,8 @@ Example:: 实例化已经独立定义的规则。
 
 规范正文不得出现依赖对话语境的表达，包括但不限于：
 
-```text
+[source,text]
+----
 我觉得
 你说得对
 上一轮
@@ -109,7 +110,7 @@ Example:: 实例化已经独立定义的规则。
 最小版本
 巴拉巴拉
 大家都知道
-```
+----
 
 第一人称复数只允许指明明确定义的 actor，例如引用一个外部规范的原文；普通正文使用对象作主语。不得以“我们选择”代替事实前提和设计推导。
 
@@ -150,7 +151,7 @@ Example:: 实例化已经独立定义的规则。
 * `daemon instance` 指由 profile/config/connection 确定的实例，不写“全机唯一 daemon”；
 * `combined transcript` 指规范化后的 Loommux 文本；`task log` 指 Pueue 原始文件；
 * `deadline` 或 `observation timeout` 指 MCP wait budget；不得简写为含义不明的“超时”；
-* `cancelled` 与 `killed` 分别表示未启动移除和已启动进程终止；
+* `cancelled` 表示 adapter 已确认 Remove 成功的控制终态，不证明竞态期间没有未观察到的 backend result；`killed` 表示已启动进程终止；
 * `terminal` 只修饰 execution 状态或完整输出，不表示 MCP 调用返回。
 
 代码标识使用反引号。首次出现的非通用缩写必须展开。中文与英文混合时不得为同一对象轮换使用多个翻译，例如 adapter 不交替写成“适配器”“控制器”“中间层”。正文可以解释中文含义，但 canonical identifier 保持稳定。
