@@ -250,9 +250,10 @@ print('after-image', flush=True)
     async with Client(create_structured_mcp()) as client:
         response = await client.call_tool("run_cell", {"freeform": source})
 
-    assert [block.type for block in response.content] == ["text", "text", "image", "text", "text", "image", "text"]
+    assert [block.type for block in response.content] == ["text", "text", "text", "image", "text", "text", "image", "text"]
     texts = [block.text for block in response.content if block.type == "text"]
     assert texts == [
+        "In [1]:\n",
         "before-image\n",
         "<IPython.core.display.Image object>",
         "between-images\n",

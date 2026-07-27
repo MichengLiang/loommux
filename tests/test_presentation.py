@@ -99,11 +99,13 @@ def test_rich_execution_content_preserves_text_image_text_order_and_detail() -> 
         "structured",
     )
 
-    assert [block.type for block in result.content] == ["text", "image", "text", "image"]
-    assert isinstance(result.content[1], ImageContent)
-    assert result.content[1].meta == {"detail": "low", "execution": 12, "display_ordinal": 1}
-    assert isinstance(result.content[3], ImageContent)
-    assert result.content[3].meta == {"detail": "high", "execution": 12, "display_ordinal": 2}
+    assert [block.type for block in result.content] == ["text", "text", "image", "text", "image"]
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "In [12]:\n"
+    assert isinstance(result.content[2], ImageContent)
+    assert result.content[2].meta == {"detail": "low", "execution": 12, "display_ordinal": 1}
+    assert isinstance(result.content[4], ImageContent)
+    assert result.content[4].meta == {"detail": "high", "execution": 12, "display_ordinal": 2}
     assert result.structured_content is not None
     assert "_presentation" not in result.structured_content
 
@@ -125,8 +127,9 @@ def test_rich_execution_content_keeps_neighbors_when_an_image_is_rejected() -> N
         "content",
     )
 
-    assert [block.type for block in result.content] == ["text", "text", "text", "text"]
+    assert [block.type for block in result.content] == ["text", "text", "text", "text", "text"]
     assert [block.text for block in result.content if isinstance(block, TextContent)] == [
+        "In [3]:\n",
         "before\n",
         "Image delivery failed for execution 3 display 2: invalid Base64 image data.",
         "after\n",
@@ -147,9 +150,9 @@ def test_rich_execution_content_enforces_image_delivery_limits() -> None:
         ImageDeliveryLimits(max_image_bytes=0, max_images=1, max_total_image_bytes=1),
     )
 
-    assert len(result.content) == 1
-    assert isinstance(result.content[0], TextContent)
-    assert "0-byte limit" in result.content[0].text
+    assert len(result.content) == 2
+    assert isinstance(result.content[1], TextContent)
+    assert "0-byte limit" in result.content[1].text
 
 
 def test_rich_execution_keeps_images_but_omits_line_limited_text() -> None:
@@ -170,11 +173,13 @@ def test_rich_execution_keeps_images_but_omits_line_limited_text() -> None:
         "content",
     )
 
-    assert [block.type for block in result.content] == ["text", "image"]
+    assert [block.type for block in result.content] == ["text", "text", "image"]
     assert isinstance(result.content[0], TextContent)
-    assert "exceeds 300 lines" in result.content[0].text
-    assert "read_output() to read all lines or search_output()" in result.content[0].text
-    assert "line-0" not in result.content[0].text
+    assert result.content[0].text == "In [5]:\n"
+    assert isinstance(result.content[1], TextContent)
+    assert "exceeds 300 lines" in result.content[1].text
+    assert "read_output() to read all lines or search_output()" in result.content[1].text
+    assert "line-0" not in result.content[1].text
 
 
 def test_rich_execution_rejects_malformed_gif_data() -> None:
@@ -189,9 +194,9 @@ def test_rich_execution_rejects_malformed_gif_data() -> None:
         "content",
     )
 
-    assert len(result.content) == 1
-    assert isinstance(result.content[0], TextContent)
-    assert "invalid GIF data" in result.content[0].text
+    assert len(result.content) == 2
+    assert isinstance(result.content[1], TextContent)
+    assert "invalid GIF data" in result.content[1].text
 
 
 def test_rich_execution_keeps_explicit_failures_and_rejects_invalid_image_shapes() -> None:
@@ -211,6 +216,7 @@ def test_rich_execution_keeps_explicit_failures_and_rejects_invalid_image_shapes
     )
 
     assert [block.text for block in result.content if isinstance(block, TextContent)] == [
+        "In [7]:\n",
         "Image delivery failed for execution 7 display 1: source unavailable.",
         "Image delivery failed for execution 7 display 2: unsupported MIME type image/svg+xml.",
         "Image delivery failed for execution 7 display 3: image data must be Base64 text.",
@@ -232,10 +238,10 @@ def test_rich_execution_enforces_image_count_and_total_byte_limits() -> None:
         ImageDeliveryLimits(max_image_bytes=1, max_images=2, max_total_image_bytes=1),
     )
 
-    assert isinstance(count_limited.content[1], TextContent)
-    assert "1-image limit" in count_limited.content[1].text
-    assert isinstance(total_limited.content[1], TextContent)
-    assert "total image bytes exceed the 1-byte limit" in total_limited.content[1].text
+    assert isinstance(count_limited.content[2], TextContent)
+    assert "1-image limit" in count_limited.content[2].text
+    assert isinstance(total_limited.content[2], TextContent)
+    assert "total image bytes exceed the 1-byte limit" in total_limited.content[2].text
 
 
 def test_rich_execution_accepts_a_single_frame_gif() -> None:
@@ -250,8 +256,10 @@ def test_rich_execution_accepts_a_single_frame_gif() -> None:
         "content",
     )
 
-    assert isinstance(result.content[0], ImageContent)
-    assert result.content[0].mimeType == "image/gif"
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "In [9]:\n"
+    assert isinstance(result.content[1], ImageContent)
+    assert result.content[1].mimeType == "image/gif"
 
 
 def test_make_tool_result_rejects_an_unknown_result_mode() -> None:

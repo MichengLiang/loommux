@@ -76,8 +76,13 @@ def _error_detail(status: Mapping[str, Any]) -> str:
 
 def _with_execution_input(execution: str, body: str) -> str:
     """Project the accepted MCP cell as IPython's input-side coordinate."""
-    header = f"In [{execution}]:"
+    header = format_execution_input(execution)
     return header if not body else f"{header}\n{body}"
+
+
+def format_execution_input(execution: int | str) -> str:
+    """Render the stable loommux execution coordinate used by every result mode."""
+    return f"In [{execution}]:"
 
 
 def _append_control_line(output: str, control: str) -> str:
