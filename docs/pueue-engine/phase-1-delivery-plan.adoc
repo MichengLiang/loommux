@@ -33,7 +33,7 @@
 
 * `engines/pueue/` Rust crate 与锁定依赖；
 * `run_shell`、`status`、`execution_status`、`read_output`、`search_output`、`wait` 和 `cancel` 七个 MCP tools；
-* 声明式 workspace config 及既有 Python engine 的一致性迁移；
+* Pueue 声明式 workspace config，并保留既有 Python engine 的 resolver contract；
 * 与 Pueue `v4.0.4` / `pueue-lib 0.31.1` 配对的 typed gateway；
 * execution 状态投影、combined transcript、控制指令和 result schema；
 * pure、component、isolated daemon 和 MCP black-box 四层自动化测试；
@@ -289,39 +289,38 @@ Not done when::
 == WP-02：Workspace 与启动配置
 
 Purpose::
-建立跨 engine 的声明式 workspace contract，使 Pueue `AddRequest.path` 和既有 IPython kernel workspace 由同一规则解释。
+建立 Pueue engine 的声明式 workspace contract，并保持它与既有 IPython engine 相同的 workspace resolution 观察分类。
 
 Inputs::
 xref:design-specification.adoc#workspace-contract[Workspace contract]、现有 `host_workspace_config.py`、workspace examples 和 tests。
 
 Dependencies::
-WP-00；Pueue Rust implementation 依赖 WP-01，Python migration 可以在 WP-01 并行准备。
+WP-00；Pueue Rust implementation 依赖 WP-01。
 
 Outputs::
-versioned TOML schema、Rust resolver、Python resolver migration、generic/Codex examples、cross-engine fixtures 和 startup error taxonomy。
+versioned TOML schema、Rust resolver、Pueue generic/Codex examples、workspace fixtures 和 startup error taxonomy。
 
 Tasks::
 
 * 实现 `version = 1`、`launch_cwd` 与 `nearest_ancestor_containing_marker`；
 * 验证 absolute config path、marker、marker type、fallback 和 resolved directory；
-* 将现有 Python callback resolver 迁移到同一 TOML contract，删除一个环境变量两种文件语言的长期歧义；
-* 更新 examples，使 Codex marker 规则显式由 host 配置授权；
+* 保留 Python/IPython engine 的 Python callback resolver，不向该 runtime 增加 TOML 配置依赖；
+* 为两个 engine 分别保留 Python 与 TOML examples，使 Codex marker 规则都显式由 host 配置授权；
 * 保证 workspace 只在 startup 解析一次；
 * 对 resolver 最终候选目录执行 filesystem canonicalization，并将 canonical absolute path 传给 status 与每个 `AddRequest.path`；
 * 将 missing、not-directory 与 canonicalization I/O failure 分类为不同 startup error；
-* 在两个 engine 的 status 中使用 `launch_cwd` / `explicit_config` 相同 authored surface；
-* 建立路径、symlink、broken symlink、permission failure、root、marker missing、file/directory mismatch 和 malformed TOML tests。
+* 在两个 engine 的 status 中使用 `launch_cwd` / `explicit_config` 相同观察分类；
+* 为 Rust resolver 建立路径、symlink、broken symlink、permission failure、root、marker missing、file/directory mismatch 和 malformed TOML tests。
 
 Acceptance evidence::
 
-* 同一 fixture/config 在 Python 与 Rust resolver 中返回相同 canonical path 和 resolution；
+* Rust fixture 覆盖 canonical path 和 resolution，Python resolver tests 保持既有 callback contract；
 * 配置错误在 tool ready 前失败且不 silent fallback；
 * Pueue integration test 证明 `AddRequest.path` 等于 canonical resolved workspace；
-* repository search 不再宣称 `LOOMMUX_WORKSPACE_CONFIG` 必然执行 Python file；
-* migration note 明确旧 resolver 的替换方式，但当前对象定义不含版本历史叙述。
+* repository 文档明确 Python/IPython 使用 Python resolver，而 Rust/Pueue 使用 TOML。
 
 Not done when::
-两个 engine 对同一环境变量使用不同 grammar、Rust 自动扫描 `.git`/`.codex`、工具允许逐次 cwd override、symlink path 未规范化，或错误配置静默使用 launch cwd。
+任一 engine 猜测配置 grammar、Rust 自动扫描 `.git`/`.codex`、工具允许逐次 cwd override、symlink path 未规范化，或错误配置静默使用 launch cwd。
 
 [#wp-gateway]
 == WP-03：Pueue Gateway 与 isolated daemon harness
@@ -422,7 +421,7 @@ Tasks::
 
 * 识别首个普通 source line 之前的 column-zero `# loommux:`；
 * 解析唯一 `--wait` 与 `--full-output`；
-* 验证 positive finite decimal、unknown、duplicate 和 missing values；
+* 验证可表示为非零 `Duration` 与 monotonic deadline 的 positive finite decimal，以及 unknown、duplicate 和 missing values；
 * 从同一 scan result 生成 resolved policy 与 deletion ranges；
 * 删除 active line 及其自身 line terminator，不插入 padding；
 * 保留 leading empty line、普通 shell comment、here-document 和首个 source line 后的 directive-shaped text；
@@ -675,9 +674,9 @@ Acceptance evidence::
 * G5 全部条件通过；
 * clean checkout 按文档命令可以构建、测试并启动；
 * README 与权威设计之间无重复冲突规则；
-* repository-wide search 无旧 Python resolver grammar、公开 task ID、current execution、CLI wrapper 或 adapter-owned daemon 陈述；
+* repository-wide search 明确区分 Python resolver 与 Pueue TOML，且无公开 task ID、current execution、CLI wrapper 或 adapter-owned daemon 陈述；
 * release log 记录工具版本、命令、exit code 和 coverage 数字；
-* commit 只包含 Pueue engine、跨 engine workspace contract、直接受影响测试与文档。
+* commit 只包含 Pueue engine、engine-specific workspace contract、直接受影响测试与文档。
 
 Not done when::
 只有开发者本地隐式状态可运行、文档示例与 tool schema 不符、旧文档保留相反规则、generated diagrams 过期、quality command 未执行，或提交混入无关项目变更。
@@ -830,7 +829,7 @@ Not done when::
 |control preamble 只在 leading 区域识别、验证后完全删除，无效输入零 side effect。
 
 |SYS-DOD-014
-|workspace TOML contract 在 Python 与 Rust engine 中产生相同 canonical absolute path，配置与 canonicalization failure 阻止 tool ready。
+|Rust workspace TOML 产生 canonical absolute path；Python callback resolver contract 保持有效；两种配置 failure 都阻止 tool ready。
 
 |SYS-DOD-015
 |gateway exchange 原子，poll sleep 不持锁，side-effect unknown outcome 不自动重放。

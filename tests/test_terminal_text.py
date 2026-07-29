@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from loommux.terminal_text import TerminalTextNormalizer
@@ -55,3 +58,14 @@ def test_cursor_and_c1_terminal_controls_do_not_enter_the_transcript() -> None:
 
     assert text == "leftrightcharsetredend"
     assert not any(ord(character) in range(0x7F, 0xA0) for character in text)
+
+
+def test_shared_normalization_contract_vectors_at_every_split_position() -> None:
+    fixture = json.loads((Path(__file__).parent / "fixtures/text_contract/cases.json").read_text())
+
+    for case in fixture["normalization"]:
+        source = case["input"]
+        for split in range(len(source) + 1):
+            normalizer = TerminalTextNormalizer()
+            actual = normalizer.normalize(source[:split]) + normalizer.normalize(source[split:])
+            assert actual == case["expected"], (case["name"], split)

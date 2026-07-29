@@ -1,0 +1,4 @@
+version = 1
+
+[workspace]
+strategy = "launch_cwd"

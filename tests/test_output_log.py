@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from loommux.execution import Execution
 from loommux.output_log import ExecutionLogs, LineLog
 
@@ -73,3 +76,28 @@ def test_execution_normalizes_every_stream_projection_before_logging() -> None:
     assert traceback == "trace\nback\n"
     assert "\x1b" not in record.logs.combined.text
     assert record.error == {"ename": "RuntimeError", "evalue": "bad", "traceback": ["trace", "back"]}
+
+
+def test_shared_line_log_contract_vectors() -> None:
+    fixture = json.loads((Path(__file__).parent / "fixtures/text_contract/cases.json").read_text())
+
+    for case in fixture["line_log"]:
+        log = LineLog()
+        log.append(case["text"])
+        for request in case["reads"]:
+            result = log.read(request["line_range"], max_chars=request["max_chars"])
+            for field in ("total_lines", "returned_lines", "omitted_before", "omitted_after"):
+                assert result[field] == request[field], (case["name"], request, field)
+            assert result["text"] == request["expected_text"]
+        for request in case["searches"]:
+            result = log.search(
+                request["query"],
+                query_mode=request["query_mode"],
+                context_before=request["context_before"],
+                context_after=request["context_after"],
+                ignore_case=request["ignore_case"],
+                max_chars=request["max_chars"],
+            )
+            for field in ("query_interpretation", "matched_lines", "matches", "total_lines"):
+                assert result[field] == request[field], (case["name"], request, field)
+            assert result["text"] == request["expected_text"]

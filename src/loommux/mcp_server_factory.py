@@ -100,10 +100,6 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         ``execution_status`` 查看状态，使用 ``read_output``
         或 ``search_output`` 读取或搜索保留的输出。
 
-        Args:
-            freeform: 要提交的原始 IPython cell 源码文本；可用 ``# loommux:``
-                控制注释声明本次初始等待与完整输出策略。
-
         Returns:
             已接受 execution 的当前状态；完成的小输出直接进入模型内容，
             running 或行数受限状态给出 ``execution`` 与省略原因。

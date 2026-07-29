@@ -1,0 +1,106 @@
+{
+  "normalization": [
+    {
+      "name": "csi-and-cursor-controls",
+      "input": "before\u001b[31mred\u001b[0m\r\bafter",
+      "expected": "beforeredafter"
+    },
+    {
+      "name": "osc-bel-and-st",
+      "input": "a\u001b]0;title\u0007b\u001b]8;;https://example.test\u001b\\link\u001b]8;;\u001b\\c",
+      "expected": "ablinkc"
+    },
+    {
+      "name": "c1-controls-and-strings",
+      "input": "a\u009b31mred\u009b0mb\u009dtitle\u009cc\u0090payload\u009cd\u0098sos\u001b\\e\u009eprivacy\u009cf\u009fapp\u009cg",
+      "expected": "aredbcdefg"
+    },
+    {
+      "name": "escape-intermediate",
+      "input": "a\u001b(0charsetb\u001b  Fignoredc",
+      "expected": "acharsetbignoredc"
+    },
+    {
+      "name": "unicode-newline-tab",
+      "input": "中文\ncaфe\ttext",
+      "expected": "中文\ncaфe\ttext"
+    },
+    {
+      "name": "unfinished-control-at-eof",
+      "input": "visible\u001b]unfinished",
+      "expected": "visible"
+    }
+  ],
+  "line_log": [
+    {
+      "name": "ranges-clipping-and-search",
+      "text": "alpha\nbeta-match\ngamma\nDELTA-MATCH\npartial",
+      "reads": [
+        {
+          "line_range": null,
+          "max_chars": null,
+          "expected_text": "alpha\nbeta-match\ngamma\nDELTA-MATCH\npartial",
+          "total_lines": 5,
+          "returned_lines": 5,
+          "omitted_before": 0,
+          "omitted_after": 0
+        },
+        {
+          "line_range": ":2",
+          "max_chars": null,
+          "expected_text": "alpha\nbeta-match",
+          "total_lines": 5,
+          "returned_lines": 2,
+          "omitted_before": 0,
+          "omitted_after": 3
+        },
+        {
+          "line_range": "-2:",
+          "max_chars": 5,
+          "expected_text": "DELTA...[6 chars omitted]\nparti...[2 chars omitted]",
+          "total_lines": 5,
+          "returned_lines": 2,
+          "omitted_before": 3,
+          "omitted_after": 0
+        },
+        {
+          "line_range": "4:2",
+          "max_chars": null,
+          "expected_text": "",
+          "total_lines": 5,
+          "returned_lines": 0,
+          "omitted_before": 5,
+          "omitted_after": 0
+        }
+      ],
+      "searches": [
+        {
+          "query": "match",
+          "query_mode": "literal",
+          "context_before": 1,
+          "context_after": 0,
+          "ignore_case": true,
+          "max_chars": null,
+          "expected_text": "C 1 | alpha\nM 2 | beta-match\nC 3 | gamma\nM 4 | DELTA-MATCH",
+          "query_interpretation": "literal",
+          "matched_lines": 2,
+          "matches": 2,
+          "total_lines": 5
+        },
+        {
+          "query": "[",
+          "query_mode": "auto",
+          "context_before": 0,
+          "context_after": 0,
+          "ignore_case": false,
+          "max_chars": null,
+          "expected_text": "",
+          "query_interpretation": "literal",
+          "matched_lines": 0,
+          "matches": 0,
+          "total_lines": 5
+        }
+      ]
+    }
+  ]
+}

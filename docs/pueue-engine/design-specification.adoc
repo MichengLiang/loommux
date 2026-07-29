@@ -800,27 +800,27 @@ workspace 配置错误必须在 MCP tools 可用前失败，不得静默回退�
 |最终候选目录的 canonicalization 返回非 not-found I/O error。
 |===
 
-resolver 得到候选目录后，必须在 startup 阶段对最终目录执行 filesystem canonicalization。canonicalization 返回 not-found 类错误时使用 `workspace_not_found`，返回其他 I/O error 时使用 `workspace_canonicalize_failed`；canonicalization 成功后再验证结果是目录，否则使用 `workspace_not_directory`。`workspace`、后续每个 `AddRequest.path` 以及 Python 与 Rust parity observation 均使用该 canonical absolute path；`workspace_resolution` 仍表示选择路径的规则来源，不因 symlink 展开而改变。
+resolver 得到候选目录后，必须在 startup 阶段对最终目录执行 filesystem canonicalization。canonicalization 返回 not-found 类错误时使用 `workspace_not_found`，返回其他 I/O error 时使用 `workspace_canonicalize_failed`；canonicalization 成功后再验证结果是目录，否则使用 `workspace_not_directory`。`workspace` 与后续每个 `AddRequest.path` 均使用该 canonical absolute path；`workspace_resolution` 仍表示选择路径的规则来源，不因 symlink 展开而改变。
 
-该 TOML schema 是 Loommux 跨 engine 的 workspace contract。现有 Python resolver 格式的迁移属于第一阶段交付的一部分，见 xref:phase-1-delivery-plan.adoc#wp-workspace[WP-02]；同一个环境变量不得长期根据 engine 解释为两种不兼容文件语言。
+该 TOML schema 是 Rust/Pueue engine 的 workspace 配置 contract。Python/IPython engine 保留由其运行时直接加载的 Python resolver；两个 engine 共享 resolved workspace 与 `workspace_resolution` 的观察语义，不共享配置文件语言。
 
 [#dec-pueue-012]
-=== DEC-PUEUE-012：workspace 使用跨 engine 声明式 contract
+=== DEC-PUEUE-012：workspace 配置服从 engine runtime
 
 决定::
-`LOOMMUX_WORKSPACE_CONFIG` 指向 versioned TOML 文件；Python/IPython 与 Rust/Pueue engine 在第一阶段发布门后使用同一 schema 和 resolution 分类。
+Rust/Pueue engine 将 `LOOMMUX_WORKSPACE_CONFIG` 解释为 versioned TOML；Python/IPython engine 将其解释为显式授权的 Python resolver。两者保持相同的 resolution 分类。
 
 事实前提::
-当前 Python engine 将该环境变量解释为可执行 Python resolver，见 xref:evidence-register.adoc#evidence-loommux-migration[EVD-LOOMMUX-004]。Rust engine 不能在不引入 Python process、Python embedding 或第二套配置语言的情况下直接执行该 resolver。workspace 的输入和输出是 launch cwd、声明式查找规则、resolved directory 与 resolution category，不依赖 execution backend 的程序语言。
+Python resolver 本身就是宿主明确授权的 Python 程序，可以表达超出固定 marker schema 的 workspace 选择逻辑。Rust engine 不能在不引入 Python process 或 embedding 的情况下执行该 resolver，因此使用适合 Rust startup 的声明式 TOML。
 
 逻辑推导::
-同名配置入口必须具有唯一 authored surface。将 workspace rule 表达为 versioned data，使两个 engine 可以独立实现相同解析规则，而不让某个 engine 的运行时语言成为跨 engine contract。
+配置入口的职责是为所启动的 engine 选择 workspace，不要求不同 runtime 解释相同文件字节。保留 engine-native authored surface 可以避免 Python 端为跨语言统一而增加解析格式，也避免 Rust 端引入 Python runtime。
 
 拒绝方案::
-让 Rust engine 执行 Python resolver 会把 Python runtime 引入轻量 Rust process；让两个 engine 按文件内容猜测 Python 或 TOML 会产生歧义和降级路径；为 Pueue 新增第二个环境变量会使同一 Loommux 概念拥有两套配置入口；自动搜索 `.codex`、`.git` 或项目文件会把 workspace 树变成隐式配置来源。
+让 Rust engine 执行 Python resolver 会把 Python runtime 引入轻量 Rust process；让 Python engine 解析 TOML 会缩窄现有 resolver 能力并增加不需要的格式依赖；任一 engine 按文件内容猜测 grammar 都会产生歧义和降级路径；自动搜索 `.codex`、`.git` 或项目文件会把 workspace 树变成隐式配置来源。
 
 后果::
-xref:phase-1-delivery-plan.adoc#wp-workspace[WP-02]必须完成 schema、两个 engine 的 parser、迁移错误和兼容测试；xref:phase-1-delivery-plan.adoc#wp-release[WP-11]必须更新 README、examples 和旧 workspace 文档。迁移完成前，现有 Python resolver 只描述 implemented baseline，不得被误报为 Pueue target 已实现。
+xref:phase-1-delivery-plan.adoc#wp-workspace[WP-02]必须完成 Rust schema、Rust parser 和 startup 错误测试；Python resolver 继续由既有 Python tests 验证。README、examples 和 workspace 文档必须明确配置文件语言属于哪个 engine。
 
 [#task-environment]
 === Task environment
@@ -1209,7 +1209,7 @@ Canonical signature：
 ----
 wait(
     execution: positive integer,
-    timeout_seconds: positive finite decimal = 30
+    timeout_seconds: positive representable decimal = 30
 ) -> ExecutionObservation
 ----
 
@@ -1550,7 +1550,7 @@ structured success response 必须包含其 result schema 声明的全部字段�
 |修正输入后可重试。
 
 |`invalid_timeout`
-|timeout 不是正有限值。
+|timeout 不是可表示为非零 `Duration` 和 monotonic `Instant` deadline 的正有限值。
 |修正输入后可重试。
 
 |`cancel_blocked`
@@ -2038,8 +2038,8 @@ server -> result -> error
 |外部变更边界与 terminal freeze。
 
 |xref:dec-pueue-012[DEC-PUEUE-012]
-|workspace 使用跨 engine 声明式 contract
-|同名配置入口使用唯一 TOML surface。
+|workspace 配置服从 engine runtime
+|Python 使用 resolver，Rust 使用 TOML，共享 resolution 分类。
 |===
 
 [#completion-reference]

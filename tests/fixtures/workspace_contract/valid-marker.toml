@@ -1,0 +1,7 @@
+version = 1
+
+[workspace]
+strategy = "nearest_ancestor_containing_marker"
+marker = ".workspace-root"
+marker_type = "file"
+fallback = "launch_cwd"

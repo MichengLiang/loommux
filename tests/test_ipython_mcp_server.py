@@ -184,7 +184,7 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
 
     search = tools["search_output"].description or ""
     assert "选择与匹配\n------------" in search
-    assert "query_mode=\"auto\"" in search
+    assert 'query_mode="auto"' in search
     search_parameters = tools["search_output"].inputSchema["properties"]
     assert "字面文本或正则表达式" in search_parameters["query"]["description"]
     assert "必须大于或等于 0" in search_parameters["context_before"]["description"]

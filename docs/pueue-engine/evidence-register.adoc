@@ -63,8 +63,8 @@ G0 后，不允许 `unverified` evidence 支持 normative design。版本升级�
 |对象 |快照 |说明
 
 |Loommux repository
-|`main`，相对 origin ahead 2
-|文档写作开始时 worktree 无未提交修改；文档写入后状态另行审计。
+|`main` at `5cb6662`
+|该 commit 是本证据快照的 repository 坐标；后续实现提交由 release verification 另行记录。
 
 |Installed Pueue
 |`pueue 4.0.4`、`pueued 4.0.4`
@@ -141,6 +141,9 @@ Supports::
 Does not prove::
 Pueue engine 应自行 fork shell、拥有 process group 或在 adapter close 时清理 task。
 
+Verification::
+确认原始材料存在，并将其 process ownership 主张与当前 Pueue evidence 和 rejected alternatives 逐项比较。
+
 [#evidence-loommux]
 == Loommux 本地事实
 
@@ -187,6 +190,9 @@ xref:design-specification.adoc#line-log[Line coordinates]和 xref:design-specifi
 Does not prove::
 Python 实现的数据结构或性能适合直接移植到 Rust。
 
+Verification::
+运行 `uv run pytest tests/test_output_log.py -q`，并读取 `LineLog`、range parser 与 search matcher 的 source。
+
 [#evidence-loommux-terminal]
 === EVD-LOOMMUX-003：Terminal text contract
 
@@ -207,25 +213,31 @@ xref:design-specification.adoc#terminal-normalization[Terminal text normalizatio
 Does not prove::
 Pueue log 的 stdout/stderr 能恢复为 IPython 多 stream。
 
+Verification::
+运行 `uv run pytest tests/test_terminal_text.py -q`，并对全部跨 chunk fixture 检查公开文本不含 terminal escape 残片。
+
 [#evidence-loommux-migration]
-=== EVD-LOOMMUX-004：Workspace contract 迁移基线
+=== EVD-LOOMMUX-004：Workspace contract 引擎边界
 
 Status:: verified
 
 Source::
-`README.md` 的 workspace resolver 章节、`docs/workspace-configuration.md`、`docs/coding-agent-control-plane-design.md`、`src/loommux/workspace_resolver.py`、`examples/workspace-resolvers/` 和相关 tests。
+`README.md` workspace 章节、`docs/workspace-configuration.md`、`docs/coding-agent-control-plane-design.md`、`src/loommux/host_workspace_config.py`、`src/loommux/workspace_resolver.py`、`engines/pueue/src/workspace.rs`、两类 examples 和相关 tests。
 
 Observation::
-当前 implemented baseline 将 `LOOMMUX_WORKSPACE_CONFIG` 解释为可信 Python resolver 文件，并要求其提供 `resolve_workspace(launch_cwd)`。第一阶段 target 将同一入口迁移为 versioned TOML contract；当前代码、README 和旧设计文档尚未实现或宣称已实现该迁移。
+Python/IPython engine 将 `LOOMMUX_WORKSPACE_CONFIG` 解释为可信 Python resolver 文件，并要求其提供 `resolve_workspace(launch_cwd)`；Rust/Pueue engine 将该变量解释为 versioned TOML。两者都在 startup 解析 workspace，并公开 `launch_cwd` 或 `explicit_config`。
 
 Scope::
-Python resolver 表述在 WP-02 完成前仍是当前实现事实，不得作为 Pueue engine target。WP-02 负责跨 engine 行为迁移，WP-11 负责 README、示例和旧设计说明的发布级清理；发布后同一环境变量不得保留两种文件语言。
+配置路径只由已经选择的 engine 解释；单个 engine 不按内容猜测 Python 或 TOML。Python resolver 和 Pueue TOML 是并列的 engine-native authored surfaces，不承诺配置文件可跨 engine 复用。
 
 Supports::
 xref:design-specification.adoc#workspace-contract[Workspace contract]、xref:phase-1-delivery-plan.adoc#wp-workspace[WP-02]、xref:phase-1-delivery-plan.adoc#wp-release[WP-11]、xref:documentation-quality-standard.adoc#review-passes[Stale claim audit]。
 
 Does not prove::
-TOML target 已经实现，或当前 Python resolver 可以在发布门后继续作为未限定的主入口。
+WP-02 之外的第一阶段工具、lifecycle、output 或 release target 已经实现。
+
+Verification::
+运行 `uv run pytest -q`、`uv run pytest --no-cov tests/test_workspace_config.py tests/test_ipython_mcp_server.py -q` 与 `cargo nextest run`，并确认 Python tests 使用 `.py` resolver、Rust tests 使用 TOML fixtures。
 
 [#evidence-pueue]
 == Pueue `v4.0.4` 事实
@@ -575,6 +587,292 @@ xref:documentation-quality-standard.adoc#asciidoc-structure[AsciiDoc 结构规�
 Does not prove::
 当前工作区已经安装 `asciidoctor`。文档写作开始时 shell 中未找到该 executable。
 
+Verification::
+确认本地参考文件存在，再使用 `pnpm --package=@asciidoctor/cli@4.0.0 dlx asciidoctor --failure-level WARN` 解析本目录文档；语法参考不能替代 parser 结果。
+
+[#release-verification]
+== 第一阶段发布验证
+
+[#release-toolchain]
+=== EVD-REL-001：固定工具链与命令清单
+
+Status:: verified
+
+Source::
+`2026-07-25` 在 Loommux repository 根目录和 `engines/pueue/` 执行的发布门禁。
+
+Observation::
+
+[cols="3,2,5", options="header"]
+|===
+|工具或命令 |版本或退出状态 |结果
+
+|`uv`
+|`0.11.4`
+|Python 环境与打包调度器。
+
+|`pytest` / `ruff` / `basedpyright`
+|`9.1.0` / `0.15.12` / `1.39.3`
+|`153 passed, 1 skipped`；line coverage `90.97%`；Ruff 退出 `0`；basedpyright 为 `0 errors, 0 warnings`。
+
+|`rustc` / `cargo`
+|`1.95.0` / `1.95.0`
+|`just verify` 退出 `0`。
+
+|`pueue` / `pueued`
+|`4.0.4` / `4.0.4`
+|真实 daemon integration 使用目标配对。
+
+|`cargo-nextest` / `cargo-llvm-cov` / `cargo-deny`
+|`0.9.133` / `0.8.5` / `0.19.6`
+|83 个 Rust test 全部通过；deny 的 advisories、bans、licenses 与 sources 检查通过。
+
+|`just concurrency-20`
+|退出 `0`
+|四 adapter、每 adapter 八 execution 的并发 workload 与 typed exchange test 连续 `20/20` 轮通过。
+
+|`cargo build --locked` / `cargo build --release --locked`
+|退出 `0` / `0`
+|debug 与 release artifact 均从 lockfile 构建。
+
+|`cargo package --locked --allow-dirty`
+|退出 `0`
+|26 个文件，305.4 KiB，压缩后 64.2 KiB；package verification build 通过。
+
+|`uv build --clear` / `uv run twine check`
+|退出 `0` / `0`
+|`loommux-0.1.11` wheel 与 sdist 均通过 metadata 检查。
+
+|`@asciidoctor/cli`
+|`4.0.0`
+|五份 `docs/pueue-engine/*.adoc` 以 `--failure-level WARN` 全部渲染，退出 `0`。
+|===
+
+Scope::
+该记录描述当前 source tree 的 Linux 发布验证。Windows 与 Python `3.10`/`3.13` 组合由 `.github/workflows/ci.yml` 的 matrix 持续验证。
+
+Supports::
+WP-01、WP-09、WP-10、WP-11，`SYS-DOD-001`、`SYS-DOD-002`、`SYS-DOD-018`、`SYS-DOD-019`、`SYS-EXC-009` 和 `SYS-EXC-015`。
+
+Does not prove::
+单次通过不能证明可重复性；可重复性由 EVD-REL-005 的独立运行和 hash 比较证明。
+
+Verification::
+依次执行 `uv run pytest`、`uv run ruff check src tests scripts/audit_pueue_engine_docs.py`、`uv run basedpyright src`、`uv build --clear`、`uv run twine check`，以及 `just verify`、`just concurrency-20`。
+
+[#release-coverage]
+=== EVD-REL-002：Rust coverage 与排除项
+
+Status:: verified
+
+Source::
+`cargo llvm-cov nextest --all-features --workspace --fail-under-lines 95 --fail-under-functions 99 --fail-under-regions 90 --fail-uncovered-functions 2` 和 `target/coverage.txt`。
+
+Observation::
+83/83 tests 通过；line `97.40%`，function `99.69%`，region `96.64%`。`target/coverage.txt` 中没有任何未执行的 authored `fn` declaration。LLVM 在 `pueue_gateway.rs` 报告一个未命中的 compiler-generated async state-machine function；该函数不是 source 中的 authored `fn`，为本次发布的唯一排除项。
+
+Scope::
+排除只适用于该 compiler-generated function；不允许将 authored function、error branch 或 platform branch 纳入排除。
+
+Supports::
+`SYS-DOD-018`、`SYS-EXC-001` 和 `SYS-EXC-009`。
+
+Does not prove::
+总覆盖率不能替代场景追踪；41 个必要场景的映射由 EVD-REL-003 单独登记。
+
+Verification::
+执行 `just coverage`，再以 `rg '^\s*[0-9]+\|\s*0\|.*\bfn\b' target/coverage.txt` 检查 authored declaration。
+
+[#release-traceability]
+=== EVD-REL-003：`VER-001` 至 `VER-041` 自动化追踪报告
+
+Status:: verified
+
+Source::
+`engines/pueue/src/` 的 unit/component tests，`engines/pueue/tests/` 的真实 daemon 和 stdio black-box tests，以及 `tests/fixtures/` 的跨语言 contract vectors。
+
+Observation::
+下表为每个规范场景指定可执行的主证据。多行共用同一 black-box workflow 时，各行由该 test 内对应的独立 assertion 组证明，不从 test 名称推测行为。
+
+[cols="1,5,2", options="header"]
+|===
+|ID |自动化主证据 |层级
+
+|VER-001 |`direct_server_workflow_exercises_all_seven_tools_and_error_results` |daemon integration
+|VER-002 |`exactly_three_accepted_submissions_publish_one_two_three`、`accepted_only_sequence_is_strictly_monotonic` 与 `request_fixture_contains_no_public_task_identity` |component
+|VER-003 |`invalid_directive_has_no_backend_or_namespace_side_effect` |component
+|VER-004 |`unknown_submission_outcome_never_publishes_or_consumes_an_execution` 与 `mutation_response_loss_is_unknown_and_never_replayed` |component
+|VER-005 |`initial_wait_releases_the_adapter_for_concurrent_status_read_and_run` 与 `tool_discovery_is_exact` |daemon integration / unit
+|VER-006 |`all_done_results_project_exhaustively`、`locked_previous_status_is_narrow_and_invalid_variants_are_rejected` 与 `state_projection_clears_fields_that_do_not_apply_to_the_new_state` |unit
+|VER-007 |`failed_exit_is_a_successful_observation_with_its_exact_code` |daemon integration
+|VER-008 |`all_done_results_project_exhaustively` |unit
+|VER-009 |`initial_wait_releases_the_adapter_for_concurrent_status_read_and_run` |daemon integration
+|VER-010 |`wait_uses_a_monotonic_deadline_and_stops_on_terminal_observation` |component
+|VER-011 |`initial_wait_releases_the_adapter_for_concurrent_status_read_and_run` |daemon integration
+|VER-012 |`cancel_uses_only_task_specific_remove_or_kill`、`queued_cancel_freezes_available_output_and_blocks_remove_after_refresh_failure` 与 `stashed_cancel_keeps_frozen_read_search_and_wait_after_log_deletion` |component
+|VER-013 |`external_pause_resume_and_loommux_kill_cover_the_process_tree` |daemon integration
+|VER-014 |`locked_and_terminal_cancel_have_no_control_side_effect` |component
+|VER-015 |`locked_and_terminal_cancel_have_no_control_side_effect` |component
+|VER-016 |`cancel_rejection_refreshes_races_without_replaying_control`、`kill_rejection_and_failed_spawn_remove_races_refresh_without_replay`、`remove_success_does_not_infer_an_unobserved_failed_spawn_result` 与 `uncertain_or_disappearing_cancel_is_unknown_and_not_replayed` |component
+|VER-017 |`external_remove_marks_a_nonterminal_execution_missing` |daemon integration
+|VER-018 |`combined_transcript_preserves_backend_stdout_stderr_write_order` |daemon integration
+|VER-019 |`collector_reads_only_growth_and_rejects_truncation` 与 `repeated_incremental_refresh_matches_one_shot_normalization` |unit
+|VER-020 |`shared_normalization_vectors_cover_every_byte_split_and_one_byte_chunks`、`utf8_decoder_handles_every_one_byte_chunk_and_invalid_tail`、`invalid_utf8_in_the_middle_is_replaced_without_losing_following_bytes` 与 `normalizer_removes_split_terminal_sequences_and_cursor_controls` |cross-language contract / unit
+|VER-021 |`collector_rejects_missing_expected_unreadable_and_same_length_replacement` 与 `collector_reads_only_growth_and_rejects_truncation` |unit
+|VER-022 |`shared_line_log_contract_vectors_match_python` |cross-language contract
+|VER-023 |`search_deduplicates_overlapping_context_and_falls_back_to_literal` |unit
+|VER-024 |`automatic_output_line_limit_and_full_output_are_exercised_through_run_shell` 与 `automatic_delivery_omits_301_lines_unless_full_output_is_requested` |daemon integration / unit
+|VER-025 |`automatic_output_line_limit_and_full_output_are_exercised_through_run_shell` 与 `automatic_delivery_omits_301_lines_unless_full_output_is_requested` |daemon integration / unit
+|VER-026 |`consumes_multiple_directives_and_preserves_other_bytes` 与 `final_line_without_newline_is_consumed_exactly` |unit
+|VER-027 |`first_source_line_stops_scanning_including_here_document_data` |unit
+|VER-028 |`shared_contract_fixtures_parse_with_the_same_authored_surface`、`absent_config_uses_canonical_launch_cwd`、`marker_resolution_is_nearest_canonical_and_type_sensitive` 与 `symlinked_default_and_marker_workspaces_reach_the_add_request_canonically` |cross-language contract
+|VER-029 |`add_request_uses_canonical_workspace_and_fixed_phase_one_fields`、`request_fixture_contains_no_public_task_identity` 与 `public_result_field_order_null_policy_and_sensitive_surface_are_frozen` |unit
+|VER-030 |`missing_daemon_fails_before_tool_ready_with_stable_stderr_only_error`、`missing_shared_secret_fails_before_tool_ready_without_starting_another_daemon`、`protocol_mismatch_fails_startup_without_a_second_connection_attempt` 与 `protocol_and_explicit_failure_categories_are_stable` |process black-box / component
+|VER-031 |`status_remains_available_after_runtime_daemon_disconnect`、`unexpected_response_invalidates_and_next_observation_reconnects` 与 `mutation_response_loss_is_unknown_and_never_replayed` |daemon integration / component
+|VER-032 |`stdin_eof_and_sigterm_do_not_stop_accepted_tasks` |stdio black-box
+|VER-033 |`two_adapters_share_one_daemon_without_sharing_execution_namespaces` |daemon integration
+|VER-034 |`content_and_structured_modes_project_the_same_public_semantics` |daemon integration
+|VER-035 |`public_result_field_order_null_policy_and_sensitive_surface_are_frozen` |unit
+|VER-036 |`identity_fingerprint_rejects_every_authored_field_change`、`modified_identity_stops_state_projection_before_log_refresh` 与 `terminal_state_is_frozen_and_modified_identity_is_not_projected` |unit / component
+|VER-037 |`fingerprint_is_order_independent_and_ignores_runtime_environment` |unit
+|VER-038 |`external_in_place_restart_does_not_reopen_a_terminal_execution` |daemon integration
+|VER-039 |`external_stash_force_start_and_stashed_cancel_follow_typed_state`、`kill_rejection_and_failed_spawn_remove_races_refresh_without_replay` 与 `remove_success_does_not_infer_an_unobserved_failed_spawn_result` |daemon integration / component
+|VER-040 |`symlinked_default_and_marker_workspaces_reach_the_add_request_canonically`、`config_path_and_workspace_failures_keep_stable_categories`、`ordinary_file_is_not_a_workspace` 与 `symlink_loop_is_a_canonicalization_failure` |cross-language contract
+|VER-041 |`external_pause_resume_and_loommux_kill_cover_the_process_tree` |daemon integration
+|===
+
+Scope::
+表中 symbol 必须在 repository search 中唯一定位。场景的 normative expected result 仍由 xref:design-specification.adoc#verification-matrix[设计验证矩阵]定义。
+
+Supports::
+WP-04 至 WP-10，`SYS-DOD-003` 至 `SYS-DOD-018`，以及 `SYS-EXC-001` 至 `SYS-EXC-011` 和 `SYS-EXC-014`。
+
+Does not prove::
+映射表本身不表示 test 已执行；执行数量、退出状态和重复轮次由 EVD-REL-001、EVD-REL-002 和 EVD-REL-005 证明。
+
+Verification::
+运行 `cargo nextest run --all-features`，并对表中每个 symbol 进行 repository search；任一缺失、重名或 ignored test 都使追踪失败。
+
+[#release-package]
+=== EVD-REL-004：包、schema 与资源边界
+
+Status:: verified
+
+Source::
+Cargo package list、release binary、Python distribution、schema snapshot tests 与 suite 结束后 process/filesystem audit。
+
+Observation::
+
+* Clean source coordinate 为 temporary verification commit `808976ad023f7e2753b842dcb8bc7e265ad7d02f`；该 commit 由当前 scoped index 生成，不移动 branch ref。
+* Cargo crate SHA-256 为 `9cfd9f7de7a5929d197be9a2b9081f42821200fbbf97bbcaf30432f792666cbb`；release binary SHA-256 为 `7369f6103131c24e37afee715f4ed96e041a99ad7d0e619efceaf74baa1408c6`。
+* Python wheel SHA-256 为 `3e0dd0ab4e35d8c4910218f3503735f21f88f98e669cafff85be8fce7fe92961`；sdist SHA-256 为 `21d9eb9f03521d047fb524c20fec4fd44f54a148842a6efed732028f30fd54b4`。
+* 七工具 schema SHA-256 为 `93ee0a02d19a4ee2aae8b8b1b2075c27f4adc8df7427f3809cb0fe98d5cc47c1`；result schema SHA-256 为 `85d1197363d23e29983259ec532fea33eb7221454cec369b1791e9187a51f990`。
+* suite 结束后无 `loommux-pueue` process、无 isolated `pueued`、无 fixture descendant process，且无 socket、data 或 `target/i` harness tree；旧 `target/isolated-pueue` 路径亦不存在。宿主原有的 shared `pueued` 不属于 harness，未被 adapter 停止。
+
+Scope::
+Python sdist 包含权威文档，因此证据文字后续变更会正当地改变 sdist hash；可重复性比较使用同一 clean source coordinate 构建的产物。
+
+Supports::
+WP-08 至 WP-11，`SYS-DOD-001`、`SYS-DOD-003`、`SYS-DOD-016`、`SYS-DOD-019`、`SYS-EXC-011`、`SYS-EXC-013` 和 `SYS-EXC-015`。
+
+Does not prove::
+SHA-256 只证明字节一致，不替代 schema assertion、package content inspection 或资源所有权测试。
+
+Verification::
+执行 `cargo package --locked --allow-dirty --list`、`sha256sum`、schema snapshot tests，然后使用 exact process name、harness data path 和 descendant PID fixture 执行 suite 后审计。
+
+[#release-gates]
+=== EVD-REL-005：工作包与发布门禁清单
+
+Status:: verified
+
+Source::
+xref:phase-1-delivery-plan.adoc#stage-gates[阶段门]、各 WP acceptance evidence、系统门禁与 xref:documentation-quality-standard.adoc#documentation-excellence[文档验收公式]。
+
+Observation::
+在 clean source coordinate `808976ad023f7e2753b842dcb8bc7e265ad7d02f` 上连续执行两轮完整 release entrypoints。两轮均得到 Rust `83/83`、Python `153 passed, 1 skipped`、并发重复 `20/20`、相同 coverage 结论、相同 tool/result schema hash 和 EVD-REL-004 列出的四个相同 artifact hash。
+
+[cols="2,2,5", options="header"]
+|===
+|范围 |结论 |可复核证据
+
+|WP-00
+|accepted
+|四轮 lexical/structure/xref/traceability 审计与审查者接受记录。
+
+|WP-01
+|accepted
+|exact dependency、lockfile、fmt、Clippy、nextest、coverage、deny 和 locked builds。
+
+|WP-02
+|accepted
+|Python callback resolver tests、Rust TOML fixtures、canonical path 和 stable error category tests。
+
+|WP-03
+|accepted
+|Pueue `4.0.4` / `pueue-lib 0.31.1` typed gateway 与 isolated daemon harness。
+
+|WP-04
+|accepted
+|adapter-local namespace、atomic binding、exhaustive state projection、identity/generation tests。
+
+|WP-05
+|accepted
+|directive preamble unit suite，包含 CRLF、EOF 与 here-document boundary。
+
+|WP-06
+|accepted
+|monotonic wait、state-sensitive cancel、race/reconnect 与 process-tree control tests。
+
+|WP-07
+|accepted
+|incremental combined log、all-byte-split normalization、10 MiB fixture、range/search contract tests。
+
+|WP-08
+|accepted
+|七工具 discovery、stdio black-box、content/structured projection 与 sensitive-field audit。
+
+|WP-09
+|accepted
+|startup、disconnect/reconnect、EOF/SIGTERM persistence 与 suite resource audit。
+
+|WP-10
+|accepted
+|EVD-REL-003 的 `41/41` 追踪、EVD-REL-002 的覆盖率和 `20/20` 并发重复。
+
+|WP-11
+|accepted
+|README、engine README/release checklist、CI、Rust/Python package、AsciiDoc render 和重复发布验证。
+
+|`SYS-DOD-001..020`
+|accepted
+|EVD-REL-001 至 EVD-REL-004、`VER-001..041` 映射和 quality entrypoint 退出状态。
+
+|`SYS-EXC-001..015`
+|accepted
+|直接 branch mapping、真实 daemon manifest、唯一 generated-code 排除、资源清单、scoped diff 与 artifact comparison。
+
+|`DOC-DOD-001..020`
+|accepted
+|结构化文档审计、五文档 Asciidoctor render、PlantUML/SVG drift 与 scale fingerprint。
+
+|`DOC-EXC-001..015`
+|accepted
+|对象语言、权威边界、理由、source scope、xref 和 stale-claim 轮次审查。
+|===
+
+Scope::
+`accepted` 只在本节指定的 source coordinate、tool versions 和退出结果仍成立时有效。后续 source 变更使受影响 WP 和 gate 自动恢复为 open。
+
+Supports::
+G5 的全部 WP、SYS、DOC 合取判定。
+
+Does not prove::
+表格不允许以一个范围的成功抵消另一范围的失败，也不允许在 source 变更后沿用旧结论。
+
+Verification::
+连续两次从同一 clean source coordinate 执行 release entrypoints，比较 tool schema、result schema、coverage 结论与 package hashes，再运行 repository-wide stale/sensitive/scope audit 和 `git diff --check`。
+
 [#claim-ledger]
 == 原始主张处置账本
 
@@ -595,7 +893,7 @@ Does not prove::
 |typed `pueue-lib` 已验证，采用 xref:design-specification.adoc#dec-pueue-005[DEC-PUEUE-005]。
 
 |Pueue 原生 protocol 提供 wait request。
-|corrected
+|rejected
 |`Request` 无 Wait variant；CLI 使用 client-side Status polling，见 EVD-PUEUE-003。
 
 |公共指令前缀可称为 `# pueuemux:`。
@@ -603,15 +901,15 @@ Does not prove::
 |项目级 authored surface 为 `# loommux:`，见 DEC-PUEUE-006。
 
 |任意物理行上的指令都可以被消费。
-|narrowed
+|superseded
 |只识别 leading control preamble，避免误消费 shell data。
 
 |Pueue daemon 是“全机唯一”的共享对象。
-|corrected
+|superseded
 |对象是由 profile/settings/connection 确定的 daemon instance，见 EVD-PUEUE-008。
 
 |Pueue engine 只能使用 stdio，因为 HTTP 天生 stateless。
-|narrowed
+|superseded
 |第一阶段选择 stdio；HTTP 需要另行定义 session identity/state owner，未声明结构上永远不可能。
 
 |Pueue output 可以使用 IPython 的 stdout/stderr/result/traceback streams。
@@ -623,15 +921,15 @@ Does not prove::
 |adapter 不拥有 daemon instance；task 生命周期独立于 stdio process。
 
 |cancel 只需 kill running task。
-|extended
+|superseded
 |最近观察为 queued/stashed 时使用 remove，并在 Remove success 后形成 cancelled 控制终态；running/paused 使用 kill 并稍后形成 killed。
 
 |workspace 应成为跨 engine 声明式 contract。
-|adopted
-|第一阶段迁移 Python 与 Rust engine 到 versioned TOML schema。
+|rejected
+|Python 保留可编程 resolver；Rust 使用 versioned TOML，并共享 resolution 分类而非配置 grammar。
 
 |`rmcp = 3.0.0-beta.1` 是当前版本。
-|updated
+|superseded
 |文档冻结时 crates.io current beta 为 `3.0.0-beta.2`，使用 exact requirement。
 
 |MCP protocol `2026-07-28` 已可作为 current source。

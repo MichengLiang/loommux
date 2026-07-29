@@ -22,7 +22,7 @@ implemented baseline:: 描述审查时仓库已经运行的行为；不得被误
 phase-one target:: 描述本文件夹规定、尚待工作包实现和验证的行为。
 stale claim:: 在同一时间坐标和权威范围内已被替代，却仍无限定地宣称有效的表述。
 
-现有 Python workspace resolver 文档属于 implemented baseline，并已作为 xref:evidence-register.adoc#evidence-loommux-migration[EVD-LOOMMUX-004] 登记的迁移输入。它与第一阶段 TOML target 并存不表示目标规格已交付；WP-02 和 WP-11 完成后，旧入口必须被迁移或明确归档。
+Python/IPython engine 保留 Python callback workspace resolver；Rust/Pueue engine 使用 versioned TOML grammar。两者共享 workspace resolution 的观察分类，但各自使用适合 runtime 的配置文件语言。
 
 [#documentation-map]
 == 文档地图
@@ -105,13 +105,13 @@ xref:documentation-quality-standard.adoc#artifact-boundaries[文件边界] -> xr
 
 |`design-specification.adoc`
 |2050
-|71168
-|24663
+|71210
+|24679
 
 |`phase-1-delivery-plan.adoc`
 |944
-|37740
-|12834
+|37783
+|12847
 
 |`documentation-quality-standard.adoc`
 |474
@@ -119,9 +119,9 @@ xref:documentation-quality-standard.adoc#artifact-boundaries[文件边界] -> xr
 |5351
 
 |`evidence-register.adoc`
-|654
-|23926
-|8160
+|952
+|38432
+|12804
 |===
 
 最终审计会重新生成该表，禁止手工调整 token 数以满足门禁。

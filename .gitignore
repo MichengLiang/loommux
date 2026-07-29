@@ -12,3 +12,4 @@ tmp/
 node_modules/
 docs/001-raw.md
 docs/superpowers/
+target/

@@ -1,0 +1,9 @@
+[
+  {"config": "valid-launch-cwd.toml", "workspace": "launch", "resolution": "explicit_config"},
+  {"config": "valid-marker.toml", "workspace": "project", "resolution": "explicit_config"},
+  {"config": "invalid-malformed.toml", "error": "workspace_config_parse_failed"},
+  {"config": "invalid-rule.toml", "error": "workspace_config_invalid_rule"},
+  {"config": "invalid-top-level.toml", "error": "workspace_config_invalid_rule"},
+  {"config": "invalid-missing-workspace.toml", "error": "workspace_config_invalid_rule"},
+  {"config": "unsupported-version.toml", "error": "workspace_config_version_unsupported"}
+]
