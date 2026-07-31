@@ -368,8 +368,13 @@ its IPython-style `Out[execution]:` line; a silent cell returns only the input
 header, and stdout or traceback remains in its original combined order. For an
 execution that is still running, or for an unmarked terminal execution whose
 combined output exceeds 300 lines, the response retains the record but omits
-the full body. The output is not discarded; read or search it through the
-output tools.
+the full body. Its omission notice reports the combined output's total lines,
+Unicode code point characters, and UTF-8 size using one binary unit (`B`,
+`KiB`, `MiB`, and so on). The structured `run_cell`, `wait`, and
+`execution_status` surfaces expose the corresponding exact counts as
+`output_total_lines`, `output_total_characters`, and
+`output_total_utf8_bytes`. The output is not discarded; read or search it
+through the output tools.
 
 `read_output` uses `start:stop` inclusive line coordinates. Positive
 endpoints are 1-indexed, endpoints may be omitted, and negative endpoints

@@ -96,9 +96,13 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
 
         已接受的提交会分配一个正整数 ``execution``，它在服务器进程存续
         期间严格递增。若执行仍在运行，或未标记 execution 的 combined 输出
-        超过 300 行，响应不携带完整输出正文；使用 ``wait`` 等待，使用
-        ``execution_status`` 查看状态，使用 ``read_output``
+        超过 300 行，响应不携带完整输出正文；行数、Unicode code point
+        字符数和 UTF-8 字节数描述同一份 normalized combined 文本。使用
+        ``wait`` 等待，使用 ``execution_status`` 查看状态，使用 ``read_output``
         或 ``search_output`` 读取或搜索保留的输出。
+
+        Args:
+            freeform: 原始 IPython cell 源码文本。
 
         Returns:
             已接受 execution 的当前状态；完成的小输出直接进入模型内容，
@@ -154,7 +158,8 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
 
         Returns:
             选中记录的 ``execution``、status、时间戳、提交时 kernel 元数据、
-            输出总行数、输出省略原因与错误摘要。
+            输出总行数、Unicode code point 字符数、UTF-8 字节数、输出省略原因
+            与错误摘要。
         """
         return call("execution_status", lambda: adapter.execution_status(execution))
 

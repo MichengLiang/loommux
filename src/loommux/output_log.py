@@ -18,6 +18,8 @@ class ResolvedLineRange:
 class LineLog:
     def __init__(self) -> None:
         self._text = ""
+        self._character_count = 0
+        self._utf8_byte_count = 0
 
     @property
     def text(self) -> str:
@@ -27,8 +29,21 @@ class LineLog:
     def line_count(self) -> int:
         return len(self._lines())
 
+    @property
+    def character_count(self) -> int:
+        return self._character_count
+
+    @property
+    def utf8_byte_count(self) -> int:
+        return self._utf8_byte_count
+
     def append(self, text: str) -> None:
         self._text += text
+        # These counts describe the normalized text held by this log, not Python
+        # object storage or a later MCP/JSON envelope. Keeping them incrementally
+        # avoids re-encoding an arbitrarily large retained output for every status.
+        self._character_count += len(text)
+        self._utf8_byte_count += len(text.encode("utf-8"))
 
     def read(self, line_range: str | None = None, *, max_chars: int | None = None) -> dict[str, object]:
         max_chars_error = _validate_max_chars(max_chars)

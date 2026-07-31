@@ -33,6 +33,11 @@ terminal response returns the entire combined stream regardless of its line
 count. A running execution still returns the normal running surface; callers
 can use output-reading tools for partial progress.
 
+An omitted-output notice identifies the retained normalized combined text by
+its total lines, Unicode code point characters, and UTF-8 size. Its human
+readable size uses one binary unit selected from `B`, `KiB`, `MiB`, and larger
+units; structured responses retain the exact UTF-8 byte count.
+
 The option is per execution. It survives a later `wait`, error,
 interrupt, or reset-induced `killed` state, but it does not alter
 `read_output`, `search_output`, output-log storage, or later

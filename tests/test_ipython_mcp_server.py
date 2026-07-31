@@ -152,6 +152,7 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
     assert "# loommux: --wait 120" in run_cell
     assert "# loommux: --full-output" in run_cell
     assert "300 行" in run_cell
+    assert "UTF-8 字节数" in run_cell
     assert "wait" in run_cell
     assert "图像展示\n--------" in run_cell
     assert "IPython ``display()``" in run_cell
@@ -278,6 +279,25 @@ async def test_result_modes_share_marked_complete_long_output(default_client: Cl
     assert structured.structured_content is not None
     assert structured.structured_content["output_omitted"] is False
     assert default.structured_content is None
+
+
+async def test_line_limited_result_reports_one_human_readable_size_and_exact_structured_metrics(default_client: Client[Any]) -> None:
+    source = "print('\\n'.join(f'line-{number}' for number in range(301)))"
+    expected_output = "\n".join(f"line-{number}" for number in range(301)) + "\n"
+    async with Client(create_structured_mcp()) as structured_client:
+        structured = await structured_client.call_tool("run_cell", {"freeform": source})
+    default = await default_client.call_tool("run_cell", {"freeform": source})
+
+    expected_notice = (
+        f"Output omitted: 301 lines, {len(expected_output):,} characters, "
+        "2.54 KiB; exceeds the 300-line limit. "
+        "Use read_output() to read all lines or search_output() to locate text."
+    )
+    assert structured.content[0].text == default.content[0].text == f"In [1]:\n{expected_notice}"
+    assert structured.structured_content is not None
+    assert structured.structured_content["output_total_lines"] == 301
+    assert structured.structured_content["output_total_characters"] == len(expected_output)
+    assert structured.structured_content["output_total_utf8_bytes"] == len(expected_output.encode("utf-8"))
 
 
 async def test_shared_factory_binds_every_tool_to_the_integer_contract(default_client: Client[Any]) -> None:

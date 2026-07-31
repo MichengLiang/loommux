@@ -175,7 +175,8 @@ class Execution:
         return self.status == "running"
 
     def snapshot(self, output_line_limit: int | None = None) -> dict[str, Any]:
-        output_total_lines = self.logs.combined.line_count
+        combined_log = self.logs.combined
+        output_total_lines = combined_log.line_count
         omission_reason = self._output_omitted_reason(output_line_limit, output_total_lines)
         omitted = omission_reason is not None
         result: dict[str, Any] = {
@@ -190,13 +191,16 @@ class Execution:
             "output_omitted_reason": omission_reason,
             "output_line_limit": output_line_limit,
             "output_total_lines": output_total_lines,
+            "output_total_characters": combined_log.character_count,
+            "output_total_utf8_bytes": combined_log.utf8_byte_count,
         }
         if not omitted:
             result["output_text"] = self.logs.combined.text
         return result
 
     def status_snapshot(self, output_line_limit: int | None = None) -> dict[str, Any]:
-        output_total_lines = self.logs.combined.line_count
+        combined_log = self.logs.combined
+        output_total_lines = combined_log.line_count
         return {
             "ok": self.status not in {"error", "killed"},
             "execution": self.execution,
@@ -208,6 +212,8 @@ class Execution:
             "execution_count_at_submit": self.execution_count_at_submit,
             "error": self._error_summary(),
             "output_total_lines": output_total_lines,
+            "output_total_characters": combined_log.character_count,
+            "output_total_utf8_bytes": combined_log.utf8_byte_count,
             "output_omitted_reason": self._output_omitted_reason(output_line_limit, output_total_lines),
         }
 

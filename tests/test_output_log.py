@@ -16,6 +16,9 @@ def test_line_log_reads_ranges_and_clipping() -> None:
     assert log.read("3:3", max_chars=3)["text"] == "gam...[2 chars omitted]"
     assert log.read("bad")["status"] == "invalid_line_range"
     assert log.read(max_chars=0)["status"] == "invalid_max_chars"
+    log.append("A中🙂\n")
+    assert log.character_count == len("alpha\nbeta\ngamma\nA中🙂\n")
+    assert log.utf8_byte_count == len("alpha\nbeta\ngamma\nA中🙂\n".encode())
 
 
 def test_line_log_search_supports_context_and_query_modes() -> None:
@@ -56,8 +59,15 @@ def test_execution_tracks_error_interrupt_and_omitted_snapshots() -> None:
     assert record.status == "interrupted"
     assert record.result_text == "first\nsecond"
     assert record.logs.traceback.text == "trace\n"
-    assert record.snapshot(1)["output_omitted_reason"] == "line_limit_exceeded"
-    assert record.status_snapshot()["error"] == {"ename": "KeyboardInterrupt", "evalue": ""}
+    snapshot = record.snapshot(1)
+    status_snapshot = record.status_snapshot()
+
+    assert snapshot["output_omitted_reason"] == "line_limit_exceeded"
+    assert snapshot["output_total_characters"] == len(record.logs.combined.text)
+    assert snapshot["output_total_utf8_bytes"] == len(record.logs.combined.text.encode("utf-8"))
+    assert status_snapshot["error"] == {"ename": "KeyboardInterrupt", "evalue": ""}
+    assert status_snapshot["output_total_characters"] == snapshot["output_total_characters"]
+    assert status_snapshot["output_total_utf8_bytes"] == snapshot["output_total_utf8_bytes"]
 
 
 def test_execution_normalizes_every_stream_projection_before_logging() -> None:

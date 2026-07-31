@@ -5,7 +5,7 @@ from mcp.types import ImageContent, TextContent
 
 from loommux.execution import PresentationFailure, PresentationImage, PresentationText
 from loommux.mcp_result_policy import ImageDeliveryLimits, make_tool_result
-from loommux.presentation import format_tool_result_text
+from loommux.presentation import format_output_line_limit_notice, format_tool_result_text
 
 
 def test_completed_result_projects_only_ipython_visible_output() -> None:
@@ -20,14 +20,36 @@ def test_completed_result_projects_only_ipython_visible_output() -> None:
 
 def test_execution_states_name_the_integer_coordinate() -> None:
     running = {"ok": True, "execution": 5, "status": "running", "output_omitted_reason": "running"}
-    large = {"ok": True, "execution": 5, "status": "completed", "output_omitted_reason": "line_limit_exceeded", "output_line_limit": 300}
+    large = {
+        "ok": True,
+        "execution": 5,
+        "status": "completed",
+        "output_omitted_reason": "line_limit_exceeded",
+        "output_line_limit": 300,
+        "output_total_lines": 301,
+        "output_total_characters": 2_600,
+        "output_total_utf8_bytes": 2_600,
+    }
     error = {"ok": False, "execution": 5, "status": "error", "error": {"ename": "ZeroDivisionError", "evalue": "division by zero"}}
     killed = {"ok": False, "execution": 5, "status": "killed"}
 
     assert format_tool_result_text("run_cell", running) == "In [5]:\nRunning: use wait() for completion, read_output() for collected output, or search_output() to locate text."
-    assert format_tool_result_text("wait", large) == "In [5]:\nOutput: more than 300 lines; use read_output() to read all lines or search_output() to locate text."
+    assert format_tool_result_text("wait", large) == "In [5]:\nOutput omitted: 301 lines, 2,600 characters, 2.54 KiB; exceeds the 300-line limit. Use read_output() to read all lines or search_output() to locate text."
     assert format_tool_result_text("run_cell", error) == "In [5]:\nError: ZeroDivisionError: division by zero"
     assert format_tool_result_text("wait", killed) == "In [5]:\nKilled: restart() stopped this execution."
+
+
+def test_line_limited_notice_selects_exactly_one_binary_size_unit() -> None:
+    status = {
+        "output_line_limit": 300,
+        "output_total_lines": 301,
+        "output_total_characters": 1_023,
+        "output_total_utf8_bytes": 1_023,
+    }
+
+    assert "1,023 B;" in format_output_line_limit_notice(status)
+    status["output_total_utf8_bytes"] = 1_024
+    assert "1 KiB;" in format_output_line_limit_notice(status)
 
 
 def test_marked_terminal_execution_renders_its_complete_combined_output() -> None:
@@ -164,6 +186,9 @@ def test_rich_execution_keeps_images_but_omits_line_limited_text() -> None:
             "status": "completed",
             "output_omitted_reason": "line_limit_exceeded",
             "output_line_limit": 300,
+            "output_total_lines": 301,
+            "output_total_characters": 2_600,
+            "output_total_utf8_bytes": 2_600,
             "_presentation": (
                 PresentationText("\n".join(f"line-{number}" for number in range(301))),
                 PresentationImage("eA==", "image/png", None, 1),
@@ -177,7 +202,7 @@ def test_rich_execution_keeps_images_but_omits_line_limited_text() -> None:
     assert isinstance(result.content[0], TextContent)
     assert result.content[0].text == "In [5]:\n"
     assert isinstance(result.content[1], TextContent)
-    assert "exceeds 300 lines" in result.content[1].text
+    assert result.content[1].text == "Output omitted: 301 lines, 2,600 characters, 2.54 KiB; exceeds the 300-line limit. Use read_output() to read all lines or search_output() to locate text."
     assert "read_output() to read all lines or search_output()" in result.content[1].text
     assert "line-0" not in result.content[1].text
 

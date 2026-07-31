@@ -171,6 +171,10 @@ def test_unmarked_long_combined_output_keeps_the_default_omission_rule(adapter: 
     assert response["output_omitted"] is True
     assert response["output_omitted_reason"] == "line_limit_exceeded"
     assert "output_text" not in response
+    expected_output = "\n".join(f"line-{number}" for number in range(301)) + "\n"
+    assert response["output_total_lines"] == 301
+    assert response["output_total_characters"] == len(expected_output)
+    assert response["output_total_utf8_bytes"] == len(expected_output.encode("utf-8"))
 
 
 def test_full_output_directive_survives_running_wait_error_and_reset(adapter: IPythonMCPAdapter) -> None:
