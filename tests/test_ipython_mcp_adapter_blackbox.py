@@ -8,6 +8,10 @@ import pytest
 
 from loommux.adapter import IPythonMCPAdapter
 
+TOKEN_LIGHT_MANY_LINES = "\n".join(f"line-{number}" for number in range(301)) + "\n"
+TOKEN_HEAVY_LINE = "abcdefghij " * 20
+TOKEN_HEAVY_MANY_LINES = f"{TOKEN_HEAVY_LINE}\n" * 301
+
 
 @pytest.fixture
 def adapter(tmp_path: Path) -> IPythonMCPAdapter:
@@ -108,11 +112,11 @@ def test_interrupts_a_running_kernel_cell_through_the_managed_runtime(adapter: I
 
 
 def test_full_output_directive_returns_complete_long_combined_output(adapter: IPythonMCPAdapter) -> None:
-    response = adapter.run_cell("# loommux: --full-output\nprint('\\n'.join(f'line-{number}' for number in range(301)))")
+    response = adapter.run_cell("# loommux: --full-output\nprint(('abcdefghij ' * 20 + '\\n') * 301, end='')")
 
     assert response["status"] == "completed"
     assert response["output_omitted"] is False
-    assert response["output_text"].splitlines() == [f"line-{number}" for number in range(301)]
+    assert response["output_text"] == TOKEN_HEAVY_MANY_LINES
 
 
 def test_full_output_directive_preserves_the_combined_iopub_order(adapter: IPythonMCPAdapter) -> None:
@@ -162,29 +166,34 @@ def test_directive_composes_with_a_bash_cell_magic(adapter: IPythonMCPAdapter) -
     assert completed["output_text"] == "bash-finished\n"
 
 
-def test_unmarked_long_combined_output_keeps_the_default_omission_rule(adapter: IPythonMCPAdapter) -> None:
-    marked = adapter.run_cell("# loommux: --full-output\nprint('marked only')")
+def test_unmarked_many_line_output_bypasses_the_line_limit_when_it_is_token_light(adapter: IPythonMCPAdapter) -> None:
     response = adapter.run_cell("print('\\n'.join(f'line-{number}' for number in range(301)))")
 
-    assert marked["output_omitted"] is False
+    assert response["status"] == "completed"
+    assert response["output_omitted"] is False
+    assert response["output_text"] == TOKEN_LIGHT_MANY_LINES
+
+
+def test_unmarked_token_heavy_many_line_output_keeps_the_default_omission_rule(adapter: IPythonMCPAdapter) -> None:
+    response = adapter.run_cell("print(('abcdefghij ' * 20 + '\\n') * 301, end='')")
+
     assert response["status"] == "completed"
     assert response["output_omitted"] is True
     assert response["output_omitted_reason"] == "line_limit_exceeded"
     assert "output_text" not in response
-    expected_output = "\n".join(f"line-{number}" for number in range(301)) + "\n"
     assert response["output_total_lines"] == 301
-    assert response["output_total_characters"] == len(expected_output)
-    assert response["output_total_utf8_bytes"] == len(expected_output.encode("utf-8"))
+    assert response["output_total_characters"] == len(TOKEN_HEAVY_MANY_LINES)
+    assert response["output_total_utf8_bytes"] == len(TOKEN_HEAVY_MANY_LINES.encode("utf-8"))
 
 
 def test_full_output_directive_survives_running_wait_error_and_reset(adapter: IPythonMCPAdapter) -> None:
-    running = adapter.run_cell("# loommux: --wait 0.1 --full-output\nimport time\ntime.sleep(0.3)\nprint('\\n'.join(f'wait-{number}' for number in range(301)))")
+    running = adapter.run_cell("# loommux: --wait 0.1 --full-output\nimport time\ntime.sleep(0.3)\nprint(('abcdefghij ' * 20 + '\\n') * 301, end='')")
     assert running["status"] == "running"
     assert running["output_omitted_reason"] == "running"
 
     completed = adapter.wait(running["execution"], timeout_seconds=3)
     assert completed["status"] == "completed"
-    assert completed["output_text"].splitlines() == [f"wait-{number}" for number in range(301)]
+    assert completed["output_text"] == TOKEN_HEAVY_MANY_LINES
 
     failed = adapter.run_cell("# loommux: --full-output\nprint('before failure')\nraise RuntimeError('expected failure')")
     assert failed["status"] == "error"

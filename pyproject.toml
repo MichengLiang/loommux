@@ -27,6 +27,7 @@ dependencies = [
     "ipykernel>=7.2.0",
     "jupyter-client>=8.8.0",
     "pywin32>=306; sys_platform == 'win32'",
+    "tiktoken>=0.11.0",
 ]
 
 [project.urls]
@@ -46,7 +47,6 @@ dev = [
     "pytest-cov>=7.0.0",
     "pytest-timeout>=2.4.0",
     "ruff>=0.15.0",
-    "tiktoken>=0.11.0",
     "twine>=6.2.0",
 ]
 

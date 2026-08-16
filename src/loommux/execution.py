@@ -3,12 +3,27 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field
+from functools import cache
 from typing import Any, Literal, TypeAlias
+
+import tiktoken
 
 from loommux.output_log import ExecutionLogs
 from loommux.terminal_text import TerminalTextNormalizer
 
 ExecutionStatus = Literal["running", "completed", "error", "interrupted", "killed"]
+OUTPUT_TOKEN_ENCODING = "o200k_base"
+
+
+@cache
+def _output_token_encoding() -> tiktoken.Encoding:
+    """Load the one tokenizer used by the private automatic-delivery policy."""
+    return tiktoken.get_encoding(OUTPUT_TOKEN_ENCODING)
+
+
+def _count_output_tokens(text: str) -> int:
+    """Count arbitrary visible output as ordinary ``o200k_base`` text."""
+    return len(_output_token_encoding().encode_ordinary(text))
 
 
 @dataclass(frozen=True)
@@ -67,11 +82,15 @@ class Execution:
     _stderr_normalizer: TerminalTextNormalizer = field(default_factory=TerminalTextNormalizer, init=False, repr=False)
     _result_normalizer: TerminalTextNormalizer = field(default_factory=TerminalTextNormalizer, init=False, repr=False)
     _traceback_normalizer: TerminalTextNormalizer = field(default_factory=TerminalTextNormalizer, init=False, repr=False)
+    _output_token_count: int | None = field(default=None, init=False, repr=False)
+    _output_token_count_is_current: bool = field(default=False, init=False, repr=False)
 
     def append_stdout(self, text: str) -> str:
         normalized = self._stdout_normalizer.normalize(text)
         self.stdout += normalized
         self.logs.append_stdout(normalized)
+        if normalized:
+            self._invalidate_output_token_count()
         self._append_presentation_text(normalized)
         self.updated_at = time.time()
         return normalized
@@ -80,6 +99,8 @@ class Execution:
         normalized = self._stderr_normalizer.normalize(text)
         self.stderr += normalized
         self.logs.append_stderr(normalized)
+        if normalized:
+            self._invalidate_output_token_count()
         self._append_presentation_text(normalized)
         self.updated_at = time.time()
         return normalized
@@ -91,6 +112,8 @@ class Execution:
         if normalized:
             self.result_text += normalized
         self.logs.append_result(normalized, self.execution)
+        if normalized:
+            self._invalidate_output_token_count()
         self._append_presentation_text(normalized)
         self.updated_at = time.time()
         return normalized
@@ -106,6 +129,8 @@ class Execution:
             normalized_traceback = [self._traceback_normalizer.normalize(str(line)) for line in traceback]
             normalized_error["traceback"] = normalized_traceback
             output = self.logs.append_traceback(normalized_traceback)
+            if output:
+                self._invalidate_output_token_count()
             self._append_presentation_text(output)
         self.error = normalized_error
         self.status = "error"
@@ -174,10 +199,10 @@ class Execution:
     def is_running(self) -> bool:
         return self.status == "running"
 
-    def snapshot(self, output_line_limit: int | None = None) -> dict[str, Any]:
+    def snapshot(self, output_line_limit: int | None = None, output_token_bypass_limit: int | None = None) -> dict[str, Any]:
         combined_log = self.logs.combined
         output_total_lines = combined_log.line_count
-        omission_reason = self._output_omitted_reason(output_line_limit, output_total_lines)
+        omission_reason = self._output_omitted_reason(output_line_limit, output_token_bypass_limit, output_total_lines)
         omitted = omission_reason is not None
         result: dict[str, Any] = {
             "ok": self.status not in {"error", "killed"},
@@ -198,7 +223,7 @@ class Execution:
             result["output_text"] = self.logs.combined.text
         return result
 
-    def status_snapshot(self, output_line_limit: int | None = None) -> dict[str, Any]:
+    def status_snapshot(self, output_line_limit: int | None = None, output_token_bypass_limit: int | None = None) -> dict[str, Any]:
         combined_log = self.logs.combined
         output_total_lines = combined_log.line_count
         return {
@@ -214,7 +239,7 @@ class Execution:
             "output_total_lines": output_total_lines,
             "output_total_characters": combined_log.character_count,
             "output_total_utf8_bytes": combined_log.utf8_byte_count,
-            "output_omitted_reason": self._output_omitted_reason(output_line_limit, output_total_lines),
+            "output_omitted_reason": self._output_omitted_reason(output_line_limit, output_token_bypass_limit, output_total_lines),
         }
 
     def _error_summary(self) -> dict[str, Any] | None:
@@ -222,11 +247,43 @@ class Execution:
             return None
         return {key: self.error.get(key) for key in ("ename", "evalue") if key in self.error}
 
-    def _output_omitted_reason(self, output_line_limit: int | None, output_total_lines: int) -> str | None:
+    def _output_omitted_reason(self, output_line_limit: int | None, output_token_bypass_limit: int | None, output_total_lines: int) -> str | None:
+        """Apply the public line limit only after the private token exemption.
+
+        The token threshold is intentionally not projected into response fields or
+        MCP descriptions. It only proves that a many-line combined log is still
+        compact enough for automatic delivery. If the tokenizer is unavailable,
+        the established 300-line policy remains the conservative fallback.
+        """
         if self.status == "running":
             return "running"
         if self._full_output_requested:
             return None
+        if output_token_bypass_limit is not None:
+            combined_log = self.logs.combined
+            # Ordinary BPE tokens each represent at least one UTF-8 byte. This
+            # exact shortcut avoids loading the encoding table for common small
+            # outputs while preserving the same token-threshold decision.
+            if combined_log.utf8_byte_count <= output_token_bypass_limit:
+                return None
+            output_token_count = self._combined_output_token_count()
+            if output_token_count is not None and output_token_count <= output_token_bypass_limit:
+                return None
         if output_line_limit is not None and output_total_lines > output_line_limit:
             return "line_limit_exceeded"
         return None
+
+    def _combined_output_token_count(self) -> int | None:
+        if self._output_token_count_is_current:
+            return self._output_token_count
+        try:
+            count = _count_output_tokens(self.logs.combined.text)
+        except (ImportError, OSError, RuntimeError, ValueError):
+            count = None
+        self._output_token_count = count
+        self._output_token_count_is_current = True
+        return count
+
+    def _invalidate_output_token_count(self) -> None:
+        self._output_token_count = None
+        self._output_token_count_is_current = False

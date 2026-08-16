@@ -13,6 +13,9 @@ from loommux.mcp_result_policy import make_tool_result
 from loommux.mcp_server_factory import create_mcp as create_policy_mcp
 
 WORKSPACE_CONFIG_ENV = "LOOMMUX_WORKSPACE_CONFIG"
+TOKEN_LIGHT_MANY_LINES = "\n".join(f"line-{number}" for number in range(301)) + "\n"
+TOKEN_HEAVY_LINE = "abcdefghij " * 20
+TOKEN_HEAVY_MANY_LINES = f"{TOKEN_HEAVY_LINE}\n" * 301
 
 
 def create_structured_mcp() -> Any:
@@ -269,35 +272,44 @@ print('after-image', flush=True)
 
 
 async def test_result_modes_share_marked_complete_long_output(default_client: Client[Any]) -> None:
-    source = "# loommux: --full-output\nprint('\\n'.join(f'line-{number}' for number in range(301)))"
+    source = "# loommux: --full-output\nprint(('abcdefghij ' * 20 + '\\n') * 301, end='')"
     async with Client(create_structured_mcp()) as structured_client:
         structured = await structured_client.call_tool("run_cell", {"freeform": source})
     default = await default_client.call_tool("run_cell", {"freeform": source})
 
-    expected = "In [1]:\n" + "\n".join(f"line-{number}" for number in range(301)) + "\n"
+    expected = f"In [1]:\n{TOKEN_HEAVY_MANY_LINES}"
     assert structured.content[0].text == default.content[0].text == expected
     assert structured.structured_content is not None
     assert structured.structured_content["output_omitted"] is False
     assert default.structured_content is None
 
 
-async def test_line_limited_result_reports_one_human_readable_size_and_exact_structured_metrics(default_client: Client[Any]) -> None:
+async def test_token_light_many_line_result_bypasses_the_internal_line_gate(default_client: Client[Any]) -> None:
     source = "print('\\n'.join(f'line-{number}' for number in range(301)))"
-    expected_output = "\n".join(f"line-{number}" for number in range(301)) + "\n"
     async with Client(create_structured_mcp()) as structured_client:
         structured = await structured_client.call_tool("run_cell", {"freeform": source})
     default = await default_client.call_tool("run_cell", {"freeform": source})
 
-    expected_notice = (
-        f"Output omitted: 301 lines, {len(expected_output):,} characters, "
-        "2.54 KiB; exceeds the 300-line limit. "
-        "Use read_output() to read all lines or search_output() to locate text."
-    )
+    expected = f"In [1]:\n{TOKEN_LIGHT_MANY_LINES}"
+    assert structured.content[0].text == default.content[0].text == expected
+    assert structured.structured_content is not None
+    assert structured.structured_content["output_omitted"] is False
+    assert {"output_total_tokens", "output_token_limit", "output_token_encoding"}.isdisjoint(structured.structured_content)
+
+
+async def test_line_limited_result_reports_one_human_readable_size_and_exact_structured_metrics(default_client: Client[Any]) -> None:
+    source = "print(('abcdefghij ' * 20 + '\\n') * 301, end='')"
+    async with Client(create_structured_mcp()) as structured_client:
+        structured = await structured_client.call_tool("run_cell", {"freeform": source})
+    default = await default_client.call_tool("run_cell", {"freeform": source})
+
+    expected_notice = f"Output omitted: 301 lines, {len(TOKEN_HEAVY_MANY_LINES):,} characters, 64.96 KiB; exceeds the 300-line limit. Use read_output() to read all lines or search_output() to locate text."
     assert structured.content[0].text == default.content[0].text == f"In [1]:\n{expected_notice}"
     assert structured.structured_content is not None
     assert structured.structured_content["output_total_lines"] == 301
-    assert structured.structured_content["output_total_characters"] == len(expected_output)
-    assert structured.structured_content["output_total_utf8_bytes"] == len(expected_output.encode("utf-8"))
+    assert structured.structured_content["output_total_characters"] == len(TOKEN_HEAVY_MANY_LINES)
+    assert structured.structured_content["output_total_utf8_bytes"] == len(TOKEN_HEAVY_MANY_LINES.encode("utf-8"))
+    assert {"output_total_tokens", "output_token_limit", "output_token_encoding"}.isdisjoint(structured.structured_content)
 
 
 async def test_shared_factory_binds_every_tool_to_the_integer_contract(default_client: Client[Any]) -> None:

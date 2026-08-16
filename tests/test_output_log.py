@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+import loommux.execution as execution_module
 from loommux.execution import Execution
 from loommux.output_log import ExecutionLogs, LineLog
 
@@ -68,6 +71,78 @@ def test_execution_tracks_error_interrupt_and_omitted_snapshots() -> None:
     assert status_snapshot["error"] == {"ename": "KeyboardInterrupt", "evalue": ""}
     assert status_snapshot["output_total_characters"] == snapshot["output_total_characters"]
     assert status_snapshot["output_total_utf8_bytes"] == snapshot["output_total_utf8_bytes"]
+
+
+@pytest.mark.parametrize(("token_count", "omitted"), [(5_000, False), (5_001, True)])
+def test_execution_applies_the_line_limit_only_after_the_private_token_bypass(
+    monkeypatch: pytest.MonkeyPatch,
+    token_count: int,
+    omitted: bool,
+) -> None:
+    record = Execution(execution=3, kernel_pid=12)
+    record.append_stdout(("payload " * 20 + "\n") * 301)
+    record.finish()
+    calls = 0
+
+    def count_tokens(_text: str) -> int:
+        nonlocal calls
+        calls += 1
+        return token_count
+
+    monkeypatch.setattr(execution_module, "_count_output_tokens", count_tokens)
+
+    snapshot = record.snapshot(output_line_limit=300, output_token_bypass_limit=5_000)
+    status = record.status_snapshot(output_line_limit=300, output_token_bypass_limit=5_000)
+
+    assert snapshot["output_omitted"] is omitted
+    assert snapshot["output_omitted_reason"] == ("line_limit_exceeded" if omitted else None)
+    assert status["output_omitted_reason"] == snapshot["output_omitted_reason"]
+    assert {"output_total_tokens", "output_token_limit", "output_token_encoding"}.isdisjoint(snapshot)
+    assert calls == 1
+
+
+def test_token_heavy_output_still_requires_more_than_the_public_line_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    record = Execution(execution=3, kernel_pid=12)
+    record.append_stdout("one token-heavy line " * 301)
+    record.finish()
+    monkeypatch.setattr(execution_module, "_count_output_tokens", lambda _text: 5_001)
+
+    snapshot = record.snapshot(output_line_limit=1, output_token_bypass_limit=5_000)
+
+    assert snapshot["output_omitted"] is False
+    assert snapshot["output_omitted_reason"] is None
+
+
+def test_full_output_and_running_states_do_not_consult_the_tokenizer(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(execution_module, "_count_output_tokens", lambda _text: pytest.fail("tokenizer should not be called"))
+    running = Execution(execution=1, kernel_pid=12)
+    running.append_stdout(("payload " * 20 + "\n") * 301)
+    marked = Execution(execution=2, kernel_pid=12, _full_output_requested=True)
+    marked.append_stdout(("payload " * 20 + "\n") * 301)
+    marked.finish()
+
+    assert running.snapshot(output_line_limit=300, output_token_bypass_limit=5_000)["output_omitted_reason"] == "running"
+    assert marked.snapshot(output_line_limit=300, output_token_bypass_limit=5_000)["output_omitted"] is False
+
+
+def test_tokenizer_failure_conservatively_falls_back_to_the_line_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    record = Execution(execution=3, kernel_pid=12)
+    record.append_stdout(("payload " * 20 + "\n") * 301)
+    record.finish()
+
+    def unavailable(_text: str) -> int:
+        raise OSError("encoding data is unavailable")
+
+    monkeypatch.setattr(execution_module, "_count_output_tokens", unavailable)
+
+    snapshot = record.snapshot(output_line_limit=300, output_token_bypass_limit=5_000)
+
+    assert snapshot["output_omitted"] is True
+    assert snapshot["output_omitted_reason"] == "line_limit_exceeded"
+
+
+def test_o200k_counter_treats_special_token_shaped_output_as_ordinary_text() -> None:
+    assert execution_module._count_output_tokens("<|endoftext|>\n<|endofprompt|>") > 0
 
 
 def test_execution_normalizes_every_stream_projection_before_logging() -> None:
