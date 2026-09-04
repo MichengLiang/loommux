@@ -49,4 +49,6 @@ def _port(value: str) -> int:
 def _path(value: str) -> str:
     if not value.startswith("/"):
         raise argparse.ArgumentTypeError("path must start with '/'")
+    if value == "/" or value == "/api" or value.startswith("/api/"):
+        raise argparse.ArgumentTypeError("path conflicts with the HTTP control plane")
     return value

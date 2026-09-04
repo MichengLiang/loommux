@@ -63,7 +63,7 @@ def test_main_forwards_the_single_entrypoint_arguments(monkeypatch: pytest.Monke
     assert captured["argv"] == ["--server", "--port", "9100"]
 
 
-@pytest.mark.parametrize("argv", [["--server", "--port", "0"], ["--server", "--port", "65536"], ["--server", "--path", "tools"], ["--transport", "stdio"], ["--result-mode", "content"]])
+@pytest.mark.parametrize("argv", [["--server", "--port", "0"], ["--server", "--port", "65536"], ["--server", "--path", "tools"], ["--server", "--path", "/"], ["--server", "--path", "/api/private"], ["--transport", "stdio"], ["--result-mode", "content"]])
 def test_invalid_or_removed_options_are_rejected_before_starting(argv: list[str]) -> None:
     with pytest.raises(SystemExit, match="2"):
         run_entrypoint(lambda _mode: RecordingMCP(), argv=argv)

@@ -278,6 +278,9 @@ def test_kernel_exit_finishes_the_running_execution(tmp_path: Path) -> None:
     workspace.mkdir()
     session = IPythonSession()
     assert session.start_workspace(workspace, "launch_cwd")["ok"] is True
+    old_kernel = session.kernel
+    assert old_kernel is not None and old_kernel.launch is not None
+    old_runtime_root = old_kernel.launch.runtime_root
     try:
         running = session.run_cell(
             "# loommux: --wait 0.1\n"
@@ -294,7 +297,9 @@ def test_kernel_exit_finishes_the_running_execution(tmp_path: Path) -> None:
         assert status["status"] == "killed"
         assert status["error"]["ename"] == "KernelProcessExited"
         assert session.status()["kernel_started"] is False
+        assert session.kernel is old_kernel
         assert session.restart()["status"] == "restarted"
+        assert not old_runtime_root.exists()
     finally:
         session.close()
 

@@ -28,7 +28,7 @@ def test_settings_read_all_resource_lease_values() -> None:
 
 @pytest.mark.parametrize(
     "value",
-    ["0", "-1"],
+    ["0", "-1", "nan", "inf"],
 )
 def test_settings_reject_non_positive_durations(value: str) -> None:
     with pytest.raises(ValueError):
@@ -40,3 +40,13 @@ def test_settings_reject_non_positive_durations(value: str) -> None:
 def test_settings_reject_unknown_lease_mode() -> None:
     with pytest.raises(ValueError, match="activity or heartbeat"):
         ResourceServerSettings.from_environ({"LOOMMUX_LEASE_MODE": "other"})
+
+
+def test_settings_reject_invalid_heartbeat_relationship() -> None:
+    with pytest.raises(ValueError, match="must be greater"):
+        ResourceServerSettings.from_environ(
+            {
+                "LOOMMUX_HEARTBEAT_INTERVAL_SECONDS": "5",
+                "LOOMMUX_HEARTBEAT_TIMEOUT_SECONDS": "5",
+            }
+        )

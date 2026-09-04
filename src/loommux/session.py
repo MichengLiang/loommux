@@ -18,7 +18,7 @@ OUTPUT_STREAMS = {"combined", "stdout", "stderr", "result", "traceback"}
 
 
 class IPythonSession:
-    """Own one persistent kernel and its server-local execution history.
+    """Own one logical resource's persistent kernel and execution history.
 
     The session is transport-neutral. It exposes execution facts and control
     operations to callers such as an IPython manager, a test harness, or an MCP
@@ -130,9 +130,12 @@ class IPythonSession:
 
     def status(self) -> dict[str, Any]:
         with self._lock:
-            kernel = self.kernel if self.kernel is not None and self.kernel.is_alive() else None
-            if kernel is None:
-                self.kernel = None
+            owned_kernel = self.kernel
+            kernel = owned_kernel if owned_kernel is not None and owned_kernel.is_alive() else None
+            if owned_kernel is not None and kernel is None:
+                running = self.executions.get(self.current_execution) if self.current_execution is not None else None
+                if running is not None and running.is_running:
+                    running.record_kernel_exit(owned_kernel.runtime.returncode)
                 self.current_execution = None
             return {
                 "ok": True,

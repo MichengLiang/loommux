@@ -25,7 +25,7 @@ search retained output, interrupt the active cell, or restart the kernel.
   logical resource.
 - Activity or standard MCP-ping leases with automatic orphan reclamation.
 - A strictly increasing positive integer `execution` coordinate for every
-  accepted cell during that server process's lifetime.
+  accepted cell during its logical resource's lifetime.
 - In-memory output retained separately as `combined`, `stdout`, `stderr`,
   `result`, and `traceback` streams.
 - IOPub-order `combined` output, including IPython-style `Out[execution]:`
@@ -41,7 +41,7 @@ search retained output, interrupt the active cell, or restart the kernel.
 
 `loommux` is intentionally not a multi-user notebook service, a durable job
 queue, or a sandbox. Kernel state and execution records are memory-only and
-belong to the lifetime of the server process.
+belong to their logical resource; server shutdown retires every resource.
 
 ## Requirements And Installation
 
@@ -285,10 +285,11 @@ public identity:
 execution: positive integer
 ```
 
-The sequence begins at `1` for a new loommux server process and increases only
-when a cell is accepted. loommux accepts one running cell at a time. A second
-`run_cell` call while the kernel is busy is rejected with `status="busy"`;
-it is not queued.
+The sequence begins at `1` for a newly provisioned logical resource and
+increases only when a cell is accepted. Loommux accepts one running cell at a
+time inside each resource; separate resources may execute concurrently. A
+second `run_cell` call against the same busy resource is rejected with
+`status="busy"`; it is not queued.
 
 An execution can be `running`, `completed`, `error`, `interrupted`, or
 `killed`. Python errors are recorded execution states, not MCP transport
@@ -296,7 +297,7 @@ failures. The error summary identifies the exception while the collected
 traceback remains available from the execution's `traceback` stream.
 
 The integer is owned by loommux rather than copied from IPython's kernel-local
-execution counter. It stays stable for the server process, including across
+execution counter. It stays stable for the logical resource, including across
 `restart`. When a cell yields a `text/plain` display result, loommux
 authors the combined log with its own stable coordinate:
 
@@ -325,13 +326,13 @@ record, then the most recently accepted record. With neither, the tool returns
 | `search_output(...)` | Search a selected output stream using literal text or regular expressions. |
 | `wait(execution=None, timeout_seconds=30)` | Wait for an execution without interrupting it. |
 | `interrupt()` | Send an interrupt signal to the current running execution. |
-| `restart()` | Restart the kernel while preserving execution records and the server-local sequence. |
+| `restart()` | Restart the kernel while preserving execution records and the resource-local sequence. |
 
 ### Submitting A Cell
 
 `run_cell` accepts one `freeform` loommux IPython cell. Ordinary source and
 the resulting Python values of validated Apply Patch literals are available to
-later cells in the same persistent server process.
+later cells in the same selected logical resource.
 
 ```python
 import math
@@ -479,9 +480,10 @@ is marked `killed`. Reset does not erase stored executions, their output, or
 the sequence counter, so historical records can still be read by their
 integer `execution` value and the next accepted cell receives the next number.
 
-Stopping the loommux server ends the session. The kernel, namespace,
-execution-record table, output streams, and sequence are not persisted to
-disk; a new server process begins a fresh sequence at `1`.
+Stopping the loommux server retires all resources. Their kernels, namespaces,
+execution-record tables, output streams, and sequences are not persisted to
+disk. Recycling one resource has the same persistence boundary for that
+resource; a subsequently provisioned resource begins a fresh sequence at `1`.
 
 ## Security
 

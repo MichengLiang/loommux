@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from math import isfinite
 from pathlib import Path
 from time import monotonic
 from typing import Any
@@ -21,6 +23,7 @@ from loommux.resource.policy import LeasePolicy, LeasePolicyManager
 from loommux.session import IPythonSession
 
 SessionFactory = Callable[[], IPythonSession]
+logger = logging.getLogger(__name__)
 
 
 class ResourceManagerError(RuntimeError):
@@ -57,6 +60,12 @@ class KernelResourceManager:
         sweep_interval_seconds: float = 10,
         orphan_grace_seconds: float = 30,
     ) -> None:
+        for label, value in {
+            "sweep_interval_seconds": sweep_interval_seconds,
+            "orphan_grace_seconds": orphan_grace_seconds,
+        }.items():
+            if not isfinite(value) or value <= 0:
+                raise ValueError(f"{label} must be a positive finite number")
         self.workspace = workspace.resolve(strict=False)
         self.workspace_resolution = workspace_resolution
         self._session_factory = session_factory
@@ -72,6 +81,8 @@ class KernelResourceManager:
         self._sweeper_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
+        if self._stopping:
+            raise ResourceManagerError("resource manager is stopping")
         self._stop_event.clear()
         if self._sweeper_task is None:
             self._sweeper_task = asyncio.create_task(
@@ -155,7 +166,10 @@ class KernelResourceManager:
     ) -> bool:
         async with self._registry_lock:
             resource = self._resources_by_key.get(address_key)
-            if resource is None or resource.lifecycle is not ResourceLifecycle.RUNNING:
+            if resource is None or resource.lifecycle not in {
+                ResourceLifecycle.RUNNING,
+                ResourceLifecycle.CRASHED,
+            }:
                 return False
             lease = resource.client_leases.get(client_id)
             if lease is None:
@@ -177,19 +191,20 @@ class KernelResourceManager:
         force: bool = False,
         reason: str = "manual recycle",
     ) -> KernelResource:
-        async with self._registry_lock:
-            resource = self._resources_by_id.get(resource_id)
-            if resource is None:
-                raise ResourceNotFoundError("resource was not found")
-            if resource.is_busy and not force:
-                raise ResourceBusyError("resource still has active work")
-            self._detach_locked(resource)
-            resource.lifecycle = ResourceLifecycle.CLOSING
-            resource.closing_reason = reason
+        resource = await self._require_resource(resource_id)
+        async with resource.lifecycle_lock:
+            async with self._registry_lock:
+                if self._resources_by_id.get(resource_id) is not resource:
+                    raise ResourceNotFoundError("resource was not found")
+                if resource.is_busy and not force:
+                    raise ResourceBusyError("resource still has active work")
+                self._detach_locked(resource)
+                resource.lifecycle = ResourceLifecycle.CLOSING
+                resource.closing_reason = reason
 
-        await asyncio.to_thread(resource.session.close)
-        resource.lifecycle = ResourceLifecycle.STOPPED
-        return resource
+            await asyncio.to_thread(resource.session.close)
+            resource.lifecycle = ResourceLifecycle.STOPPED
+            return resource
 
     async def recycle_idle(self) -> int:
         async with self._registry_lock:
@@ -228,26 +243,56 @@ class KernelResourceManager:
 
     async def interrupt(self, resource_id: str) -> dict[str, Any]:
         resource = await self._require_resource(resource_id)
-        return await asyncio.to_thread(resource.session.interrupt)
+        async with resource.lifecycle_lock:
+            await self._assert_registered(resource)
+            return await asyncio.to_thread(resource.session.interrupt)
 
     async def restart(self, resource_id: str) -> dict[str, Any]:
         resource = await self._require_resource(resource_id)
-        async with resource.recovery_lock:
+        async with resource.lifecycle_lock:
+            await self._assert_registered(resource)
             result = await asyncio.to_thread(resource.session.restart)
             resource.lifecycle = (
                 ResourceLifecycle.RUNNING
                 if result.get("ok")
                 else ResourceLifecycle.CRASHED
             )
+            if not result.get("ok"):
+                raise ResourceProvisionError(
+                    str(result.get("message", "kernel restart failed"))
+                )
             return result
 
+    async def health(self, resource_id: str) -> dict[str, Any]:
+        """Observe kernel liveness without creating or renewing a client lease."""
+        resource = await self._require_resource(resource_id)
+        async with resource.lifecycle_lock:
+            await self._assert_registered(resource)
+            status = resource.session.status()
+            healthy = status.get("kernel_started") is True
+            if not healthy and resource.lifecycle is ResourceLifecycle.RUNNING:
+                resource.lifecycle = ResourceLifecycle.CRASHED
+            return {
+                "ok": healthy,
+                "resource_id": resource.resource_id,
+                "lifecycle": resource.lifecycle.value,
+                "kernel_pid": status.get("kernel_pid"),
+                "busy": resource.is_busy,
+                "message": (
+                    "kernel process is running"
+                    if healthy
+                    else "kernel process is not running"
+                ),
+            }
+
     async def stop(self) -> None:
+        async with self._registry_lock:
+            self._stopping = True
         self._stop_event.set()
         if self._sweeper_task is not None:
             await self._sweeper_task
             self._sweeper_task = None
         async with self._registry_lock:
-            self._stopping = True
             provisioning = list(self._provisioning_by_key.values())
             resources = list(self._resources_by_id.values())
             self._resources_by_key.clear()
@@ -268,11 +313,9 @@ class KernelResourceManager:
             resources.extend(late_resources)
 
         await asyncio.gather(
-            *(asyncio.to_thread(resource.session.close) for resource in resources),
+            *(self._close_detached(resource) for resource in resources),
             return_exceptions=True,
         )
-        for resource in resources:
-            resource.lifecycle = ResourceLifecycle.STOPPED
 
     async def sweep_once(self) -> int:
         now = monotonic()
@@ -314,17 +357,15 @@ class KernelResourceManager:
                     closing.append(resource)
 
         await asyncio.gather(
-            *(asyncio.to_thread(resource.session.close) for resource in closing),
+            *(self._close_detached(resource) for resource in closing),
             return_exceptions=True,
         )
-        for resource in closing:
-            resource.lifecycle = ResourceLifecycle.STOPPED
         return len(closing)
 
     async def _recover_if_needed(self, resource: KernelResource) -> None:
         if resource.session.status().get("kernel_started", False):
             return
-        async with resource.recovery_lock:
+        async with resource.lifecycle_lock:
             if resource.session.status().get("kernel_started", False):
                 return
             async with self._registry_lock:
@@ -350,6 +391,17 @@ class KernelResourceManager:
             if resource is None:
                 raise ResourceNotFoundError("resource was not found")
             return resource
+
+    async def _assert_registered(self, resource: KernelResource) -> None:
+        async with self._registry_lock:
+            if self._resources_by_id.get(resource.resource_id) is not resource:
+                raise ResourceNotFoundError("resource was not found")
+
+    @staticmethod
+    async def _close_detached(resource: KernelResource) -> None:
+        async with resource.lifecycle_lock:
+            await asyncio.to_thread(resource.session.close)
+            resource.lifecycle = ResourceLifecycle.STOPPED
 
     async def snapshot(self) -> list[dict[str, Any]]:
         resources = await self.list_resources()
@@ -406,11 +458,21 @@ class KernelResourceManager:
                     timeout=self._sweep_interval_seconds,
                 )
             except TimeoutError:
-                await self.sweep_once()
+                try:
+                    await self.sweep_once()
+                except Exception:
+                    # One observation failure must not permanently disable lease
+                    # reclamation for every other resource in this server.
+                    logger.exception("kernel resource sweep failed")
 
     @staticmethod
     def _snapshot_resource(resource: KernelResource) -> dict[str, Any]:
         session_status = resource.session.status()
+        if (
+            resource.lifecycle is ResourceLifecycle.RUNNING
+            and not session_status.get("kernel_started", False)
+        ):
+            resource.lifecycle = ResourceLifecycle.CRASHED
         now = monotonic()
         leases = [
             {

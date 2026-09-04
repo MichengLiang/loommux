@@ -12,6 +12,7 @@ from loommux.resource.model import LeaseClient, ResourceAddress
 RESOURCE_HEADER = "x-loommux-resource"
 OPERATOR_HEADER = "x-loommux-operator"
 LEASE_POLICY_GENERATION_HEADER = "x-loommux-lease-policy-generation"
+MAX_DISPLAY_LABEL_LENGTH = 256
 
 
 class ResourceRoutingError(RuntimeError):
@@ -25,6 +26,7 @@ def decode_header(name: str) -> str:
 def resolve_address(ctx: Context) -> ResourceAddress:
     resource_name = decode_header(RESOURCE_HEADER)
     if resource_name:
+        resource_name = _validate_display_label(resource_name, "resource name")
         return ResourceAddress(
             key=f"named:{resource_name}",
             display_name=resource_name,
@@ -47,9 +49,14 @@ def resolve_client(ctx: Context) -> LeaseClient:
     session_id = ctx.session_id
     if not session_id:
         raise ResourceRoutingError("MCP session identity is unavailable")
+    operator = decode_header(OPERATOR_HEADER)
     return LeaseClient(
         client_id=session_id,
-        display_name=decode_header(OPERATOR_HEADER) or f"client-{session_id[:8]}",
+        display_name=(
+            _validate_display_label(operator, "operator")
+            if operator
+            else f"client-{session_id[:8]}"
+        ),
     )
 
 
@@ -64,3 +71,13 @@ def resolve_policy_generation() -> int | None:
     if generation <= 0:
         raise ResourceRoutingError("lease policy generation must be a positive integer")
     return generation
+
+
+def _validate_display_label(value: str, label: str) -> str:
+    if len(value) > MAX_DISPLAY_LABEL_LENGTH:
+        raise ResourceRoutingError(
+            f"{label} must not exceed {MAX_DISPLAY_LABEL_LENGTH} characters"
+        )
+    if not value.isprintable():
+        raise ResourceRoutingError(f"{label} must contain printable characters only")
+    return value

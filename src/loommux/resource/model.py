@@ -17,7 +17,6 @@ if TYPE_CHECKING:
 class ResourceLifecycle(StrEnum):
     """Stable lifecycle states for one logical IPython resource."""
 
-    PROVISIONING = "provisioning"
     RUNNING = "running"
     ORPHANED = "orphaned"
     CLOSING = "closing"
@@ -87,7 +86,7 @@ class KernelResource:
     active_operations: int = 0
     orphaned_at: float | None = None
     closing_reason: str | None = None
-    recovery_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+    lifecycle_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
     @classmethod
     def create(

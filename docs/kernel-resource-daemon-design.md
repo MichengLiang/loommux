@@ -79,10 +79,9 @@ tool list. Administrative execution coordinates are the pair
 
 ## 4. Resource and process lifecycle
 
-A logical resource moves through these states:
+A registered logical resource moves through these states:
 
 ```text
-provisioning
 running
 orphaned
 closing
@@ -177,12 +176,14 @@ The Streamable HTTP application serves:
 | `PUT` | `/api/lease-policy` | Atomically validate and update future defaults. |
 | `POST` | `/api/resources/{id}/interrupt` | Interrupt the selected running execution. |
 | `POST` | `/api/resources/{id}/restart` | Replace the selected kernel process. |
+| `POST` | `/api/resources/{id}/health` | Observe kernel-process liveness without renewing a client lease. |
 | `POST` | `/api/resources/{id}/recycle` | Recycle one resource; `force` permits busy retirement. |
 | `POST` | `/api/resources/recycle-idle` | Recycle resources without active work. |
 | `POST` | `/api/resources/recycle-all` | Force retirement of every resource. |
 
 The control plane is operational infrastructure. It is not added to MCP
-`tools/list`.
+`tools/list`. It does not provide its own authentication layer; deployment
+must keep it inside the same trusted boundary as arbitrary Python execution.
 
 ## 8. Client lifecycle
 

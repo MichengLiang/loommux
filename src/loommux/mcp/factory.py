@@ -30,7 +30,7 @@ from loommux.workspace_resolver import resolve_workspace_launch
 
 
 def create_mcp(result_mode: ResultMode) -> FastMCP:
-    """Build one MCP server whose tools consume a fresh IPython session."""
+    """Build one MCP server whose tools consume selected kernel resources."""
 
     manager: KernelResourceManager | None = None
 
@@ -116,7 +116,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         需要声明本次 cell 的观察策略，使用位于物理行首的 ``# loommux:`` 控制
         注释。Loommux 在提交前验证并完全消费有效控制注释，因此它们不会进入
         IPython history 或下游 cell-magic body。变量、导入和其他 namespace 状态会
-        与同一服务器会话中的后续 cell 共享。
+        与同一选定 kernel resource 中的后续 cell 共享。
 
         等待上限
         --------
@@ -160,8 +160,8 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         执行编号与后续操作
         --------------------
 
-        已接受的提交会分配一个正整数 ``execution``，它在服务器进程存续
-        期间严格递增。若执行仍在运行，或未标记 execution 的 combined 输出
+        已接受的提交会分配一个正整数 ``execution``，它在当前 kernel resource
+        的生命周期内严格递增。若执行仍在运行，或未标记 execution 的 combined 输出
         超过 300 行，响应不携带完整输出正文；行数、Unicode code point
         字符数和 UTF-8 字节数描述同一份 normalized combined 文本。使用
         ``wait`` 等待，使用 ``execution_status`` 查看状态，使用 ``read_output``
@@ -354,7 +354,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
 
     @mcp.tool(output_schema=None)
     async def restart(ctx: Context) -> ToolResult:
-        """重启 IPython kernel，并保留 loommux 服务器会话中的 execution 历史。
+        """重启 IPython kernel，并保留当前 kernel resource 的 execution 历史。
 
         重置边界
         --------

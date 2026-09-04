@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from dataclasses import dataclass
 from math import isfinite
 from types import TracebackType
@@ -85,6 +86,10 @@ class LeaseAwareClient:
         self._heartbeat_task: asyncio.Task[None] | None = None
 
     async def __aenter__(self) -> LeaseAwareClient:
+        if self._client is not None:
+            raise RuntimeError("client context is already active")
+        self.heartbeat_count = 0
+        self.last_heartbeat_error = None
         self.policy = await self._fetch_policy()
         headers = {
             OPERATOR_HEADER: quote(self.operator, safe=""),
@@ -95,7 +100,15 @@ class LeaseAwareClient:
         self._client = Client(
             StreamableHttpTransport(self.server_url, headers=headers)
         )
-        await self._client.__aenter__()
+        try:
+            await self._client.__aenter__()
+        except BaseException:
+            client, self._client = self._client, None
+            # Cleanup must not replace the connection failure or cancellation
+            # that explains why the context was never established.
+            with contextlib.suppress(Exception):
+                await client.close()
+            raise
         if self.policy.mode == "heartbeat":
             self._heartbeat_task = asyncio.create_task(
                 self._heartbeat_loop(),

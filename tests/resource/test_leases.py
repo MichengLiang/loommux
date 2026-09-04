@@ -118,6 +118,58 @@ def test_protocol_renewal_does_not_create_a_resource(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_protocol_renewal_preserves_a_crashed_resource_lease(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        manager = KernelResourceManager(
+            tmp_path,
+            "launch_cwd",
+            session_factory=FakeSession,
+        )
+        address = make_address()
+        client = make_client("connected")
+        async with manager.operation(address, client, make_policy()) as resource:
+            pass
+        resource.lifecycle = ResourceLifecycle.CRASHED
+        previous_deadline = resource.client_leases[client.client_id].deadline
+
+        await asyncio.sleep(0.01)
+
+        assert await manager.renew_client_lease(address.key, client.client_id)
+        assert (
+            resource.client_leases[client.client_id].deadline
+            > previous_deadline
+        )
+        await manager.stop()
+
+    asyncio.run(scenario())
+
+
+def test_health_observation_does_not_renew_the_client_lease(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        manager = KernelResourceManager(
+            tmp_path,
+            "launch_cwd",
+            session_factory=FakeSession,
+        )
+        address = make_address()
+        client = make_client("observed")
+        async with manager.operation(address, client, make_policy()) as resource:
+            pass
+        deadline = resource.client_leases[client.client_id].deadline
+
+        health = await manager.health(resource.resource_id)
+
+        assert health["ok"] is True
+        assert resource.client_leases[client.client_id].deadline == deadline
+        await manager.stop()
+
+    asyncio.run(scenario())
+
+
 def test_idle_resource_is_reclaimed_after_last_lease_expires(
     tmp_path: Path,
 ) -> None:

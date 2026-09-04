@@ -90,6 +90,7 @@ produce `http://127.0.0.1:8802/tools`.
 
 The same HTTP application serves its operational console at `/` and JSON
 control routes under `/api`. These routes do not appear in MCP `tools/list`.
+For that reason the MCP path cannot be `/`, `/api`, or a child of `/api`.
 
 Clients that need heartbeat leases or named sharing can use
 `loommux.client.LeaseAwareClient`; it discovers the policy before MCP

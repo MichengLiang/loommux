@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -63,7 +63,9 @@ def install_control_routes(
             selected = manager()
             previous = await selected.policy_manager.current()
             policy = await selected.policy_manager.update(
-                mode=LeaseMode(str(body.get("mode", previous.mode.value))),
+                mode=LeaseMode(
+                    str(body.get("mode", previous.mode.value)).strip().lower()
+                ),
                 private_activity_timeout_seconds=_number(
                     body,
                     "private_activity_timeout_seconds",
@@ -85,7 +87,12 @@ def install_control_routes(
                     previous.heartbeat_timeout_seconds,
                 ),
             )
-        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+        except (
+            ValueError,
+            TypeError,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+        ) as exc:
             return JSONResponse(
                 {"ok": False, "message": str(exc)},
                 status_code=400,
@@ -110,13 +117,29 @@ def install_control_routes(
             lambda: manager().restart(request.path_params["resource_id"])
         )
 
+    @mcp.custom_route("/api/resources/{resource_id}/health", methods=["POST"])
+    async def health_resource(request: Request) -> Response:
+        return await _resource_action(
+            lambda: manager().health(request.path_params["resource_id"])
+        )
+
     @mcp.custom_route("/api/resources/{resource_id}/recycle", methods=["POST"])
     async def recycle_resource(request: Request) -> Response:
         try:
             body = await request.json()
         except (json.JSONDecodeError, UnicodeDecodeError):
             body = {}
-        force = bool(body.get("force", False)) if isinstance(body, dict) else False
+        if not isinstance(body, dict):
+            return JSONResponse(
+                {"ok": False, "message": "request body must be a JSON object"},
+                status_code=400,
+            )
+        force = body.get("force", False)
+        if not isinstance(force, bool):
+            return JSONResponse(
+                {"ok": False, "message": "force must be a boolean"},
+                status_code=400,
+            )
         try:
             resource = await manager().recycle(
                 request.path_params["resource_id"],
@@ -147,7 +170,7 @@ def install_control_routes(
 
 
 async def _resource_action(
-    operation: Callable[[], Any],
+    operation: Callable[[], Awaitable[dict[str, Any]]],
 ) -> JSONResponse:
     try:
         result = await operation()
@@ -156,7 +179,16 @@ async def _resource_action(
             {"ok": False, "message": str(exc)},
             status_code=404,
         )
-    return JSONResponse({"ok": True, "result": result})
+    except ResourceManagerError as exc:
+        return JSONResponse(
+            {"ok": False, "message": str(exc)},
+            status_code=409,
+        )
+    succeeded = result.get("ok") is not False
+    return JSONResponse(
+        {"ok": succeeded, "result": result},
+        status_code=200 if succeeded else 409,
+    )
 
 
 def _number(

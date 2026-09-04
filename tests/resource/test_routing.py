@@ -71,3 +71,18 @@ def test_policy_generation_header_is_validated() -> None:
 
     with patch("loommux.resource.routing.get_http_headers", return_value={}):
         assert resolve_policy_generation() is None
+
+
+@pytest.mark.parametrize(
+    "resource_name",
+    ["line%0Abreak", "x" * 257],
+)
+def test_named_resource_labels_have_a_bounded_printable_contract(
+    resource_name: str,
+) -> None:
+    with patch(
+        "loommux.resource.routing.get_http_headers",
+        return_value={"x-loommux-resource": resource_name},
+    ):
+        with pytest.raises(ResourceRoutingError):
+            resolve_address(FakeContext("session"))

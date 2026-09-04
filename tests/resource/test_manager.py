@@ -196,9 +196,12 @@ def test_manager_control_operations_and_bulk_recycling(tmp_path: Path) -> None:
 
         interrupted = await manager.interrupt(first.resource_id)
         restarted = await manager.restart(first.resource_id)
+        health = await manager.health(first.resource_id)
 
         assert interrupted["status"] == "idle"
         assert restarted["status"] == "restarted"
+        assert health["ok"] is True
+        assert health["kernel_pid"] == first.kernel_pid
         assert await manager.recycle_idle() == 2
         assert await manager.snapshot() == []
 
@@ -222,5 +225,103 @@ def test_unknown_resource_control_is_rejected(tmp_path: Path) -> None:
         )
         with pytest.raises(ResourceNotFoundError, match="resource was not found"):
             await manager.interrupt("missing")
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("value", [0, -1, float("nan"), float("inf")])
+def test_manager_rejects_invalid_sweep_durations(
+    tmp_path: Path,
+    value: float,
+) -> None:
+    with pytest.raises(ValueError, match="positive finite"):
+        KernelResourceManager(
+            tmp_path,
+            "launch_cwd",
+            session_factory=FakeSession,
+            sweep_interval_seconds=value,
+        )
+
+
+def test_restart_and_recycle_are_serialized_by_resource_lifecycle(
+    tmp_path: Path,
+) -> None:
+    class BlockingRestartSession(FakeSession):
+        restart_started = threading.Event()
+        restart_release = threading.Event()
+
+        def restart(self) -> dict[str, Any]:
+            type(self).restart_started.set()
+            assert type(self).restart_release.wait(timeout=2)
+            return super().restart()
+
+    async def scenario() -> None:
+        manager = KernelResourceManager(
+            tmp_path,
+            "launch_cwd",
+            session_factory=BlockingRestartSession,
+        )
+        resource = await manager.get_or_create(address("serialized"))
+        restart = asyncio.create_task(manager.restart(resource.resource_id))
+        assert await asyncio.to_thread(
+            BlockingRestartSession.restart_started.wait,
+            1,
+        )
+        recycle = asyncio.create_task(
+            manager.recycle(resource.resource_id, force=True)
+        )
+        await asyncio.sleep(0.03)
+        assert not recycle.done()
+
+        BlockingRestartSession.restart_release.set()
+        assert (await restart)["status"] == "restarted"
+        assert (await recycle).lifecycle is ResourceLifecycle.STOPPED
+
+    asyncio.run(scenario())
+
+
+def test_detached_resource_cannot_be_restarted_after_waiting_for_lifecycle(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        manager = KernelResourceManager(
+            tmp_path,
+            "launch_cwd",
+            session_factory=FakeSession,
+        )
+        resource = await manager.get_or_create(address("retired"))
+        await resource.lifecycle_lock.acquire()
+        restart = asyncio.create_task(manager.restart(resource.resource_id))
+        await asyncio.sleep(0)
+
+        async with manager._registry_lock:
+            manager._detach_locked(resource)
+            resource.lifecycle = ResourceLifecycle.CLOSING
+        resource.lifecycle_lock.release()
+
+        with pytest.raises(ResourceNotFoundError):
+            await restart
+        await asyncio.to_thread(resource.session.close)
+
+    asyncio.run(scenario())
+
+
+def test_snapshot_immediately_projects_a_dead_kernel_as_crashed(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        manager = KernelResourceManager(
+            tmp_path,
+            "launch_cwd",
+            session_factory=FakeSession,
+        )
+        resource = await manager.get_or_create(address("crashed"))
+        resource.session.kernel = None
+
+        [snapshot] = await manager.snapshot()
+
+        assert snapshot["lifecycle"] == "crashed"
+        assert resource.lifecycle is ResourceLifecycle.CRASHED
+        await manager.stop()
 
     asyncio.run(scenario())
