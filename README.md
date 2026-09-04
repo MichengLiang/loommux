@@ -485,6 +485,9 @@ loommux/
         terminal.py
             Removes terminal controls while preserving chunk boundaries.
     submission/
+        cell.py
+            Combines directive consumption and source transformation into one
+            prepared cell passed to the session.
         directives.py
             Parses and consumes submission-owned control directives.
         apply_patch_literals.py

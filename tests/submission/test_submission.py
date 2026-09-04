@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from loommux.session import IPythonSession, prepare_run_cell
+from loommux.session import IPythonSession
+from loommux.submission import prepare_run_cell
 from loommux.submission.directives import LoommuxDirectiveError, remove_active_directive_lines, scan_active_loommux_directives
 
 

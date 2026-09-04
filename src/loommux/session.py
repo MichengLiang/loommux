@@ -3,43 +3,18 @@ from __future__ import annotations
 import math
 import sys
 import threading
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from loommux.execution import Execution
 from loommux.kernel.session import KernelSession
-from loommux.submission.apply_patch_literals import prepare_apply_patch_literals
-from loommux.submission.directives import LoommuxDirectiveError, remove_active_directive_lines, scan_active_loommux_directives
+from loommux.submission.cell import prepare_run_cell
+from loommux.submission.directives import LoommuxDirectiveError
 
 DEFAULT_OUTPUT_LINE_LIMIT = 300
 DEFAULT_OUTPUT_TOKEN_BYPASS_LIMIT = 5_000
 KERNEL_START_ATTEMPTS = 2
 OUTPUT_STREAMS = {"combined", "stdout", "stderr", "result", "traceback"}
-
-
-@dataclass(frozen=True)
-class PreparedRunCell:
-    """Transient boundary between MCP transport input and IPython source."""
-
-    kernel_source: str
-    initial_wait_seconds: float
-    full_output_requested: bool
-
-
-def prepare_run_cell(freeform: object) -> PreparedRunCell:
-    """Validate and consume control metadata before preparing Python source."""
-
-    if not isinstance(freeform, str):
-        raise TypeError("freeform must be a string")
-    scan = scan_active_loommux_directives(freeform)
-    source_without_directives = remove_active_directive_lines(freeform, scan.active_directive_ranges)
-    apply_patch = prepare_apply_patch_literals(source_without_directives)
-    return PreparedRunCell(
-        kernel_source=apply_patch.submitted_source,
-        initial_wait_seconds=scan.initial_wait_seconds,
-        full_output_requested=scan.full_output_requested,
-    )
 
 
 class IPythonSession:
