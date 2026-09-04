@@ -20,11 +20,11 @@ classifiers = [
     "Topic :: Software Development :: Interpreters",
 ]
 dependencies = [
-    "fastmcp>=3.2.4",
-    "ipykernel>=7.2.0",
-    "jupyter-client>=8.8.0",
-    "pywin32>=306; sys_platform == 'win32'",
-    "tiktoken>=0.11.0",
+    "fastmcp>=3.4.7",
+    "ipykernel>=7.3.0",
+    "jupyter-client>=8.10.0",
+    "pywin32>=312; sys_platform == 'win32'",
+    "tiktoken>=0.14.0",
 ]
 
 [project.urls]
@@ -37,13 +37,13 @@ loommux = "loommux.mcp.server:main"
 
 [dependency-groups]
 dev = [
-    "basedpyright>=1.34.0",
-    "pillow>=10.0.0",
-    "pytest>=9.0.0",
+    "basedpyright>=1.39.10",
+    "pillow>=12.3.0",
+    "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
-    "pytest-cov>=7.0.0",
+    "pytest-cov>=7.1.0",
     "pytest-timeout>=2.4.0",
-    "ruff>=0.15.0",
+    "ruff>=0.16.6",
     "twine>=7.0.0",
 ]
 
