@@ -11,6 +11,7 @@ from loommux.resource.model import LeaseClient, ResourceAddress
 
 RESOURCE_HEADER = "x-loommux-resource"
 OPERATOR_HEADER = "x-loommux-operator"
+LEASE_POLICY_GENERATION_HEADER = "x-loommux-lease-policy-generation"
 
 
 class ResourceRoutingError(RuntimeError):
@@ -50,3 +51,16 @@ def resolve_client(ctx: Context) -> LeaseClient:
         client_id=session_id,
         display_name=decode_header(OPERATOR_HEADER) or f"client-{session_id[:8]}",
     )
+
+
+def resolve_policy_generation() -> int | None:
+    raw_generation = decode_header(LEASE_POLICY_GENERATION_HEADER)
+    if not raw_generation:
+        return None
+    try:
+        generation = int(raw_generation)
+    except ValueError as exc:
+        raise ResourceRoutingError("lease policy generation must be a positive integer") from exc
+    if generation <= 0:
+        raise ResourceRoutingError("lease policy generation must be a positive integer")
+    return generation

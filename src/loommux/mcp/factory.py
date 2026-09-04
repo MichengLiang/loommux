@@ -11,13 +11,19 @@ from fastmcp import Context, FastMCP
 from fastmcp.tools import ToolResult
 
 from loommux.host_workspace_config import WorkspaceConfigError
+from loommux.mcp.lease_ping import install_lease_aware_ping_handler
 from loommux.mcp.result import ResultMode, make_tool_result
 from loommux.resource import (
     KernelResourceManager,
+    LeasePolicy,
+    LeasePolicyManager,
     ResourceManagerError,
     ResourceRoutingError,
     resolve_address,
+    resolve_client,
+    resolve_policy_generation,
 )
+from loommux.resource.settings import ResourceServerSettings
 from loommux.session import IPythonSession
 from loommux.workspace_resolver import resolve_workspace_launch
 
@@ -42,7 +48,18 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             return make_tool_result(tool_name, status, result_mode)
         try:
             address = resolve_address(ctx)
-            async with selected_manager.operation(address) as resource:
+            client = resolve_client(ctx)
+            generation = resolve_policy_generation()
+            policy: LeasePolicy | None
+            if generation is None:
+                policy = await selected_manager.policy_manager.current()
+            else:
+                policy = await selected_manager.policy_manager.generation(generation)
+            if policy is None:
+                raise ResourceRoutingError(
+                    f"server does not know lease policy generation {generation}"
+                )
+            async with selected_manager.operation(address, client, policy) as resource:
                 status = await asyncio.to_thread(operation, resource.session)
         except (ResourceManagerError, ResourceRoutingError) as exc:
             status = {
@@ -59,10 +76,22 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             resolution = resolve_workspace_launch()
         except WorkspaceConfigError as exc:
             raise RuntimeError(f"loommux workspace initialization failed: {exc.status}") from exc
+        settings = ResourceServerSettings.from_environ()
+        policy_manager = LeasePolicyManager(
+            initial_mode=settings.lease_mode,
+            private_activity_timeout_seconds=settings.private_activity_timeout_seconds,
+            named_activity_timeout_seconds=settings.named_activity_timeout_seconds,
+            heartbeat_interval_seconds=settings.heartbeat_interval_seconds,
+            heartbeat_timeout_seconds=settings.heartbeat_timeout_seconds,
+        )
         manager = KernelResourceManager(
             resolution.workspace,
             resolution.workspace_resolution,
+            policy_manager=policy_manager,
+            sweep_interval_seconds=settings.sweep_interval_seconds,
+            orphan_grace_seconds=settings.orphan_grace_seconds,
         )
+        await manager.start()
         try:
             yield {"resource_manager": manager}
         finally:
@@ -70,6 +99,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             manager = None
 
     mcp = FastMCP("loommux persistent IPython session", lifespan=lifespan)
+    install_lease_aware_ping_handler(mcp, lambda: manager)
 
     @mcp.tool(output_schema=None)
     async def run_cell(freeform: str, ctx: Context) -> ToolResult:
