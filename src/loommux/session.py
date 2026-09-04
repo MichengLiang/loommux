@@ -9,7 +9,7 @@ from typing import Any
 
 from loommux.cell_control import LoommuxDirectiveError, remove_active_directive_lines, scan_active_loommux_directives
 from loommux.execution import Execution
-from loommux.kernel_session import KernelSession
+from loommux.kernel.session import KernelSession
 from loommux.source_transform import prepare_apply_patch_literals
 
 DEFAULT_OUTPUT_LINE_LIMIT = 300

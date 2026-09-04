@@ -1,3 +1,5 @@
+"""Store append-only output projections with stable line coordinates."""
+
 from __future__ import annotations
 
 import re

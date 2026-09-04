@@ -1,3 +1,10 @@
+"""Correlate one IPython kernel client with the active execution record.
+
+This module translates Jupyter messages into execution facts. Kernel
+process lifecycle remains in ``kernel.runtime``; session-level record
+selection and numbering remain in ``loommux.session``.
+"""
+
 from __future__ import annotations
 
 import threading
@@ -7,9 +14,9 @@ from typing import Any
 
 from jupyter_client.blocking.client import BlockingKernelClient
 
-from loommux.coding_agent_kernel import KernelLaunch
 from loommux.execution import Execution
-from loommux.kernel_runtime import KernelRuntime
+from loommux.kernel.launch import KernelLaunch
+from loommux.kernel.runtime import KernelRuntime
 
 
 class KernelSession:

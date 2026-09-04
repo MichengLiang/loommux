@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-import loommux.execution as execution_module
+import loommux.execution.record as execution_module
 from loommux.execution import Execution
-from loommux.output_log import ExecutionLogs, LineLog
+from loommux.execution.logs import ExecutionLogs, LineLog
 
 
 def test_line_log_reads_ranges_and_clipping() -> None:

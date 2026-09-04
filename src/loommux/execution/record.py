@@ -1,3 +1,5 @@
+"""Record one accepted cell and its observable execution facts."""
+
 from __future__ import annotations
 
 import threading
@@ -8,8 +10,9 @@ from typing import Any, Literal
 
 import tiktoken
 
-from loommux.output_log import ExecutionLogs
-from loommux.terminal_text import TerminalTextNormalizer
+from loommux.execution.events import IMAGE_MIME_PREFERENCE, PresentationElement, PresentationFailure, PresentationImage, PresentationText
+from loommux.execution.logs import ExecutionLogs
+from loommux.execution.terminal import TerminalTextNormalizer
 
 ExecutionStatus = Literal["running", "completed", "error", "interrupted", "killed"]
 OUTPUT_TOKEN_ENCODING = "o200k_base"
@@ -24,34 +27,6 @@ def _output_token_encoding() -> tiktoken.Encoding:
 def _count_output_tokens(text: str) -> int:
     """Count arbitrary visible output as ordinary ``o200k_base`` text."""
     return len(_output_token_encoding().encode_ordinary(text))
-
-
-@dataclass(frozen=True)
-class PresentationText:
-    """A normalized visible text fragment at its IOPub arrival position."""
-
-    text: str
-
-
-@dataclass(frozen=True)
-class PresentationImage:
-    """One display-data image before MCP transport validation."""
-
-    data: object
-    mime_type: str
-    detail: object
-    display_ordinal: int
-
-
-@dataclass(frozen=True)
-class PresentationFailure:
-    """A visible diagnostic occupying the position of an undeliverable image."""
-
-    message: str
-
-
-type PresentationElement = PresentationText | PresentationImage | PresentationFailure
-IMAGE_MIME_PREFERENCE = ("image/png", "image/jpeg", "image/webp", "image/gif")
 
 
 @dataclass

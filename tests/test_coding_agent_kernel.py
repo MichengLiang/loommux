@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from loommux.coding_agent_kernel import KernelLaunch
-from loommux.kernel_runtime import KernelRuntime, _kernel_spec, _KernelContainment
+from loommux.kernel.launch import KernelLaunch
+from loommux.kernel.runtime import KernelRuntime, _kernel_spec, _KernelContainment
 from loommux.session import IPythonSession
 
 
@@ -75,8 +75,8 @@ def test_kernel_runtime_start_failure_cleans_its_private_root(tmp_path: Path, mo
     def fail_start_kernel(*_args: object, **_kwargs: object) -> None:
         raise OSError("kernel process did not start")
 
-    monkeypatch.setattr("loommux.kernel_runtime.KernelLaunch.create", record_launch)
-    monkeypatch.setattr("loommux.kernel_runtime._LoommuxKernelManager.start_kernel", fail_start_kernel)
+    monkeypatch.setattr("loommux.kernel.runtime.KernelLaunch.create", record_launch)
+    monkeypatch.setattr("loommux.kernel.runtime._LoommuxKernelManager.start_kernel", fail_start_kernel)
     runtime = KernelRuntime(workspace, Path(sys.executable).absolute())
 
     with pytest.raises(OSError, match="kernel process did not start"):
@@ -121,8 +121,8 @@ def test_kernel_runtime_closes_channels_when_readiness_fails(tmp_path: Path, mon
         def shutdown_kernel(self, *, now: bool) -> None:
             assert now is True
 
-    monkeypatch.setattr("loommux.kernel_runtime._LoommuxKernelManager", FailingManager)
-    monkeypatch.setattr("loommux.kernel_runtime._create_containment", _KernelContainment)
+    monkeypatch.setattr("loommux.kernel.runtime._LoommuxKernelManager", FailingManager)
+    monkeypatch.setattr("loommux.kernel.runtime._create_containment", _KernelContainment)
     runtime = KernelRuntime(workspace, Path(sys.executable).absolute())
 
     with pytest.raises(RuntimeError, match="kernel readiness failed"):
@@ -151,7 +151,7 @@ def test_kernel_launch_allows_the_platform_temp_directory_inside_home(tmp_path: 
     temp_directory = home / "Temp"
     workspace.mkdir()
     temp_directory.mkdir(parents=True)
-    monkeypatch.setattr("loommux.coding_agent_kernel.tempfile.gettempdir", lambda: str(temp_directory))
+    monkeypatch.setattr("loommux.kernel.launch.tempfile.gettempdir", lambda: str(temp_directory))
 
     launch = KernelLaunch.create(Path(sys.executable).absolute(), workspace)
     try:

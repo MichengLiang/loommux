@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from loommux.terminal_text import TerminalTextNormalizer
+from loommux.execution.terminal import TerminalTextNormalizer
 
 
 @pytest.mark.parametrize(

@@ -14,7 +14,7 @@ from jupyter_client.blocking.client import BlockingKernelClient
 from jupyter_client.kernelspec import KernelSpec
 from jupyter_client.manager import KernelManager
 
-from loommux.coding_agent_kernel import KernelLaunch
+from loommux.kernel.launch import KernelLaunch
 
 
 class _LoommuxKernelManager(KernelManager):

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from mcp.types import ImageContent, TextContent
 
-from loommux.execution import PresentationFailure, PresentationImage, PresentationText
+from loommux.execution.events import PresentationFailure, PresentationImage, PresentationText
 from loommux.mcp_result_policy import ImageDeliveryLimits, make_tool_result
 from loommux.presentation import format_output_line_limit_notice, format_tool_result_text
 

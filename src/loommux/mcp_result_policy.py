@@ -8,7 +8,7 @@ from typing import Any, Literal
 from fastmcp.tools import ToolResult
 from mcp.types import ImageContent, TextContent
 
-from loommux.execution import PresentationFailure, PresentationImage, PresentationText
+from loommux.execution.events import PresentationFailure, PresentationImage, PresentationText
 from loommux.presentation import format_execution_input, format_output_line_limit_notice, format_tool_result_text
 
 ResultMode = Literal["content", "structured"]
