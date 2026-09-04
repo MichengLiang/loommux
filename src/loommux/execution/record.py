@@ -31,7 +31,12 @@ def _count_output_tokens(text: str) -> int:
 
 @dataclass
 class Execution:
-    """One accepted cell's lifecycle, output, and delivery runtime state."""
+    """Store one accepted cell's lifecycle facts and visible output events.
+
+    The record is the durable-in-session address for everything observed from a
+    submission. It retains normalized text and rich display events so consumers
+    can choose a later projection without asking the kernel to replay history.
+    """
 
     execution: int
     kernel_pid: int

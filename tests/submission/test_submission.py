@@ -124,7 +124,7 @@ payload
 
 
 def test_run_cell_passes_clean_source_and_resolved_policy_to_submission() -> None:
-    class CapturingAdapter(IPythonSession):
+    class CapturingSession(IPythonSession):
         def __init__(self) -> None:
             super().__init__()
             self.calls: list[tuple[str, float, bool]] = []
@@ -133,15 +133,15 @@ def test_run_cell_passes_clean_source_and_resolved_policy_to_submission() -> Non
             self.calls.append((source, timeout_seconds, full_output_requested))
             return {"ok": True, "status": "captured"}
 
-    adapter = CapturingAdapter()
+    session = CapturingSession()
     source = "# loommux: --wait 2\n# loommux: --full-output\nprint('clean')"
 
-    assert adapter.run_cell(source)["status"] == "captured"
-    assert adapter.calls == [("print('clean')", 2.0, True)]
+    assert session.run_cell(source)["status"] == "captured"
+    assert session.calls == [("print('clean')", 2.0, True)]
 
 
 def test_invalid_directive_does_not_allocate_or_submit_an_execution() -> None:
-    class CapturingAdapter(IPythonSession):
+    class CapturingSession(IPythonSession):
         def __init__(self) -> None:
             super().__init__()
             self.submitted = False
@@ -150,13 +150,13 @@ def test_invalid_directive_does_not_allocate_or_submit_an_execution() -> None:
             self.submitted = True
             return {"ok": True}
 
-    adapter = CapturingAdapter()
-    response = adapter.run_cell("# loommux: --wait 10\n# loommux: --wait 20\nprint('must not run')")
+    session = CapturingSession()
+    response = session.run_cell("# loommux: --wait 10\n# loommux: --wait 20\nprint('must not run')")
 
     assert response == {
         "ok": False,
         "status": "invalid_loommux_directive",
         "message": "invalid_loommux_directive: --wait may be specified at most once",
     }
-    assert adapter.submitted is False
-    assert adapter.executions == {}
+    assert session.submitted is False
+    assert session.executions == {}

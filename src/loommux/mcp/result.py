@@ -36,6 +36,8 @@ def make_tool_result(
     result_mode: ResultMode,
     image_limits: ImageDeliveryLimits = DEFAULT_IMAGE_DELIVERY_LIMITS,
 ) -> ToolResult:
+    """Convert a session status into MCP content and optional structured data."""
+
     status = {key: value for key, value in raw_status.items() if not key.startswith("_")}
     content = _rich_execution_content(tool_name, status, raw_status.get("_presentation"), image_limits)
     if content is None:

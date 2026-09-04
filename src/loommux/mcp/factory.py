@@ -16,6 +16,8 @@ from loommux.workspace_resolver import resolve_workspace_launch
 
 
 def create_mcp(result_mode: ResultMode) -> FastMCP:
+    """Build one MCP server whose tools consume a fresh IPython session."""
+
     session = IPythonSession()
 
     def call(tool_name: str, operation: Callable[[], dict[str, Any]]) -> ToolResult:

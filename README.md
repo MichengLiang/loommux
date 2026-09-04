@@ -128,7 +128,7 @@ protocol, and never takes ownership of the external daemon. Content-only
 results are the default; `--result-mode structured` adds `structuredContent`.
 The server exposes exactly `run_shell`, `status`, `execution_status`,
 `read_output`, `search_output`, `wait`, and `cancel`. Every tool other than
-`run_shell` and `status` requires an explicit adapter-local `execution`.
+`run_shell` and `status` requires an explicit execution owned by that server.
 
 A short task can complete in the initial bounded observation window:
 
@@ -463,23 +463,50 @@ vulnerability in loommux itself, use the private reporting process in
 
 The runtime is deliberately divided into narrow responsibilities:
 
-- `host_workspace_config.py` and `workspace_resolver.py` own the MCP host's
-  explicit workspace authorization and its public source category.
-- `coding_agent_kernel.py` builds `KernelLaunch`: the server-interpreter
-  command, controlled child environment, and one private runtime root.
-- `kernel_runtime.py` owns the private root and delegates platform-specific
-  kernel lifecycle operations to Jupyter's `KernelManager`; Windows child
-  process containment is isolated there.
-- `kernel_session.py` owns IOPub collection and execution correlation without
-  invoking operating-system process APIs.
-- `terminal_text.py` normalizes terminal controls before public text is stored.
-- `execution.py` and `output_log.py` own normalized execution records and the
-  append-only stream projections, line ranges, clipping, and search behavior.
-- `adapter.py` owns lifecycle, execution-number allocation, selection, and
-  control operations.
-- `presentation.py` projects public state into model-readable text.
-- `mcp_server_factory.py` registers the shared tools; the command entrypoint
-  selects the result mode and transport.
+```text
+loommux/
+    session.py
+        Owns one persistent IPython namespace, execution identity, selection,
+        waiting, control operations, and historical execution records.
+    kernel/
+        launch.py
+            Builds the interpreter command, child environment, and private root.
+        runtime.py
+            Owns Jupyter kernel process lifecycle and platform containment.
+        session.py
+            Correlates IOPub messages with the active execution record.
+    execution/
+        record.py
+            Stores one execution's lifecycle facts and normalized projections.
+        events.py
+            Names visible text, image, and delivery-failure events.
+        logs.py
+            Provides append-only streams, line ranges, clipping, and search.
+        terminal.py
+            Removes terminal controls while preserving chunk boundaries.
+    submission/
+        directives.py
+            Parses and consumes submission-owned control directives.
+        apply_patch_literals.py
+            Converts valid Apply Patch literals before kernel submission.
+    mcp/
+        factory.py
+            Registers MCP tools that consume the protocol-neutral session.
+        result.py
+            Projects session facts into MCP text, structured, and image content.
+        presentation.py
+            Renders MCP-facing model-readable text.
+        entrypoints.py and server.py
+            Select MCP transport and expose the installed command.
+```
+
+The workspace authorization and resolution modules remain at the package
+boundary until their independent configuration work is complete. They are
+deliberately not mixed into this structural change.
+
+The top-level `loommux` package imports only the protocol-neutral Python
+session API. FastMCP is entered explicitly through `loommux.mcp`; the runtime
+does not depend on its transport consumer.
 
 The current public contract is documented in [Coding Agent Control Plane
 Design](docs/coding-agent-control-plane-design.md).

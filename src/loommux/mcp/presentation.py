@@ -8,6 +8,8 @@ from typing import Any
 
 
 def format_tool_result_text(tool_name: str, status: Mapping[str, Any]) -> str:
+    """Render one session status into the text surface intended for MCP."""
+
     if _is_tool_failure(tool_name, status):
         return _failure_surface(status)
     if tool_name in {"run_cell", "wait"}:

@@ -13,11 +13,15 @@ Matcher = Callable[[str], int]
 
 @dataclass(frozen=True)
 class ResolvedLineRange:
+    """Inclusive line coordinates after resolving a caller's range request."""
+
     start: int
     stop: int
 
 
 class LineLog:
+    """Retain one normalized text stream and expose stable line operations."""
+
     def __init__(self) -> None:
         self._text = ""
         self._character_count = 0
@@ -87,7 +91,12 @@ class LineLog:
 
 
 class ExecutionLogs:
-    """In-memory stream projections for one execution; they have no public address."""
+    """Keep the five public stream projections for one execution in memory.
+
+    The projections are intentionally derived at append time. This preserves
+    IOPub arrival order in ``combined`` while allowing callers to inspect a
+    selected stream without reparsing the execution's history.
+    """
 
     def __init__(self) -> None:
         self.combined = LineLog()

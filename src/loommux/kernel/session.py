@@ -20,6 +20,14 @@ from loommux.kernel.runtime import KernelRuntime
 
 
 class KernelSession:
+    """Bridge one live kernel client to the session's active execution record.
+
+    This object deliberately does not allocate public execution identifiers or
+    format consumer responses. Its only coordination responsibility is to
+    correlate Jupyter messages with the submitted cell and notify the owning
+    session when the kernel reports the execution as idle.
+    """
+
     def __init__(self, workspace: Path, python_path: Path, on_idle: Callable[[Execution], None]) -> None:
         self.workspace = workspace
         self.python_path = python_path

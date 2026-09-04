@@ -61,7 +61,7 @@ def test_cursor_and_c1_terminal_controls_do_not_enter_the_transcript() -> None:
 
 
 def test_shared_normalization_contract_vectors_at_every_split_position() -> None:
-    fixture = json.loads((Path(__file__).parent / "fixtures/text_contract/cases.json").read_text())
+    fixture = json.loads((Path(__file__).parents[1] / "fixtures/text_contract/cases.json").read_text())
 
     for case in fixture["normalization"]:
         source = case["input"]

@@ -11,6 +11,8 @@ from loommux.mcp.factory import create_mcp as create_factory
 
 
 def create_mcp() -> FastMCP:
+    """Create the default content-only MCP server."""
+
     return create_factory("content")
 
 
@@ -18,6 +20,8 @@ mcp = create_mcp()
 
 
 def main(argv: Sequence[str] | None = None) -> None:
+    """Run the MCP consumer using its command-line transport selection."""
+
     run_entrypoint(lambda result_mode: create_factory(result_mode), argv=argv)
 
 

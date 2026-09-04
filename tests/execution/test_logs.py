@@ -164,7 +164,7 @@ def test_execution_normalizes_every_stream_projection_before_logging() -> None:
 
 
 def test_shared_line_log_contract_vectors() -> None:
-    fixture = json.loads((Path(__file__).parent / "fixtures/text_contract/cases.json").read_text())
+    fixture = json.loads((Path(__file__).parents[1] / "fixtures/text_contract/cases.json").read_text())
 
     for case in fixture["line_log"]:
         log = LineLog()

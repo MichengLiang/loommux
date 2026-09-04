@@ -185,33 +185,33 @@ def test_kernel_ignores_hostile_user_state_and_reset_replaces_its_private_root(t
     monkeypatch.setenv("JUPYTER_CONFIG_DIR", str(user_jupyter))
     monkeypatch.setenv("PYTHONSTARTUP", str(python_startup))
     monkeypatch.setenv("LOOMMUX_TEST_PRESERVED", "preserved")
-    adapter = IPythonSession()
+    session = IPythonSession()
     second_root: Path | None = None
     try:
-        assert adapter.start_workspace(workspace, "launch_cwd")["ok"] is True
-        first_kernel = adapter.kernel
+        assert session.start_workspace(workspace, "launch_cwd")["ok"] is True
+        first_kernel = session.kernel
         assert first_kernel is not None and first_kernel.launch is not None
         first_launch = first_kernel.launch
         _assert_private_root(first_launch.runtime_root, workspace, home)
-        _assert_kernel_policy(adapter, first_launch)
+        _assert_kernel_policy(session, first_launch)
         _assert_hostile_user_state_is_untouched(profile_marker, jupyter_marker, python_startup_marker, history_database, original_history_stat.st_mtime_ns)
 
-        reset = adapter.restart()
+        reset = session.restart()
 
         assert reset["status"] == "restarted"
         assert not first_launch.runtime_root.exists()
-        second_kernel = adapter.kernel
+        second_kernel = session.kernel
         assert second_kernel is not None and second_kernel.launch is not None
         second_launch = second_kernel.launch
         second_root = second_launch.runtime_root
         assert second_root != first_launch.runtime_root
         _assert_private_root(second_root, workspace, home)
-        _assert_kernel_policy(adapter, second_launch)
+        _assert_kernel_policy(session, second_launch)
         _assert_hostile_user_state_is_untouched(profile_marker, jupyter_marker, python_startup_marker, history_database, original_history_stat.st_mtime_ns)
-        assert adapter.read_output(1, "stdout")["text"]
-        assert adapter.run_cell("'after reset'")["execution"] == 3
+        assert session.read_output(1, "stdout")["text"]
+        assert session.run_cell("'after reset'")["execution"] == 3
     finally:
-        adapter.close()
+        session.close()
     assert second_root is not None
     assert not second_root.exists()
 
@@ -220,10 +220,10 @@ def test_kernel_ignores_hostile_user_state_and_reset_replaces_its_private_root(t
 def test_reset_kills_windows_kernel_descendants(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    adapter = IPythonSession()
-    assert adapter.start_workspace(workspace, "launch_cwd")["ok"] is True
+    session = IPythonSession()
+    assert session.start_workspace(workspace, "launch_cwd")["ok"] is True
     try:
-        running = adapter.run_cell(
+        running = session.run_cell(
             "# loommux: --wait 0.1\n"
             "import subprocess\n"
             "import sys\n"
@@ -235,21 +235,21 @@ def test_reset_kills_windows_kernel_descendants(tmp_path: Path) -> None:
         deadline = time.monotonic() + 3
         child_pid: int | None = None
         while time.monotonic() < deadline:
-            text = str(adapter.read_output(running["execution"], "stdout")["text"])
+            text = str(session.read_output(running["execution"], "stdout")["text"])
             if text.strip().isdigit():
                 child_pid = int(text.strip())
                 break
             time.sleep(0.05)
         assert child_pid is not None
 
-        assert adapter.restart()["status"] == "restarted"
+        assert session.restart()["status"] == "restarted"
         assert _wait_for_windows_process_exit(child_pid)
     finally:
-        adapter.close()
+        session.close()
 
 
-def _assert_kernel_policy(adapter: IPythonSession, launch: KernelLaunch) -> None:
-    response = adapter.run_cell(
+def _assert_kernel_policy(session: IPythonSession, launch: KernelLaunch) -> None:
+    response = session.run_cell(
         "import os\n"
         "from IPython import get_ipython\n"
         "shell = get_ipython()\n"

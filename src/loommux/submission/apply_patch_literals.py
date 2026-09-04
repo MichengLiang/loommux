@@ -38,6 +38,8 @@ class SourceRange:
 
 @dataclass(frozen=True)
 class ApplyPatchLiteral:
+    """Record author and submitted coordinates for one converted literal."""
+
     author_start: int
     author_end: int
     submitted_start: int
