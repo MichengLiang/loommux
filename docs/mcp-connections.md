@@ -6,9 +6,10 @@
 2. `loommux --server` starts a local Streamable HTTP service at `http://HOST:PORT/PATH`.
 3. `--result-mode structured` is the explicit opt-in that returns MCP `content` plus `structuredContent`.
 
-The connection choice does not change the eight tools, one-kernel-per-process
-lifetime, execution numbering, workspace resolution, text logs, image content
-order, or the default content-only policy.
+The connection choice does not change the eight tools, resource-local
+execution numbering, workspace resolution, text logs, image content order, or
+the default content-only policy. Stdio normally has one MCP participant; an
+HTTP server can supervise multiple private or named shared kernel resources.
 
 ## Install
 
@@ -86,6 +87,14 @@ loommux --server --result-mode structured --host 127.0.0.1 --port 8802 --path /m
 
 Its endpoint is `http://127.0.0.1:8802/mcp`. `--path /tools` would instead
 produce `http://127.0.0.1:8802/tools`.
+
+The same HTTP application serves its operational console at `/` and JSON
+control routes under `/api`. These routes do not appear in MCP `tools/list`.
+
+Clients that need heartbeat leases or named sharing can use
+`loommux.client.LeaseAwareClient`; it discovers the policy before MCP
+initialization, pins its generation, and owns the standard ping task for the
+connection lifetime.
 
 PowerShell starts the same loopback-only endpoint on native Windows:
 

@@ -7,6 +7,22 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- Added session-private and named shared logical kernel resources with
+  independent execution histories and client leases.
+- Added activity and standard MCP-ping lease policies, policy generations,
+  orphaned-execution reclamation, and lazy recovery after kernel crashes.
+- Added a lease-aware Streamable HTTP client, HTTP resource APIs, and a
+  dependency-free management console.
+
+### Changed
+
+- The eight MCP tools now route to the resource selected by the current MCP
+  session instead of sharing one process-global IPython session.
+- Kernel restart preserves logical resource identity while resource recycle
+  retires the complete session and its retained history.
+
 ## [0.1.11] - 2026-07-24
 
 ### Fixed

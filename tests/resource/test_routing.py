@@ -6,6 +6,7 @@ from loommux.resource.routing import (
     ResourceRoutingError,
     resolve_address,
     resolve_client,
+    resolve_policy_generation,
 )
 
 
@@ -52,3 +53,21 @@ def test_missing_session_identity_is_rejected() -> None:
     with patch("loommux.resource.routing.get_http_headers", return_value={}):
         with pytest.raises(ResourceRoutingError):
             resolve_address(context)
+
+
+def test_policy_generation_header_is_validated() -> None:
+    with patch(
+        "loommux.resource.routing.get_http_headers",
+        return_value={"x-loommux-lease-policy-generation": "7"},
+    ):
+        assert resolve_policy_generation() == 7
+
+    with patch(
+        "loommux.resource.routing.get_http_headers",
+        return_value={"x-loommux-lease-policy-generation": "invalid"},
+    ):
+        with pytest.raises(ResourceRoutingError):
+            resolve_policy_generation()
+
+    with patch("loommux.resource.routing.get_http_headers", return_value={}):
+        assert resolve_policy_generation() is None

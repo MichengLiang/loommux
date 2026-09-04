@@ -6,10 +6,11 @@
 [![License](https://img.shields.io/pypi/l/loommux.svg)](LICENSE)
 
 `loommux` is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
-server for persistent, inspectable IPython work. One loommux server process
-owns one IPython kernel. Python variables, imports, definitions, and other
-kernel namespace state survive from one submitted cell to the next, while each
-accepted cell receives a stable, server-local integer execution number.
+server for persistent, inspectable IPython work. A loommux server owns logical
+kernel resources on behalf of MCP sessions. Each resource has an independent
+namespace, execution history, client lease set, and replaceable kernel process.
+Python variables, imports, and definitions survive from one submitted cell to
+the next inside that selected resource.
 
 The project is for MCP clients and agents that need more than a one-shot
 subprocess. It makes a running cell observable without losing it: callers can
@@ -18,7 +19,11 @@ search retained output, interrupt the active cell, or restart the kernel.
 
 ## What It Provides
 
-- One persistent IPython kernel per loommux server process.
+- Session-private kernel resources by default and explicitly named shared
+  resources when clients need one collaborative namespace.
+- One persistent IPython session, execution sequence, and retained history per
+  logical resource.
+- Activity or standard MCP-ping leases with automatic orphan reclamation.
 - A strictly increasing positive integer `execution` coordinate for every
   accepted cell during that server process's lifetime.
 - In-memory output retained separately as `combined`, `stdout`, `stderr`,
@@ -106,8 +111,8 @@ uv sync --group dev
 ## Choosing An Execution Engine
 
 Loommux provides two separate execution worlds. The installed `loommux`
-command owns one persistent IPython kernel and is the right entrypoint for
-stateful Python work. The Rust `loommux-pueue` binary submits independent shell
+command owns supervised persistent IPython resources and is the right
+entrypoint for stateful Python work. The Rust `loommux-pueue` binary submits independent shell
 tasks to an already running Pueue daemon and is the right entrypoint for queued,
 durable process execution. Their execution numbers are local to the selected
 server process; records and runtime state do not cross between engines.
@@ -210,10 +215,42 @@ configuration examples, and security guidance are in
 [MCP Connection Guide](docs/mcp-connections.md).
 
 HTTP is a deployment boundary, not a different execution model: the
-`execution` sequence, tools, output streams, workspace resolution, and
-presentation rules are the same as the stdio server. Binding it beyond the
-local machine exposes arbitrary Python execution and requires network controls
-and authentication outside loommux.
+tools, resource-local execution sequences, output streams, workspace
+resolution, and presentation rules are the same as the stdio server. The HTTP
+application also serves a resource console at `/` and operational JSON APIs
+under `/api`. Binding it beyond the local machine exposes arbitrary Python
+execution and requires network controls and authentication outside loommux.
+
+## Kernel Resources And Client Leases
+
+An ordinary MCP connection selects a resource without changing the eight-tool
+surface. Without an additional header, its MCP Session ID addresses a private
+workbench. `X-Loommux-Resource` selects a named shared workbench; every
+participating MCP session still holds an independent lease.
+
+The server publishes the current lease policy at `/api/lease-policy`. The
+included `loommux.client.LeaseAwareClient` discovers and pins that policy
+generation before initialization and sends standard MCP `ping` while a
+heartbeat lease is active:
+
+```python
+from loommux.client import LeaseAwareClient
+
+
+async with LeaseAwareClient(
+    "http://127.0.0.1:8801/mcp",
+    "analysis-agent",
+    resource_name="shared-analysis",
+) as client:
+    result = await client.call_tool(
+        "run_cell",
+        {"freeform": "value = 1\nprint(value)"},
+    )
+```
+
+The complete identity, lifecycle, policy, orphan-execution, control API, and
+source-ownership contract is documented in
+[Kernel Resource Daemon Design](docs/kernel-resource-daemon-design.md).
 
 ## Workspace And Interpreter
 

@@ -35,3 +35,8 @@ def test_settings_reject_non_positive_durations(value: str) -> None:
         ResourceServerSettings.from_environ(
             {"LOOMMUX_SWEEP_INTERVAL_SECONDS": value}
         )
+
+
+def test_settings_reject_unknown_lease_mode() -> None:
+    with pytest.raises(ValueError, match="activity or heartbeat"):
+        ResourceServerSettings.from_environ({"LOOMMUX_LEASE_MODE": "other"})

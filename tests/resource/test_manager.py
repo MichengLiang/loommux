@@ -13,6 +13,7 @@ from loommux.resource import (
     ResourceAddress,
     ResourceBusyError,
     ResourceLifecycle,
+    ResourceNotFoundError,
 )
 
 
@@ -34,6 +35,7 @@ class FakeSession:
         self.recent_execution: int | None = None
         self.executions: dict[int, object] = {}
         self.closed = False
+        self.interrupt_count = 0
 
     def start_workspace(
         self,
@@ -65,6 +67,10 @@ class FakeSession:
         type(self).next_pid += 1
         self.kernel = FakeKernel(type(self).next_pid)
         return {"ok": True, "status": "restarted"}
+
+    def interrupt(self) -> dict[str, Any]:
+        self.interrupt_count += 1
+        return {"ok": True, "status": "idle"}
 
 
 def address(key: str) -> ResourceAddress:
@@ -174,5 +180,47 @@ def test_dead_kernel_is_recovered_inside_the_same_logical_resource(
             assert recovered.kernel_pid != previous_pid
             assert recovered.lifecycle is ResourceLifecycle.RUNNING
         await manager.stop()
+
+    asyncio.run(scenario())
+
+
+def test_manager_control_operations_and_bulk_recycling(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        manager = KernelResourceManager(
+            tmp_path,
+            "launch_cwd",
+            session_factory=FakeSession,
+        )
+        first = await manager.get_or_create(address("first-control"))
+        second = await manager.get_or_create(address("second-control"))
+
+        interrupted = await manager.interrupt(first.resource_id)
+        restarted = await manager.restart(first.resource_id)
+
+        assert interrupted["status"] == "idle"
+        assert restarted["status"] == "restarted"
+        assert await manager.recycle_idle() == 2
+        assert await manager.snapshot() == []
+
+        busy = await manager.get_or_create(address("busy-control"))
+        idle = await manager.get_or_create(address("idle-control"))
+        busy.session.current_execution = 1
+        assert await manager.recycle_idle() == 1
+        assert idle.session.closed
+        assert await manager.recycle_all() == 1
+        assert busy.session.closed
+
+    asyncio.run(scenario())
+
+
+def test_unknown_resource_control_is_rejected(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        manager = KernelResourceManager(
+            tmp_path,
+            "launch_cwd",
+            session_factory=FakeSession,
+        )
+        with pytest.raises(ResourceNotFoundError, match="resource was not found"):
+            await manager.interrupt("missing")
 
     asyncio.run(scenario())

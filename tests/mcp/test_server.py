@@ -222,6 +222,16 @@ async def test_result_modes_share_content_but_only_structured_exposes_structured
     assert structured.content[0].text == default.content[0].text == "In [1]:"
 
 
+async def test_standard_ping_renews_an_existing_resource_lease(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(workspace)
+    async with Client(create_structured_mcp()) as client:
+        await client.call_tool("run_cell", {"freeform": "value = 1"})
+        assert await client.ping()
+
+
 async def test_mcp_projects_input_coordinate_display_result_and_traceback(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(workspace)
     async with Client(create_structured_mcp()) as structured_client, Client(create_default_mcp()) as default_client:
