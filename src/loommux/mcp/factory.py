@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from fastmcp.tools import ToolResult
 
 from loommux.host_workspace_config import WorkspaceConfigError
 from loommux.mcp.result import ResultMode, make_tool_result
+from loommux.resource import (
+    KernelResourceManager,
+    ResourceManagerError,
+    ResourceRoutingError,
+    resolve_address,
+)
 from loommux.session import IPythonSession
 from loommux.workspace_resolver import resolve_workspace_launch
 
@@ -18,31 +25,54 @@ from loommux.workspace_resolver import resolve_workspace_launch
 def create_mcp(result_mode: ResultMode) -> FastMCP:
     """Build one MCP server whose tools consume a fresh IPython session."""
 
-    session = IPythonSession()
+    manager: KernelResourceManager | None = None
 
-    def call(tool_name: str, operation: Callable[[], dict[str, Any]]) -> ToolResult:
-        return make_tool_result(tool_name, operation(), result_mode)
+    async def call(
+        tool_name: str,
+        ctx: Context,
+        operation: Callable[[IPythonSession], dict[str, Any]],
+    ) -> ToolResult:
+        selected_manager = manager
+        if selected_manager is None:
+            status = {
+                "ok": False,
+                "status": "resource_manager_not_started",
+                "message": "kernel resource manager is not started",
+            }
+            return make_tool_result(tool_name, status, result_mode)
+        try:
+            address = resolve_address(ctx)
+            async with selected_manager.operation(address) as resource:
+                status = await asyncio.to_thread(operation, resource.session)
+        except (ResourceManagerError, ResourceRoutingError) as exc:
+            status = {
+                "ok": False,
+                "status": "resource_unavailable",
+                "message": str(exc),
+            }
+        return make_tool_result(tool_name, status, result_mode)
 
     @asynccontextmanager
     async def lifespan(_server: FastMCP) -> AsyncIterator[dict[str, Any]]:
+        nonlocal manager
         try:
             resolution = resolve_workspace_launch()
         except WorkspaceConfigError as exc:
-            session.close()
             raise RuntimeError(f"loommux workspace initialization failed: {exc.status}") from exc
-        startup = session.start_workspace(resolution.workspace, resolution.workspace_resolution)
-        if not startup["ok"]:
-            session.close()
-            raise RuntimeError(f"loommux failed to start the configured workspace: {startup['message']}")
+        manager = KernelResourceManager(
+            resolution.workspace,
+            resolution.workspace_resolution,
+        )
         try:
-            yield {"session": session}
+            yield {"resource_manager": manager}
         finally:
-            session.close()
+            await manager.stop()
+            manager = None
 
     mcp = FastMCP("loommux persistent IPython session", lifespan=lifespan)
 
     @mcp.tool(output_schema=None)
-    def run_cell(freeform: str) -> ToolResult:
+    async def run_cell(freeform: str, ctx: Context) -> ToolResult:
         """向持久 IPython kernel 提交一个原始 IPython cell。
 
         请你使用 IPython 的思想来优雅使用本系列工具。
@@ -112,10 +142,10 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             已接受 execution 的当前状态；完成的小输出直接进入模型内容，
             running 或行数受限状态给出 ``execution`` 与省略原因。
         """
-        return call("run_cell", lambda: session.run_cell(freeform))
+        return await call("run_cell", ctx, lambda session: session.run_cell(freeform))
 
     @mcp.tool(output_schema=None)
-    def status() -> ToolResult:
+    async def status(ctx: Context) -> ToolResult:
         """返回 workspace、kernel 与最近执行记录的观察状态。
 
         状态范围
@@ -143,10 +173,10 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         Returns:
             当前 server 与 kernel 的状态快照。
         """
-        return call("status", session.status)
+        return await call("status", ctx, lambda session: session.status())
 
     @mcp.tool(output_schema=None)
-    def execution_status(execution: int | None = None) -> ToolResult:
+    async def execution_status(ctx: Context, execution: int | None = None) -> ToolResult:
         """返回一个 execution 的状态与元数据，不返回完整输出正文。
 
         选择规则
@@ -165,10 +195,10 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             输出总行数、Unicode code point 字符数、UTF-8 字节数、输出省略原因
             与错误摘要。
         """
-        return call("execution_status", lambda: session.execution_status(execution))
+        return await call("execution_status", ctx, lambda session: session.execution_status(execution))
 
     @mcp.tool(output_schema=None)
-    def read_output(execution: int | None = None, stream: str = "combined", line_range: str | None = None, max_chars: int | None = None) -> ToolResult:
+    async def read_output(ctx: Context, execution: int | None = None, stream: str = "combined", line_range: str | None = None, max_chars: int | None = None) -> ToolResult:
         """读取一个 execution 的指定输出流。
 
         选择与流
@@ -204,10 +234,10 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         Returns:
             所选流的文本、总行数、返回行数及范围外省略行数。
         """
-        return call("read_output", lambda: session.read_output(execution, stream, line_range, max_chars))
+        return await call("read_output", ctx, lambda session: session.read_output(execution, stream, line_range, max_chars))
 
     @mcp.tool(output_schema=None)
-    def search_output(query: str, execution: int | None = None, stream: str = "combined", query_mode: str = "auto", context_before: int = 0, context_after: int = 0, ignore_case: bool = False, max_chars: int | None = None) -> ToolResult:
+    async def search_output(ctx: Context, query: str, execution: int | None = None, stream: str = "combined", query_mode: str = "auto", context_before: int = 0, context_after: int = 0, ignore_case: bool = False, max_chars: int | None = None) -> ToolResult:
         """在一个 execution 的指定输出流中搜索文本或正则表达式。
 
         选择与匹配
@@ -242,10 +272,10 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             带 ``M`` / ``C`` 行标记的命中与上下文、匹配统计和所选流行数；
             无命中时返回零匹配结果。
         """
-        return call("search_output", lambda: session.search_output(query, execution, stream, query_mode, context_before, context_after, ignore_case, max_chars))
+        return await call("search_output", ctx, lambda session: session.search_output(query, execution, stream, query_mode, context_before, context_after, ignore_case, max_chars))
 
     @mcp.tool(output_schema=None)
-    def wait(execution: int | None = None, timeout_seconds: float = 30) -> ToolResult:
+    async def wait(ctx: Context, execution: int | None = None, timeout_seconds: float = 30) -> ToolResult:
         """等待一个 execution 结束，或在指定时限到达时返回其当前状态。
 
         选择与等待
@@ -272,10 +302,10 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             选中 execution 的当前状态和可返回的输出表面。未找到记录或
             非正等待时长返回对应错误。
         """
-        return call("wait", lambda: session.wait(execution, timeout_seconds))
+        return await call("wait", ctx, lambda session: session.wait(execution, timeout_seconds))
 
     @mcp.tool(output_schema=None)
-    def interrupt() -> ToolResult:
+    async def interrupt(ctx: Context) -> ToolResult:
         """向当前正在运行的 execution 发送 kernel 中断信号。
 
         中断语义
@@ -288,10 +318,10 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         Returns:
             已发送信号时返回目标 ``execution``；kernel 空闲时返回 idle。
         """
-        return call("interrupt", session.interrupt)
+        return await call("interrupt", ctx, lambda session: session.interrupt())
 
     @mcp.tool(output_schema=None)
-    def restart() -> ToolResult:
+    async def restart(ctx: Context) -> ToolResult:
         """重启 IPython kernel，并保留 loommux 服务器会话中的 execution 历史。
 
         重置边界
@@ -305,6 +335,6 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             新 kernel 的状态与 PID；重启失败时返回 workspace 或 kernel
             启动错误。
         """
-        return call("restart", session.restart)
+        return await call("restart", ctx, lambda session: session.restart())
 
     return mcp

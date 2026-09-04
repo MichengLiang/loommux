@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -77,6 +78,32 @@ class KernelResourceManager:
     async def get_by_id(self, resource_id: str) -> KernelResource | None:
         async with self._registry_lock:
             return self._resources_by_id.get(resource_id)
+
+    @asynccontextmanager
+    async def operation(
+        self,
+        address: ResourceAddress,
+    ) -> AsyncIterator[KernelResource]:
+        while True:
+            resource = await self.get_or_create(address)
+            async with self._registry_lock:
+                if self._resources_by_key.get(address.key) is not resource:
+                    continue
+                if resource.lifecycle is ResourceLifecycle.ORPHANED:
+                    resource.lifecycle = ResourceLifecycle.RUNNING
+                    resource.orphaned_at = None
+                if resource.lifecycle is not ResourceLifecycle.RUNNING:
+                    continue
+                resource.active_operations += 1
+                break
+        try:
+            yield resource
+        finally:
+            async with self._registry_lock:
+                resource.active_operations = max(
+                    0,
+                    resource.active_operations - 1,
+                )
 
     async def list_resources(self) -> list[KernelResource]:
         async with self._registry_lock:

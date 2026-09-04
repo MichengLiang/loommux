@@ -15,6 +15,13 @@ from loommux.resource.model import (
     ResourceLifecycle,
 )
 from loommux.resource.policy import LeaseMode, LeasePolicy, LeasePolicyManager
+from loommux.resource.routing import (
+    OPERATOR_HEADER,
+    RESOURCE_HEADER,
+    ResourceRoutingError,
+    resolve_address,
+    resolve_client,
+)
 
 __all__ = [
     "ClientLease",
@@ -30,4 +37,9 @@ __all__ = [
     "ResourceManagerError",
     "ResourceNotFoundError",
     "ResourceProvisionError",
+    "ResourceRoutingError",
+    "RESOURCE_HEADER",
+    "OPERATOR_HEADER",
+    "resolve_address",
+    "resolve_client",
 ]
