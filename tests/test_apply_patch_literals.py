@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from loommux.source_transform import prepare_apply_patch_literals
+from loommux.submission.apply_patch_literals import prepare_apply_patch_literals
 
 
 def _run(source: str) -> dict[str, object]:

@@ -1,4 +1,4 @@
-"""Transport valid Apply Patch literals through ordinary Python source."""
+"""Convert valid Apply Patch literals into ordinary Python string values."""
 
 from __future__ import annotations
 

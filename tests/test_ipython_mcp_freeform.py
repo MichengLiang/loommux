@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from loommux.cell_control import LoommuxDirectiveError, remove_active_directive_lines, scan_active_loommux_directives
 from loommux.session import IPythonSession, prepare_run_cell
+from loommux.submission.directives import LoommuxDirectiveError, remove_active_directive_lines, scan_active_loommux_directives
 
 
 @pytest.mark.parametrize(

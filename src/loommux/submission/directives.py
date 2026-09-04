@@ -1,4 +1,4 @@
-"""Classify and consume directives owned by the cell submission boundary."""
+"""Parse transport directives that control one submitted IPython cell."""
 
 from __future__ import annotations
 

@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from loommux.cell_control import LoommuxDirectiveError, remove_active_directive_lines, scan_active_loommux_directives
 from loommux.execution import Execution
 from loommux.kernel.session import KernelSession
-from loommux.source_transform import prepare_apply_patch_literals
+from loommux.submission.apply_patch_literals import prepare_apply_patch_literals
+from loommux.submission.directives import LoommuxDirectiveError, remove_active_directive_lines, scan_active_loommux_directives
 
 DEFAULT_OUTPUT_LINE_LIMIT = 300
 DEFAULT_OUTPUT_TOKEN_BYPASS_LIMIT = 5_000
