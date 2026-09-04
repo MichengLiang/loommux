@@ -21,6 +21,7 @@ classifiers = [
 ]
 dependencies = [
     "fastmcp>=3.4.7",
+    "httpx>=0.28.1",
     "ipykernel>=7.3.0",
     "jupyter-client>=8.10.0",
     "pywin32>=312; sys_platform == 'win32'",
