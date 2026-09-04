@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from loommux.adapter import IPythonMCPAdapter
+from loommux.session import IPythonSession
 
 TOKEN_LIGHT_MANY_LINES = "\n".join(f"line-{number}" for number in range(301)) + "\n"
 TOKEN_HEAVY_LINE = "abcdefghij " * 20
@@ -14,16 +14,16 @@ TOKEN_HEAVY_MANY_LINES = f"{TOKEN_HEAVY_LINE}\n" * 301
 
 
 @pytest.fixture
-def adapter(tmp_path: Path) -> IPythonMCPAdapter:
+def adapter(tmp_path: Path) -> IPythonSession:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    value = IPythonMCPAdapter()
+    value = IPythonSession()
     assert value.start_workspace(workspace, "launch_cwd")["ok"] is True
     yield value
     value.close()
 
 
-def test_allocates_integer_sequence_and_selects_exact_record(adapter: IPythonMCPAdapter) -> None:
+def test_allocates_integer_sequence_and_selects_exact_record(adapter: IPythonSession) -> None:
     first = adapter.run_cell("print('one')")
     second = adapter.run_cell("print('two')")
     third = adapter.run_cell("3 * 7")
@@ -36,7 +36,7 @@ def test_allocates_integer_sequence_and_selects_exact_record(adapter: IPythonMCP
 
 
 def test_omitted_selection_uses_current_then_recent_and_empty_adapter_is_not_found(tmp_path: Path) -> None:
-    adapter = IPythonMCPAdapter()
+    adapter = IPythonSession()
     assert adapter.execution_status()["status"] == "execution_not_found"
     try:
         workspace = tmp_path / "workspace"
@@ -70,7 +70,7 @@ def test_workspace_start_retries_one_transient_kernel_failure(tmp_path: Path, mo
         def is_alive(self) -> bool:
             return True
 
-    adapter = IPythonMCPAdapter()
+    adapter = IPythonSession()
     failed_kernel = ControlledKernel(True)
     started_kernel = ControlledKernel(False)
     kernels = [failed_kernel, started_kernel]
@@ -84,7 +84,7 @@ def test_workspace_start_retries_one_transient_kernel_failure(tmp_path: Path, mo
         adapter.close()
 
 
-def test_busy_submission_reports_running_integer_without_queueing(adapter: IPythonMCPAdapter) -> None:
+def test_busy_submission_reports_running_integer_without_queueing(adapter: IPythonSession) -> None:
     running = adapter.run_cell("# loommux: --wait 0.1\nimport time\ntime.sleep(1)")
     busy = adapter.run_cell("'not queued'")
 
@@ -95,7 +95,7 @@ def test_busy_submission_reports_running_integer_without_queueing(adapter: IPyth
     assert len(adapter.executions) == 1
 
 
-def test_interrupts_a_running_kernel_cell_through_the_managed_runtime(adapter: IPythonMCPAdapter) -> None:
+def test_interrupts_a_running_kernel_cell_through_the_managed_runtime(adapter: IPythonSession) -> None:
     running = adapter.run_cell("# loommux: --wait 0.1\nimport time\nprint('started', flush=True)\ntime.sleep(30)")
     deadline = time.monotonic() + 3
     while time.monotonic() < deadline and "started" not in str(adapter.read_output(running["execution"], "stdout")["text"]):
@@ -111,7 +111,7 @@ def test_interrupts_a_running_kernel_cell_through_the_managed_runtime(adapter: I
     assert completed["error"] == {"ename": "KeyboardInterrupt", "evalue": ""}
 
 
-def test_full_output_directive_returns_complete_long_combined_output(adapter: IPythonMCPAdapter) -> None:
+def test_full_output_directive_returns_complete_long_combined_output(adapter: IPythonSession) -> None:
     response = adapter.run_cell("# loommux: --full-output\nprint(('abcdefghij ' * 20 + '\\n') * 301, end='')")
 
     assert response["status"] == "completed"
@@ -119,7 +119,7 @@ def test_full_output_directive_returns_complete_long_combined_output(adapter: IP
     assert response["output_text"] == TOKEN_HEAVY_MANY_LINES
 
 
-def test_full_output_directive_preserves_the_combined_iopub_order(adapter: IPythonMCPAdapter) -> None:
+def test_full_output_directive_preserves_the_combined_iopub_order(adapter: IPythonSession) -> None:
     response = adapter.run_cell("# loommux: --full-output\nimport sys\nprint('stdout')\nprint('stderr', file=sys.stderr)\n'display'")
     output = response["output_text"]
 
@@ -127,7 +127,7 @@ def test_full_output_directive_preserves_the_combined_iopub_order(adapter: IPyth
     assert output.index("stdout") < output.index("stderr") < output.index("Out[1]: 'display'")
 
 
-def test_directive_does_not_create_namespace_control_state(adapter: IPythonMCPAdapter) -> None:
+def test_directive_does_not_create_namespace_control_state(adapter: IPythonSession) -> None:
     adapter.run_cell("counter = 0")
     response = adapter.run_cell("# loommux: --full-output\ncounter += 1\ncounter")
     namespace = adapter.run_cell("counter")
@@ -138,7 +138,7 @@ def test_directive_does_not_create_namespace_control_state(adapter: IPythonMCPAd
     assert "loommux" not in str(adapter.run_cell("sorted(name for name in globals() if 'loommux' in name)")["output_text"])
 
 
-def test_directive_preserves_rich_display_events(adapter: IPythonMCPAdapter) -> None:
+def test_directive_preserves_rich_display_events(adapter: IPythonSession) -> None:
     response = adapter.run_cell(
         "# loommux: --full-output\n"
         "from IPython.display import display\n"
@@ -155,7 +155,7 @@ def test_directive_preserves_rich_display_events(adapter: IPythonMCPAdapter) -> 
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="IPython %%bash requires a POSIX shell")
-def test_directive_composes_with_a_bash_cell_magic(adapter: IPythonMCPAdapter) -> None:
+def test_directive_composes_with_a_bash_cell_magic(adapter: IPythonSession) -> None:
     running = adapter.run_cell("# loommux: --wait 0.1\n# loommux: --full-output\n%%bash\nsleep 0.3\nprintf 'bash-finished\\n'")
 
     assert running["status"] == "running"
@@ -166,7 +166,7 @@ def test_directive_composes_with_a_bash_cell_magic(adapter: IPythonMCPAdapter) -
     assert completed["output_text"] == "bash-finished\n"
 
 
-def test_unmarked_many_line_output_bypasses_the_line_limit_when_it_is_token_light(adapter: IPythonMCPAdapter) -> None:
+def test_unmarked_many_line_output_bypasses_the_line_limit_when_it_is_token_light(adapter: IPythonSession) -> None:
     response = adapter.run_cell("print('\\n'.join(f'line-{number}' for number in range(301)))")
 
     assert response["status"] == "completed"
@@ -174,7 +174,7 @@ def test_unmarked_many_line_output_bypasses_the_line_limit_when_it_is_token_ligh
     assert response["output_text"] == TOKEN_LIGHT_MANY_LINES
 
 
-def test_unmarked_token_heavy_many_line_output_keeps_the_default_omission_rule(adapter: IPythonMCPAdapter) -> None:
+def test_unmarked_token_heavy_many_line_output_keeps_the_default_omission_rule(adapter: IPythonSession) -> None:
     response = adapter.run_cell("print(('abcdefghij ' * 20 + '\\n') * 301, end='')")
 
     assert response["status"] == "completed"
@@ -186,7 +186,7 @@ def test_unmarked_token_heavy_many_line_output_keeps_the_default_omission_rule(a
     assert response["output_total_utf8_bytes"] == len(TOKEN_HEAVY_MANY_LINES.encode("utf-8"))
 
 
-def test_full_output_directive_survives_running_wait_error_and_reset(adapter: IPythonMCPAdapter) -> None:
+def test_full_output_directive_survives_running_wait_error_and_reset(adapter: IPythonSession) -> None:
     running = adapter.run_cell("# loommux: --wait 0.1 --full-output\nimport time\ntime.sleep(0.3)\nprint(('abcdefghij ' * 20 + '\\n') * 301, end='')")
     assert running["status"] == "running"
     assert running["output_omitted_reason"] == "running"
@@ -211,14 +211,14 @@ def test_full_output_directive_survives_running_wait_error_and_reset(adapter: IP
     assert "before reset" in reset_result["output_text"]
 
 
-def test_legacy_key_value_declaration_fails_before_python_execution(adapter: IPythonMCPAdapter) -> None:
+def test_legacy_key_value_declaration_fails_before_python_execution(adapter: IPythonSession) -> None:
     response = adapter.run_cell("# loommux: legacy_key=0.1\nprint('\\n'.join(f'line-{number}' for number in range(301)))")
 
     assert response["status"] == "invalid_loommux_directive"
     assert "unknown option" in response["message"]
 
 
-def test_apply_patch_literal_preserves_raw_value_without_archiving_request_source(adapter: IPythonMCPAdapter) -> None:
+def test_apply_patch_literal_preserves_raw_value_without_archiving_request_source(adapter: IPythonSession) -> None:
     source = '''# loommux: --wait 2 --full-output
 name = "Ada"
 payload = f"""
@@ -243,7 +243,7 @@ payload = f"""
         assert not hasattr(record, field)
 
 
-def test_apply_patch_literal_is_a_function_argument_and_keeps_later_traceback_lines(adapter: IPythonMCPAdapter) -> None:
+def test_apply_patch_literal_is_a_function_argument_and_keeps_later_traceback_lines(adapter: IPythonSession) -> None:
     source = '''# loommux: --full-output
 received = None
 def capture(value):
@@ -269,7 +269,7 @@ raise RuntimeError("mapped")
     assert "*** Begin Patch" in received["output_text"]
 
 
-def test_reset_preserves_records_and_sequence_and_reauthors_out_label(adapter: IPythonMCPAdapter) -> None:
+def test_reset_preserves_records_and_sequence_and_reauthors_out_label(adapter: IPythonSession) -> None:
     first = adapter.run_cell("'before reset'")
     reset = adapter.restart()
     second = adapter.run_cell("# loommux: --full-output\n'after reset'")
@@ -281,7 +281,7 @@ def test_reset_preserves_records_and_sequence_and_reauthors_out_label(adapter: I
     assert "Out[1]: 'before reset'" in str(adapter.read_output(1)["text"])
 
 
-def test_reset_kills_running_execution_but_keeps_it_readable(adapter: IPythonMCPAdapter) -> None:
+def test_reset_kills_running_execution_but_keeps_it_readable(adapter: IPythonSession) -> None:
     running = adapter.run_cell("# loommux: --wait 0.1\nimport time\ntime.sleep(5)")
     adapter.restart()
 
@@ -290,7 +290,7 @@ def test_reset_kills_running_execution_but_keeps_it_readable(adapter: IPythonMCP
     assert status["execution"] == 1
 
 
-def test_invalid_directive_has_no_real_kernel_or_sequence_side_effect(adapter: IPythonMCPAdapter) -> None:
+def test_invalid_directive_has_no_real_kernel_or_sequence_side_effect(adapter: IPythonSession) -> None:
     accepted = adapter.run_cell("'before invalid'")
     invalid = adapter.run_cell("# loommux: --wait 10 --wait 20\nprint('must not run')")
     after = adapter.run_cell("'after invalid'")
@@ -300,7 +300,7 @@ def test_invalid_directive_has_no_real_kernel_or_sequence_side_effect(adapter: I
     assert after["execution"] == accepted["execution"] + 1
 
 
-def test_invalid_python_indentation_with_a_valid_directive_reaches_the_kernel(adapter: IPythonMCPAdapter) -> None:
+def test_invalid_python_indentation_with_a_valid_directive_reaches_the_kernel(adapter: IPythonSession) -> None:
     response = adapter.run_cell("if True:\n    pass\n  pass\n# loommux: --full-output\n")
 
     assert response["execution"] == 1
@@ -309,27 +309,27 @@ def test_invalid_python_indentation_with_a_valid_directive_reaches_the_kernel(ad
     assert "unindent does not match any outer indentation level" in response["error"]["evalue"]
 
 
-def test_inner_directive_text_is_python_data_and_cannot_change_outer_policy(adapter: IPythonMCPAdapter) -> None:
+def test_inner_directive_text_is_python_data_and_cannot_change_outer_policy(adapter: IPythonSession) -> None:
     response = adapter.run_cell('# loommux: --wait 2\npayload = """\n# loommux: --full-output\n"""\nprint(payload)')
 
     assert response["output_text"].strip() == "# loommux: --full-output"
 
 
-def test_lone_cr_string_data_does_not_become_a_control_directive(adapter: IPythonMCPAdapter) -> None:
+def test_lone_cr_string_data_does_not_become_a_control_directive(adapter: IPythonSession) -> None:
     response = adapter.run_cell('payload = """\r# loommux: --wait 0\r"""\rprint(payload)')
 
     assert response["status"] == "completed"
     assert response["output_text"].strip() == "# loommux: --wait 0"
 
 
-def test_f_string_data_does_not_become_a_control_directive(adapter: IPythonMCPAdapter) -> None:
+def test_f_string_data_does_not_become_a_control_directive(adapter: IPythonSession) -> None:
     response = adapter.run_cell('payload = f"""\n# loommux: --wait 0\n"""\nprint(payload)')
 
     assert response["status"] == "completed"
     assert response["output_text"].strip() == "# loommux: --wait 0"
 
 
-def test_directives_are_absent_from_real_ipython_history_without_padding(adapter: IPythonMCPAdapter) -> None:
+def test_directives_are_absent_from_real_ipython_history_without_padding(adapter: IPythonSession) -> None:
     source = "# loommux: --wait 2\n# loommux: --full-output\nvalue_for_history = 41\nvalue_for_history + 1"
 
     response = adapter.run_cell(source)
@@ -340,14 +340,14 @@ def test_directives_are_absent_from_real_ipython_history_without_padding(adapter
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="IPython %%bash requires a POSIX shell")
-def test_directive_inside_a_magic_body_is_removed_before_that_body_runs(adapter: IPythonMCPAdapter) -> None:
+def test_directive_inside_a_magic_body_is_removed_before_that_body_runs(adapter: IPythonSession) -> None:
     response = adapter.run_cell("%%bash\n# loommux: --full-output\nprintf 'body-clean\\n'")
 
     assert response["status"] == "completed"
     assert response["output_text"] == "body-clean\n"
 
 
-def test_directive_is_removed_before_a_non_comment_magic_body_receives_it(adapter: IPythonMCPAdapter) -> None:
+def test_directive_is_removed_before_a_non_comment_magic_body_receives_it(adapter: IPythonSession) -> None:
     registered = adapter.run_cell(
         "from IPython.core.magic import register_cell_magic\n"
         "@register_cell_magic\n"
@@ -363,7 +363,7 @@ def test_directive_is_removed_before_a_non_comment_magic_body_receives_it(adapte
     assert response["output_text"] == "body language text\n\n"
 
 
-def test_public_execution_responses_exclude_consumed_control_details(adapter: IPythonMCPAdapter) -> None:
+def test_public_execution_responses_exclude_consumed_control_details(adapter: IPythonSession) -> None:
     response = adapter.run_cell("# loommux: --wait 2 --full-output\nprint('done')")
     waited = adapter.wait(response["execution"])
     status = adapter.execution_status(response["execution"])
@@ -372,7 +372,7 @@ def test_public_execution_responses_exclude_consumed_control_details(adapter: IP
         assert {"initial_wait_seconds", "full_output_requested", "control_directives"}.isdisjoint(result)
 
 
-def test_stream_read_search_and_invalid_inputs(adapter: IPythonMCPAdapter) -> None:
+def test_stream_read_search_and_invalid_inputs(adapter: IPythonSession) -> None:
     result = adapter.run_cell("import sys\nprint('alpha')\nprint('warning', file=sys.stderr)\n'omega'")
     execution = result["execution"]
 
@@ -382,21 +382,21 @@ def test_stream_read_search_and_invalid_inputs(adapter: IPythonMCPAdapter) -> No
     assert adapter.execution_status(-1)["status"] == "execution_not_found"
 
 
-def test_adapter_reports_invalid_operations_and_idle_interrupt(adapter: IPythonMCPAdapter, tmp_path: Path) -> None:
+def test_adapter_reports_invalid_operations_and_idle_interrupt(adapter: IPythonSession, tmp_path: Path) -> None:
     assert adapter.run_cell(1)["status"] == "invalid_code"  # type: ignore[arg-type]
     assert adapter.wait(timeout_seconds=0)["status"] == "invalid_timeout"
     assert adapter.interrupt()["status"] == "idle"
     assert adapter.restart()["status"] == "restarted"
     assert adapter.status()["recent_execution"] is None
 
-    unstarted = IPythonMCPAdapter()
+    unstarted = IPythonSession()
     try:
         assert unstarted.restart()["status"] == "workspace_not_set"
         assert unstarted.status()["kernel_started"] is False
     finally:
         unstarted.close()
 
-    invalid = IPythonMCPAdapter()
+    invalid = IPythonSession()
     try:
         missing = tmp_path / "missing"
         assert invalid.start_workspace(missing, "launch_cwd")["status"] == "workspace_not_found"

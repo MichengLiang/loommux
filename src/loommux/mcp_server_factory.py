@@ -7,14 +7,14 @@ from typing import Any
 from fastmcp import FastMCP
 from fastmcp.tools import ToolResult
 
-from loommux.adapter import IPythonMCPAdapter
 from loommux.host_workspace_config import WorkspaceConfigError
 from loommux.mcp_result_policy import ResultMode, make_tool_result
+from loommux.session import IPythonSession
 from loommux.workspace_resolver import resolve_workspace_launch
 
 
 def create_mcp(result_mode: ResultMode) -> FastMCP:
-    adapter = IPythonMCPAdapter()
+    adapter = IPythonSession()
 
     def call(tool_name: str, operation: Callable[[], dict[str, Any]]) -> ToolResult:
         return make_tool_result(tool_name, operation(), result_mode)

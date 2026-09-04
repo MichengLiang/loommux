@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from loommux.adapter import IPythonMCPAdapter, prepare_run_cell
 from loommux.cell_control import LoommuxDirectiveError, remove_active_directive_lines, scan_active_loommux_directives
+from loommux.session import IPythonSession, prepare_run_cell
 
 
 @pytest.mark.parametrize(
@@ -124,7 +124,7 @@ payload
 
 
 def test_run_cell_passes_clean_source_and_resolved_policy_to_submission() -> None:
-    class CapturingAdapter(IPythonMCPAdapter):
+    class CapturingAdapter(IPythonSession):
         def __init__(self) -> None:
             super().__init__()
             self.calls: list[tuple[str, float, bool]] = []
@@ -141,7 +141,7 @@ def test_run_cell_passes_clean_source_and_resolved_policy_to_submission() -> Non
 
 
 def test_invalid_directive_does_not_allocate_or_submit_an_execution() -> None:
-    class CapturingAdapter(IPythonMCPAdapter):
+    class CapturingAdapter(IPythonSession):
         def __init__(self) -> None:
             super().__init__()
             self.submitted = False

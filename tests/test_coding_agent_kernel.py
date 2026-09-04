@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from loommux.adapter import IPythonMCPAdapter
 from loommux.coding_agent_kernel import KernelLaunch
 from loommux.kernel_runtime import KernelRuntime, _kernel_spec, _KernelContainment
+from loommux.session import IPythonSession
 
 
 def test_kernel_launch_builds_the_required_command_and_controlled_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -185,7 +185,7 @@ def test_kernel_ignores_hostile_user_state_and_reset_replaces_its_private_root(t
     monkeypatch.setenv("JUPYTER_CONFIG_DIR", str(user_jupyter))
     monkeypatch.setenv("PYTHONSTARTUP", str(python_startup))
     monkeypatch.setenv("LOOMMUX_TEST_PRESERVED", "preserved")
-    adapter = IPythonMCPAdapter()
+    adapter = IPythonSession()
     second_root: Path | None = None
     try:
         assert adapter.start_workspace(workspace, "launch_cwd")["ok"] is True
@@ -220,7 +220,7 @@ def test_kernel_ignores_hostile_user_state_and_reset_replaces_its_private_root(t
 def test_reset_kills_windows_kernel_descendants(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    adapter = IPythonMCPAdapter()
+    adapter = IPythonSession()
     assert adapter.start_workspace(workspace, "launch_cwd")["ok"] is True
     try:
         running = adapter.run_cell(
@@ -248,7 +248,7 @@ def test_reset_kills_windows_kernel_descendants(tmp_path: Path) -> None:
         adapter.close()
 
 
-def _assert_kernel_policy(adapter: IPythonMCPAdapter, launch: KernelLaunch) -> None:
+def _assert_kernel_policy(adapter: IPythonSession, launch: KernelLaunch) -> None:
     response = adapter.run_cell(
         "import os\n"
         "from IPython import get_ipython\n"

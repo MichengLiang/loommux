@@ -1,4 +1,4 @@
-"""Classify and consume adapter-owned Loommux control directives."""
+"""Classify and consume directives owned by the cell submission boundary."""
 
 from __future__ import annotations
 

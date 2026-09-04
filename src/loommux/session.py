@@ -42,8 +42,13 @@ def prepare_run_cell(freeform: object) -> PreparedRunCell:
     )
 
 
-class IPythonMCPAdapter:
-    """Owns the server-local execution sequence and one persistent kernel."""
+class IPythonSession:
+    """Own one persistent kernel and its server-local execution history.
+
+    The session is transport-neutral. It exposes execution facts and control
+    operations to callers such as an IPython manager, a test harness, or an MCP
+    consumer; it does not construct protocol responses.
+    """
 
     def __init__(self) -> None:
         self.workspace: Path | None = None
