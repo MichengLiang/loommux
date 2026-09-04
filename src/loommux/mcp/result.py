@@ -1,3 +1,5 @@
+"""Project session facts into MCP text, structured, and image content."""
+
 from __future__ import annotations
 
 import base64
@@ -9,7 +11,7 @@ from fastmcp.tools import ToolResult
 from mcp.types import ImageContent, TextContent
 
 from loommux.execution.events import PresentationFailure, PresentationImage, PresentationText
-from loommux.presentation import format_execution_input, format_output_line_limit_notice, format_tool_result_text
+from loommux.mcp.presentation import format_execution_input, format_output_line_limit_notice, format_tool_result_text
 
 ResultMode = Literal["content", "structured"]
 

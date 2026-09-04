@@ -1,3 +1,5 @@
+"""Select the MCP transport and launch the already-built consumer."""
+
 from __future__ import annotations
 
 import argparse
@@ -6,7 +8,7 @@ from typing import cast
 
 from fastmcp import FastMCP
 
-from loommux.mcp_result_policy import ResultMode
+from loommux.mcp.result import ResultMode
 
 ServerFactory = Callable[[ResultMode], FastMCP]
 
@@ -19,7 +21,7 @@ def run_entrypoint(
     default_path: str = "/mcp",
     argv: Sequence[str] | None = None,
 ) -> None:
-    """Run the sole loommux command surface over Studio stdio or HTTP."""
+    """Run the MCP consumer over Studio stdio or HTTP."""
     parser = argparse.ArgumentParser(description="Run the loommux IPython MCP server.")
     parser.add_argument("--result-mode", choices=("structured",), default="content", help="Explicitly include structuredContent alongside content.")
     parser.add_argument("--server", action="store_true", help="Start a Streamable HTTP MCP service instead of using Studio subprocess stdio.")

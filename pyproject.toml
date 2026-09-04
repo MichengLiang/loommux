@@ -33,7 +33,7 @@ Repository = "https://github.com/MichengLiang/loommux"
 Issues = "https://github.com/MichengLiang/loommux/issues"
 
 [project.scripts]
-loommux = "loommux.mcp_ipython_server:main"
+loommux = "loommux.mcp.server:main"
 
 [dependency-groups]
 dev = [

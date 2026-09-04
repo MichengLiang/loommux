@@ -4,8 +4,8 @@ import pytest
 from mcp.types import ImageContent, TextContent
 
 from loommux.execution.events import PresentationFailure, PresentationImage, PresentationText
-from loommux.mcp_result_policy import ImageDeliveryLimits, make_tool_result
-from loommux.presentation import format_output_line_limit_notice, format_tool_result_text
+from loommux.mcp.presentation import format_output_line_limit_notice, format_tool_result_text
+from loommux.mcp.result import ImageDeliveryLimits, make_tool_result
 
 
 def test_completed_result_projects_only_ipython_visible_output() -> None:

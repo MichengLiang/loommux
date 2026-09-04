@@ -1,3 +1,5 @@
+"""Render session results for MCP callers and language-model readers."""
+
 from __future__ import annotations
 
 import json

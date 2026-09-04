@@ -8,9 +8,9 @@ from typing import Any
 import pytest
 from fastmcp import Client
 
-from loommux.mcp_ipython_server import create_mcp as create_default_mcp
-from loommux.mcp_result_policy import make_tool_result
-from loommux.mcp_server_factory import create_mcp as create_policy_mcp
+from loommux.mcp.factory import create_mcp as create_policy_mcp
+from loommux.mcp.result import make_tool_result
+from loommux.mcp.server import create_mcp as create_default_mcp
 
 WORKSPACE_CONFIG_ENV = "LOOMMUX_WORKSPACE_CONFIG"
 TOKEN_LIGHT_MANY_LINES = "\n".join(f"line-{number}" for number in range(301)) + "\n"

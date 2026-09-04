@@ -1,3 +1,5 @@
+"""Build MCP tools that consume the protocol-neutral IPython session."""
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
@@ -8,13 +10,13 @@ from fastmcp import FastMCP
 from fastmcp.tools import ToolResult
 
 from loommux.host_workspace_config import WorkspaceConfigError
-from loommux.mcp_result_policy import ResultMode, make_tool_result
+from loommux.mcp.result import ResultMode, make_tool_result
 from loommux.session import IPythonSession
 from loommux.workspace_resolver import resolve_workspace_launch
 
 
 def create_mcp(result_mode: ResultMode) -> FastMCP:
-    adapter = IPythonSession()
+    session = IPythonSession()
 
     def call(tool_name: str, operation: Callable[[], dict[str, Any]]) -> ToolResult:
         return make_tool_result(tool_name, operation(), result_mode)
@@ -24,18 +26,18 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         try:
             resolution = resolve_workspace_launch()
         except WorkspaceConfigError as exc:
-            adapter.close()
+            session.close()
             raise RuntimeError(f"loommux workspace initialization failed: {exc.status}") from exc
-        startup = adapter.start_workspace(resolution.workspace, resolution.workspace_resolution)
+        startup = session.start_workspace(resolution.workspace, resolution.workspace_resolution)
         if not startup["ok"]:
-            adapter.close()
+            session.close()
             raise RuntimeError(f"loommux failed to start the configured workspace: {startup['message']}")
         try:
-            yield {"adapter": adapter}
+            yield {"session": session}
         finally:
-            adapter.close()
+            session.close()
 
-    mcp = FastMCP("loommux IPython MCP adapter", lifespan=lifespan)
+    mcp = FastMCP("loommux persistent IPython session", lifespan=lifespan)
 
     @mcp.tool(output_schema=None)
     def run_cell(freeform: str) -> ToolResult:
@@ -108,7 +110,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             已接受 execution 的当前状态；完成的小输出直接进入模型内容，
             running 或行数受限状态给出 ``execution`` 与省略原因。
         """
-        return call("run_cell", lambda: adapter.run_cell(freeform))
+        return call("run_cell", lambda: session.run_cell(freeform))
 
     @mcp.tool(output_schema=None)
     def status() -> ToolResult:
@@ -139,7 +141,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         Returns:
             当前 server 与 kernel 的状态快照。
         """
-        return call("status", adapter.status)
+        return call("status", session.status)
 
     @mcp.tool(output_schema=None)
     def execution_status(execution: int | None = None) -> ToolResult:
@@ -161,7 +163,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             输出总行数、Unicode code point 字符数、UTF-8 字节数、输出省略原因
             与错误摘要。
         """
-        return call("execution_status", lambda: adapter.execution_status(execution))
+        return call("execution_status", lambda: session.execution_status(execution))
 
     @mcp.tool(output_schema=None)
     def read_output(execution: int | None = None, stream: str = "combined", line_range: str | None = None, max_chars: int | None = None) -> ToolResult:
@@ -200,7 +202,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         Returns:
             所选流的文本、总行数、返回行数及范围外省略行数。
         """
-        return call("read_output", lambda: adapter.read_output(execution, stream, line_range, max_chars))
+        return call("read_output", lambda: session.read_output(execution, stream, line_range, max_chars))
 
     @mcp.tool(output_schema=None)
     def search_output(query: str, execution: int | None = None, stream: str = "combined", query_mode: str = "auto", context_before: int = 0, context_after: int = 0, ignore_case: bool = False, max_chars: int | None = None) -> ToolResult:
@@ -238,7 +240,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             带 ``M`` / ``C`` 行标记的命中与上下文、匹配统计和所选流行数；
             无命中时返回零匹配结果。
         """
-        return call("search_output", lambda: adapter.search_output(query, execution, stream, query_mode, context_before, context_after, ignore_case, max_chars))
+        return call("search_output", lambda: session.search_output(query, execution, stream, query_mode, context_before, context_after, ignore_case, max_chars))
 
     @mcp.tool(output_schema=None)
     def wait(execution: int | None = None, timeout_seconds: float = 30) -> ToolResult:
@@ -268,7 +270,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             选中 execution 的当前状态和可返回的输出表面。未找到记录或
             非正等待时长返回对应错误。
         """
-        return call("wait", lambda: adapter.wait(execution, timeout_seconds))
+        return call("wait", lambda: session.wait(execution, timeout_seconds))
 
     @mcp.tool(output_schema=None)
     def interrupt() -> ToolResult:
@@ -284,7 +286,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         Returns:
             已发送信号时返回目标 ``execution``；kernel 空闲时返回 idle。
         """
-        return call("interrupt", adapter.interrupt)
+        return call("interrupt", session.interrupt)
 
     @mcp.tool(output_schema=None)
     def restart() -> ToolResult:
@@ -301,6 +303,6 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             新 kernel 的状态与 PID；重启失败时返回 workspace 或 kernel
             启动错误。
         """
-        return call("restart", adapter.restart)
+        return call("restart", session.restart)
 
     return mcp

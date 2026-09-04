@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-import loommux.mcp_ipython_server as server
-from loommux.mcp_result_policy import ResultMode
-from loommux.server_entrypoints import run_entrypoint
+import loommux.mcp.server as server
+from loommux.mcp.entrypoints import run_entrypoint
+from loommux.mcp.result import ResultMode
 
 
 class RecordingMCP:

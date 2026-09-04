@@ -10,7 +10,7 @@ from fastmcp.client.transports import StdioTransport
 
 async def main() -> None:
     project_dir = Path(__file__).resolve().parent
-    server_file = project_dir / "src" / "loommux" / "mcp_ipython_server.py"
+    server_file = project_dir / "src" / "loommux" / "mcp" / "server.py"
     transport = StdioTransport(command=sys.executable, args=[str(server_file)], cwd=str(project_dir), keep_alive=False)
     async with Client(transport) as client:
         tools = await client.list_tools()

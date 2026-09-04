@@ -298,7 +298,7 @@ class IPythonSession:
             output_token_bypass_limit=DEFAULT_OUTPUT_TOKEN_BYPASS_LIMIT,
         )
         if not record.is_running and record.has_rich_presentation:
-            # This is consumed by mcp_result_policy only. Keeping it private prevents
+            # This is consumed by the MCP result projection only. Keeping it private prevents
             # Base64 payloads from leaking into status JSON or text logs.
             result["_presentation"] = tuple(record.presentation)
         result["kernel"] = self._kernel_status()
