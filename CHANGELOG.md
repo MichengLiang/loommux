@@ -23,6 +23,12 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Kernel restart preserves logical resource identity while resource recycle
   retires the complete session and its retained history.
 
+### Removed
+
+- Removed the fully deprecated Pueue engine documentation suite, generated
+  diagrams, documentation audit script, and README instructions. Loommux now
+  presents only its supported persistent IPython resource model.
+
 ## [0.1.11] - 2026-07-24
 
 ### Fixed

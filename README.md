@@ -108,55 +108,6 @@ cd loommux
 uv sync --group dev
 ```
 
-## Choosing An Execution Engine
-
-Loommux provides two separate execution worlds. The installed `loommux`
-command owns supervised persistent IPython resources and is the right
-entrypoint for stateful Python work. The Rust `loommux-pueue` binary submits independent shell
-tasks to an already running Pueue daemon and is the right entrypoint for queued,
-durable process execution. Their execution numbers are local to the selected
-server process; records and runtime state do not cross between engines.
-
-The Pueue engine requires `pueue` and `pueued` `4.0.4`. Start the daemon with
-the Pueue configuration/profile intended for this MCP server, then build or
-install the Rust binary:
-
-```bash
-cargo build --release --locked --manifest-path engines/pueue/Cargo.toml
-cargo install --path engines/pueue --locked
-loommux-pueue --result-mode structured
-```
-
-`loommux-pueue` uses MCP stdio only. It resolves a version 1 workspace TOML
-selected by `LOOMMUX_WORKSPACE_CONFIG`, connects through the typed Pueue
-protocol, and never takes ownership of the external daemon. Content-only
-results are the default; `--result-mode structured` adds `structuredContent`.
-The server exposes exactly `run_shell`, `status`, `execution_status`,
-`read_output`, `search_output`, `wait`, and `cancel`. Every tool other than
-`run_shell` and `status` requires an explicit execution owned by that server.
-
-A short task can complete in the initial bounded observation window:
-
-```json
-{"freeform":"printf 'ready\\n'"}
-```
-
-A long task remains active after the initial response and can be observed,
-read, searched, waited for, or cancelled by its returned execution number:
-
-```json
-{"freeform":"build-project 2>&1"}
-{"execution":1,"line_range":"-20:","max_chars":400}
-{"execution":1,"query":"error|warning","query_mode":"regex","context_before":1,"context_after":2}
-{"execution":1,"timeout_seconds":30}
-{"execution":1}
-```
-
-The complete deployment boundary, result schemas, ownership assumptions, and
-release commands are in the [Pueue engine guide](engines/pueue/README.md) and
-[release checklist](engines/pueue/RELEASE.md). The authoritative phase-one
-contract remains the [Pueue engine design](docs/pueue-engine/index.adoc).
-
 ## Default Studio Connection
 
 `loommux` defaults to MCP stdio transport and returns model-oriented `content`
