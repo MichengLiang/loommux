@@ -11,6 +11,7 @@ from fastmcp import Context, FastMCP
 from fastmcp.tools import ToolResult
 
 from loommux.host_workspace_config import WorkspaceConfigError
+from loommux.mcp.control import install_control_routes
 from loommux.mcp.lease_ping import install_lease_aware_ping_handler
 from loommux.mcp.result import ResultMode, make_tool_result
 from loommux.resource import (
@@ -100,6 +101,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
 
     mcp = FastMCP("loommux persistent IPython session", lifespan=lifespan)
     install_lease_aware_ping_handler(mcp, lambda: manager)
+    install_control_routes(mcp, lambda: manager)
 
     @mcp.tool(output_schema=None)
     async def run_cell(freeform: str, ctx: Context) -> ToolResult:

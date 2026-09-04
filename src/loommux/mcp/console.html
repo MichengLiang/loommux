@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Loommux Kernel Resource Console</title>
+  <style>
+    :root{color-scheme:light;--page:#f4f6f8;--card:#fff;--ink:#17202a;--muted:#687582;--line:#dfe5e9;--navy:#17324d;--blue:#356f9f;--green:#2f7d62;--red:#ad3f4b}
+    *{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--ink);font:14px/1.55 Inter,"Noto Sans CJK SC",sans-serif}
+    main{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:34px 0 60px}
+    header,.toolbar,.resource-head,.actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    h1{margin:0;color:var(--navy);font-size:32px}.subtitle{color:var(--muted);margin:6px 0 24px}
+    .panel,.resource{border:1px solid var(--line);border-radius:16px;background:var(--card);box-shadow:0 14px 40px rgba(23,50,77,.06)}
+    .panel{padding:18px;margin-bottom:16px}.policy{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-top:12px}
+    label{display:grid;gap:5px;color:var(--muted);font-size:11px}input,select{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px;background:#fafcfd;color:var(--navy)}
+    button{border:1px solid var(--line);border-radius:9px;padding:8px 11px;background:#fff;color:var(--navy);font-weight:700;cursor:pointer}
+    button.danger{color:var(--red)}button:hover{background:#f7fafc}.resources{display:grid;gap:12px}
+    .resource{padding:17px}.name{font-size:16px;font-weight:800;color:var(--navy)}.mono{font:11px ui-monospace,monospace;color:var(--muted)}
+    .metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin:14px 0}.metric{background:#f8fafb;border-radius:10px;padding:10px}
+    .metric span{display:block;color:var(--muted);font-size:10px}.metric strong{color:var(--navy)}
+    .leases{display:grid;gap:6px}.lease{display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:9px;border-top:1px solid var(--line);padding-top:8px}
+    .badge{display:inline-block;border-radius:99px;padding:2px 7px;background:#e8f5ef;color:var(--green);font-size:10px;font-weight:800}
+    .empty{text-align:center;color:var(--muted);padding:50px}.message{min-height:22px;color:var(--green)}
+    @media(max-width:800px){.policy,.metrics{grid-template-columns:1fr 1fr}.lease{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body>
+<main>
+  <header><div><h1>Loommux Kernel Resources</h1><div class="subtitle">MCP 会话持有租约，逻辑资源持有 execution 历史，kernel 进程可以被替换。</div></div>
+    <div class="actions"><button id="refresh">刷新</button><button id="idle">回收空闲</button><button class="danger" id="all">强制回收全部</button></div>
+  </header>
+  <section class="panel">
+    <div class="toolbar"><strong>新客户端租约策略</strong><span id="generation"></span></div>
+    <div class="policy">
+      <label>模式<select id="mode"><option value="activity">activity</option><option value="heartbeat">heartbeat</option></select></label>
+      <label>私有活动租期<input id="private" type="number" min=".1" step=".1"></label>
+      <label>命名活动租期<input id="named" type="number" min=".1" step=".1"></label>
+      <label>心跳间隔<input id="interval" type="number" min=".1" step=".1"></label>
+      <label>心跳超时<input id="timeout" type="number" min=".1" step=".1"></label>
+    </div>
+    <div class="toolbar" style="margin-top:12px"><div class="message" id="message"></div><button id="save">保存新策略代</button></div>
+  </section>
+  <section class="resources" id="resources"></section>
+</main>
+<script>
+const q=s=>document.querySelector(s), esc=v=>String(v).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+let policy=null;
+function message(text,error=false){q("#message").textContent=text;q("#message").style.color=error?"var(--red)":"var(--green)"}
+async function json(url,options={}){const r=await fetch(url,{headers:{"Content-Type":"application/json"},...options});const data=await r.json();if(!r.ok||data.ok===false)throw new Error(data.message||`HTTP ${r.status}`);return data}
+function renderPolicy(p){policy=p;q("#generation").textContent=`generation ${p.generation}`;q("#mode").value=p.mode;q("#private").value=p.private_activity_timeout_seconds;q("#named").value=p.named_activity_timeout_seconds;q("#interval").value=p.heartbeat_interval_seconds;q("#timeout").value=p.heartbeat_timeout_seconds}
+function lease(l){return `<div class="lease"><div><strong>${esc(l.client_name)}</strong><div class="mono">${esc(l.client_id)}</div></div><div><span class="badge">${esc(l.mode)}</span></div><div>G${l.policy_generation} · active ${l.active_operations}</div><div>${l.remaining_seconds}s / ${l.timeout_seconds}s</div></div>`}
+function resource(r){return `<article class="resource"><div class="resource-head"><div><div class="name">${esc(r.name)}</div><div class="mono">${esc(r.resource_id)}</div></div><div class="actions"><button onclick="act('${r.resource_id}','interrupt')">interrupt</button><button onclick="act('${r.resource_id}','restart')">restart</button><button class="danger" onclick="recycle('${r.resource_id}',false)">recycle</button><button class="danger" onclick="recycle('${r.resource_id}',true)">force</button></div></div><div class="metrics"><div class="metric"><span>scope</span><strong>${esc(r.scope)}</strong></div><div class="metric"><span>lifecycle</span><strong>${esc(r.lifecycle)}</strong></div><div class="metric"><span>kernel PID</span><strong>${r.kernel_pid??"—"}</strong></div><div class="metric"><span>current execution</span><strong>${r.current_execution??"—"}</strong></div><div class="metric"><span>executions</span><strong>${r.execution_count}</strong></div><div class="metric"><span>leases</span><strong>${r.lease_count}</strong></div></div><div class="leases">${r.leases.map(lease).join("")}</div></article>`}
+async function refresh(){try{const d=await json("/api/resources");renderPolicy(d.policy);q("#resources").innerHTML=d.resources.length?d.resources.map(resource).join(""):'<div class="panel empty">当前没有受管 kernel resource。</div>'}catch(e){message(e.message,true)}}
+async function act(id,action){try{await json(`/api/resources/${id}/${action}`,{method:"POST",body:"{}"});message(`${action} 已发送`)}catch(e){message(e.message,true)}await refresh()}
+async function recycle(id,force){if(!confirm(force?"确定强制回收？":"确定回收？"))return;try{await json(`/api/resources/${id}/recycle`,{method:"POST",body:JSON.stringify({force})});message("资源已回收")}catch(e){message(e.message,true)}await refresh()}
+q("#refresh").onclick=refresh;q("#idle").onclick=async()=>{await json("/api/resources/recycle-idle",{method:"POST",body:"{}"});await refresh()};q("#all").onclick=async()=>{if(confirm("确定强制回收全部资源？")){await json("/api/resources/recycle-all",{method:"POST",body:"{}"});await refresh()}};
+q("#save").onclick=async()=>{try{const d=await json("/api/lease-policy",{method:"PUT",body:JSON.stringify({mode:q("#mode").value,private_activity_timeout_seconds:Number(q("#private").value),named_activity_timeout_seconds:Number(q("#named").value),heartbeat_interval_seconds:Number(q("#interval").value),heartbeat_timeout_seconds:Number(q("#timeout").value)})});renderPolicy(d.policy);message(d.changed?"新策略代已保存":"配置没有变化")}catch(e){message(e.message,true)}};
+refresh();setInterval(refresh,2000);
+</script>
+</body>
+</html>

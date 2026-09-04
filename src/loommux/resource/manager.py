@@ -191,6 +191,56 @@ class KernelResourceManager:
         resource.lifecycle = ResourceLifecycle.STOPPED
         return resource
 
+    async def recycle_idle(self) -> int:
+        async with self._registry_lock:
+            resource_ids = [
+                resource.resource_id
+                for resource in self._resources_by_id.values()
+                if not resource.is_busy
+            ]
+        results = await asyncio.gather(
+            *(
+                self.recycle(
+                    resource_id,
+                    reason="manual idle cleanup",
+                )
+                for resource_id in resource_ids
+            ),
+            return_exceptions=True,
+        )
+        return sum(isinstance(result, KernelResource) for result in results)
+
+    async def recycle_all(self) -> int:
+        async with self._registry_lock:
+            resource_ids = list(self._resources_by_id)
+        results = await asyncio.gather(
+            *(
+                self.recycle(
+                    resource_id,
+                    force=True,
+                    reason="manual recycle all",
+                )
+                for resource_id in resource_ids
+            ),
+            return_exceptions=True,
+        )
+        return sum(isinstance(result, KernelResource) for result in results)
+
+    async def interrupt(self, resource_id: str) -> dict[str, Any]:
+        resource = await self._require_resource(resource_id)
+        return await asyncio.to_thread(resource.session.interrupt)
+
+    async def restart(self, resource_id: str) -> dict[str, Any]:
+        resource = await self._require_resource(resource_id)
+        async with resource.recovery_lock:
+            result = await asyncio.to_thread(resource.session.restart)
+            resource.lifecycle = (
+                ResourceLifecycle.RUNNING
+                if result.get("ok")
+                else ResourceLifecycle.CRASHED
+            )
+            return result
+
     async def stop(self) -> None:
         self._stop_event.set()
         if self._sweeper_task is not None:
@@ -293,6 +343,13 @@ class KernelResourceManager:
                     str(result.get("message", "kernel recovery failed"))
                 )
             resource.lifecycle = ResourceLifecycle.RUNNING
+
+    async def _require_resource(self, resource_id: str) -> KernelResource:
+        async with self._registry_lock:
+            resource = self._resources_by_id.get(resource_id)
+            if resource is None:
+                raise ResourceNotFoundError("resource was not found")
+            return resource
 
     async def snapshot(self) -> list[dict[str, Any]]:
         resources = await self.list_resources()
