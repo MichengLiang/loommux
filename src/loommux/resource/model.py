@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -86,6 +87,7 @@ class KernelResource:
     active_operations: int = 0
     orphaned_at: float | None = None
     closing_reason: str | None = None
+    recovery_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
     @classmethod
     def create(

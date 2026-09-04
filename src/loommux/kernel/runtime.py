@@ -108,6 +108,12 @@ class KernelRuntime:
     def pid(self) -> int | None:
         return self._pid
 
+    @property
+    def returncode(self) -> int | None:
+        manager = self.manager
+        process = getattr(manager.provisioner, "process", None) if manager is not None else None
+        return process.poll() if process is not None else None
+
     def start(self, timeout_seconds: float) -> BlockingKernelClient:
         launch = KernelLaunch.create(self.python_path, self.workspace)
         manager = _LoommuxKernelManager(_kernel_spec(launch), connection_file=str(launch.connection_file), kernel_name="")

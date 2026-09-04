@@ -175,6 +175,19 @@ class Execution:
         self.updated_at = self.completed_at
         self.done.set()
 
+    def record_kernel_exit(self, returncode: int | None) -> None:
+        detail = (
+            "kernel process exited"
+            if returncode is None
+            else f"kernel process exited with status {returncode}"
+        )
+        self.error = {
+            "ename": "KernelProcessExited",
+            "evalue": detail,
+            "traceback": [],
+        }
+        self.kill()
+
     @property
     def is_running(self) -> bool:
         return self.status == "running"

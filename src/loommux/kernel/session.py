@@ -28,10 +28,17 @@ class KernelSession:
     session when the kernel reports the execution as idle.
     """
 
-    def __init__(self, workspace: Path, python_path: Path, on_idle: Callable[[Execution], None]) -> None:
+    def __init__(
+        self,
+        workspace: Path,
+        python_path: Path,
+        on_idle: Callable[[Execution], None],
+        on_kernel_exit: Callable[[Execution | None, int | None], None],
+    ) -> None:
         self.workspace = workspace
         self.python_path = python_path
         self._on_idle = on_idle
+        self._on_kernel_exit = on_kernel_exit
         self.runtime = KernelRuntime(workspace, python_path)
         self.client: BlockingKernelClient | None = None
         self.current_execution: Execution | None = None
@@ -39,6 +46,7 @@ class KernelSession:
         self._lock = threading.RLock()
         self._stop_collector = threading.Event()
         self._collector: threading.Thread | None = None
+        self._exit_notified = False
 
     @property
     def pid(self) -> int | None:
@@ -101,9 +109,19 @@ class KernelSession:
                 message = client.get_iopub_msg(timeout=0.1)
             except Exception:
                 if not self.is_alive():
+                    self._notify_kernel_exit()
                     return
                 continue
             self._handle_message(message)
+
+    def _notify_kernel_exit(self) -> None:
+        with self._lock:
+            if self._exit_notified or self._stop_collector.is_set():
+                return
+            self._exit_notified = True
+            execution = self.current_execution
+            self.current_execution = None
+        self._on_kernel_exit(execution, self.runtime.returncode)
 
     def _handle_message(self, message: dict[str, Any]) -> None:
         msg_type = message.get("msg_type")

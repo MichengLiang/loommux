@@ -248,6 +248,57 @@ def test_reset_kills_windows_kernel_descendants(tmp_path: Path) -> None:
         session.close()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups are Unix-specific")
+def test_reset_kills_unix_kernel_descendants(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session = IPythonSession()
+    assert session.start_workspace(workspace, "launch_cwd")["ok"] is True
+    try:
+        running = session.run_cell(
+            "# loommux: --wait 0.1\n"
+            "import subprocess\n"
+            "import sys\n"
+            "import time\n"
+            "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+            "print(child.pid, flush=True)\n"
+            "time.sleep(30)"
+        )
+        child_pid = _wait_for_child_pid(session, running["execution"])
+        assert child_pid is not None
+
+        assert session.restart()["status"] == "restarted"
+        assert _wait_for_posix_process_exit(child_pid)
+    finally:
+        session.close()
+
+
+def test_kernel_exit_finishes_the_running_execution(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session = IPythonSession()
+    assert session.start_workspace(workspace, "launch_cwd")["ok"] is True
+    try:
+        running = session.run_cell(
+            "# loommux: --wait 0.1\n"
+            "import os\n"
+            "print('before-exit', flush=True)\n"
+            "os._exit(17)"
+        )
+        deadline = time.monotonic() + 3
+        status = session.execution_status(running["execution"])
+        while status["status"] == "running" and time.monotonic() < deadline:
+            time.sleep(0.05)
+            status = session.execution_status(running["execution"])
+
+        assert status["status"] == "killed"
+        assert status["error"]["ename"] == "KernelProcessExited"
+        assert session.status()["kernel_started"] is False
+        assert session.restart()["status"] == "restarted"
+    finally:
+        session.close()
+
+
 def _assert_kernel_policy(session: IPythonSession, launch: KernelLaunch) -> None:
     response = session.run_cell(
         "import os\n"
@@ -306,5 +357,34 @@ def _wait_for_windows_process_exit(pid: int) -> bool:
         except pywintypes.error:
             return True
         process.Close()
+        time.sleep(0.05)
+    return False
+
+
+def _wait_for_child_pid(
+    session: IPythonSession,
+    execution: int,
+) -> int | None:
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        text = str(session.read_output(execution, "stdout")["text"])
+        if text.strip().isdigit():
+            return int(text.strip())
+        time.sleep(0.05)
+    return None
+
+
+def _wait_for_posix_process_exit(pid: int) -> bool:
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        proc_stat = Path(f"/proc/{pid}/stat")
+        if not proc_stat.exists():
+            return True
+        try:
+            state = proc_stat.read_text().split()[2]
+        except (FileNotFoundError, IndexError):
+            return True
+        if state == "Z":
+            return True
         time.sleep(0.05)
     return False

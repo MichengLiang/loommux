@@ -7,6 +7,9 @@ import pytest
 
 from loommux.resource import (
     KernelResourceManager,
+    LeaseClient,
+    LeaseMode,
+    LeasePolicy,
     ResourceAddress,
     ResourceBusyError,
     ResourceLifecycle,
@@ -52,10 +55,16 @@ class FakeSession:
 
     def status(self) -> dict[str, Any]:
         return {
+            "kernel_started": self.kernel is not None,
             "kernel_pid": self.kernel.pid if self.kernel else None,
             "current_execution": self.current_execution,
             "recent_execution": self.recent_execution,
         }
+
+    def restart(self) -> dict[str, Any]:
+        type(self).next_pid += 1
+        self.kernel = FakeKernel(type(self).next_pid)
+        return {"ok": True, "status": "restarted"}
 
 
 def address(key: str) -> ResourceAddress:
@@ -131,5 +140,39 @@ def test_recycle_refuses_busy_resource_without_force(tmp_path: Path) -> None:
         recycled = await manager.recycle(resource.resource_id, force=True)
         assert recycled.lifecycle is ResourceLifecycle.STOPPED
         assert await manager.snapshot() == []
+
+    asyncio.run(scenario())
+
+
+def test_dead_kernel_is_recovered_inside_the_same_logical_resource(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        manager = KernelResourceManager(
+            tmp_path,
+            "launch_cwd",
+            session_factory=FakeSession,
+        )
+        resource = await manager.get_or_create(address("recover"))
+        resource_id = resource.resource_id
+        previous_pid = resource.kernel_pid
+        resource.session.kernel = None
+
+        async with manager.operation(
+            address("recover"),
+            LeaseClient("client", "client"),
+            LeasePolicy(
+                mode=LeaseMode.ACTIVITY,
+                generation=1,
+                private_activity_timeout_seconds=30,
+                named_activity_timeout_seconds=30,
+                heartbeat_interval_seconds=10,
+                heartbeat_timeout_seconds=20,
+            ),
+        ) as recovered:
+            assert recovered.resource_id == resource_id
+            assert recovered.kernel_pid != previous_pid
+            assert recovered.lifecycle is ResourceLifecycle.RUNNING
+        await manager.stop()
 
     asyncio.run(scenario())

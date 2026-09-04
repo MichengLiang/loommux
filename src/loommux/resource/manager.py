@@ -87,6 +87,7 @@ class KernelResourceManager:
             if resource is not None and resource.lifecycle in {
                 ResourceLifecycle.RUNNING,
                 ResourceLifecycle.ORPHANED,
+                ResourceLifecycle.CRASHED,
             }:
                 return resource
 
@@ -113,6 +114,7 @@ class KernelResourceManager:
     ) -> AsyncIterator[KernelResource]:
         while True:
             resource = await self.get_or_create(address)
+            await self._recover_if_needed(resource)
             async with self._registry_lock:
                 if self._resources_by_key.get(address.key) is not resource:
                     continue
@@ -226,6 +228,11 @@ class KernelResourceManager:
         now = monotonic()
         async with self._registry_lock:
             for resource in self._resources_by_id.values():
+                if (
+                    resource.lifecycle is ResourceLifecycle.RUNNING
+                    and not resource.session.status().get("kernel_started", False)
+                ):
+                    resource.lifecycle = ResourceLifecycle.CRASHED
                 expired_clients = [
                     client_id
                     for client_id, lease in resource.client_leases.items()
@@ -263,6 +270,29 @@ class KernelResourceManager:
         for resource in closing:
             resource.lifecycle = ResourceLifecycle.STOPPED
         return len(closing)
+
+    async def _recover_if_needed(self, resource: KernelResource) -> None:
+        if resource.session.status().get("kernel_started", False):
+            return
+        async with resource.recovery_lock:
+            if resource.session.status().get("kernel_started", False):
+                return
+            async with self._registry_lock:
+                if self._resources_by_id.get(resource.resource_id) is not resource:
+                    raise ResourceNotFoundError("resource was retired during recovery")
+                resource.lifecycle = ResourceLifecycle.CRASHED
+            result = await asyncio.to_thread(resource.session.restart)
+            if not result.get("ok"):
+                async with self._registry_lock:
+                    self._detach_locked(resource)
+                    resource.lifecycle = ResourceLifecycle.CLOSING
+                    resource.closing_reason = "kernel recovery failed"
+                await asyncio.to_thread(resource.session.close)
+                resource.lifecycle = ResourceLifecycle.STOPPED
+                raise ResourceProvisionError(
+                    str(result.get("message", "kernel recovery failed"))
+                )
+            resource.lifecycle = ResourceLifecycle.RUNNING
 
     async def snapshot(self) -> list[dict[str, Any]]:
         resources = await self.list_resources()

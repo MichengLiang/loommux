@@ -254,6 +254,17 @@ class IPythonSession:
             if self.current_execution == record.execution:
                 self.current_execution = None
 
+    def _on_kernel_exit(
+        self,
+        record: Execution | None,
+        returncode: int | None,
+    ) -> None:
+        with self._lock:
+            if record is not None and record.is_running:
+                record.record_kernel_exit(returncode)
+            if record is not None and self.current_execution == record.execution:
+                self.current_execution = None
+
     def _select_execution(self, execution: int | None) -> Execution | None:
         with self._lock:
             if execution is not None and (isinstance(execution, bool) or not isinstance(execution, int) or execution <= 0):
@@ -292,7 +303,12 @@ class IPythonSession:
         return {"busy": self.current_execution is not None, "kernel_pid": kernel.pid if kernel is not None else None, "execution_count": kernel.latest_execution_count if kernel is not None else 0}
 
     def _new_kernel_session(self, workspace: Path, python_path: Path) -> KernelSession:
-        return KernelSession(workspace, python_path, self._on_execution_idle)
+        return KernelSession(
+            workspace,
+            python_path,
+            self._on_execution_idle,
+            self._on_kernel_exit,
+        )
 
     @staticmethod
     def _validate_timeout(timeout_seconds: float) -> dict[str, Any] | None:

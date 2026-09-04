@@ -37,10 +37,15 @@ class FakeSession:
 
     def status(self) -> dict[str, Any]:
         return {
+            "kernel_started": self.kernel is not None,
             "kernel_pid": self.kernel.pid if self.kernel else None,
             "current_execution": self.current_execution,
             "recent_execution": self.recent_execution,
         }
+
+    def restart(self) -> dict[str, Any]:
+        self.kernel = FakeKernel()
+        return {"ok": True, "status": "restarted"}
 
 
 def make_policy(
