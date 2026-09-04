@@ -149,9 +149,11 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
 
     run_cell = tools["run_cell"].description or ""
     assert "向持久 IPython kernel 提交一个原始 IPython cell。" in run_cell
+    assert "当前持久 IPython 会话中的后续 cell" in run_cell
     assert "输入\n----" in run_cell
     assert "等待上限\n--------" in run_cell
     assert "执行编号与后续操作\n--------------------" in run_cell
+    assert "后续工具\n使用它定位当前持久 IPython 会话中的这次执行" in run_cell
     assert "# loommux: --wait 120" in run_cell
     assert "# loommux: --full-output" in run_cell
     assert "300 行" in run_cell
@@ -209,6 +211,19 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
     reset = tools["restart"].description or ""
     assert "重置边界\n--------" in reset
     assert "连续的下一个编号" in reset
+    assert "当前持久 IPython 会话的 execution 历史" in reset
+
+    model_descriptions = "\n".join(
+        tool.description or "" for tool in tools.values()
+    )
+    for implementation_term in (
+        "kernel resource",
+        "resource manager",
+        "client lease",
+        "policy generation",
+        "租约",
+    ):
+        assert implementation_term not in model_descriptions
 
 
 async def test_result_modes_share_content_but_only_structured_exposes_structured_status(default_client: Client[Any]) -> None:

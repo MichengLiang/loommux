@@ -116,7 +116,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         需要声明本次 cell 的观察策略，使用位于物理行首的 ``# loommux:`` 控制
         注释。Loommux 在提交前验证并完全消费有效控制注释，因此它们不会进入
         IPython history 或下游 cell-magic body。变量、导入和其他 namespace 状态会
-        与同一选定 kernel resource 中的后续 cell 共享。
+        与当前持久 IPython 会话中的后续 cell 共享。
 
         等待上限
         --------
@@ -160,12 +160,12 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         执行编号与后续操作
         --------------------
 
-        已接受的提交会分配一个正整数 ``execution``，它在当前 kernel resource
-        的生命周期内严格递增。若执行仍在运行，或未标记 execution 的 combined 输出
-        超过 300 行，响应不携带完整输出正文；行数、Unicode code point
-        字符数和 UTF-8 字节数描述同一份 normalized combined 文本。使用
-        ``wait`` 等待，使用 ``execution_status`` 查看状态，使用 ``read_output``
-        或 ``search_output`` 读取或搜索保留的输出。
+        每个已接受的提交都会获得一个连续递增的正整数 ``execution``。后续工具
+        使用它定位当前持久 IPython 会话中的这次执行。若执行仍在运行，或未标记
+        execution 的 combined 输出超过 300 行，响应不携带完整输出正文；行数、
+        Unicode code point 字符数和 UTF-8 字节数描述同一份 normalized combined
+        文本。使用 ``wait`` 等待，使用 ``execution_status`` 查看状态，使用
+        ``read_output`` 或 ``search_output`` 读取或搜索保留的输出。
 
         Args:
             freeform: 原始 IPython cell 源码文本。
@@ -183,7 +183,8 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         状态范围
         --------
 
-        返回 server 启动时解析的 workspace、其 ``workspace_resolution`` 来源
+        返回当前 IPython 工作台启动时解析的 workspace、其
+        ``workspace_resolution`` 来源
         类别、Python 解释器、kernel PID、kernel 是否已启动，以及 kernel 是否
         正忙。``workspace_resolution`` 只能是 ``launch_cwd`` 或
         ``explicit_config``；它不公开 resolver 的路径或内容，也不公开 kernel
@@ -203,7 +204,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         IPython 通过原生 ZMQ 协议连接，拥有完整能力。
 
         Returns:
-            当前 server 与 kernel 的状态快照。
+            当前 IPython 工作台与 kernel 的状态快照。
         """
         return await call("status", ctx, lambda session: session.status())
 
@@ -354,7 +355,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
 
     @mcp.tool(output_schema=None)
     async def restart(ctx: Context) -> ToolResult:
-        """重启 IPython kernel，并保留当前 kernel resource 的 execution 历史。
+        """重启 IPython kernel，并保留当前持久 IPython 会话的 execution 历史。
 
         重置边界
         --------
