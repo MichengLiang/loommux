@@ -40,7 +40,7 @@ belong to the lifetime of the server process.
 
 ## Requirements And Installation
 
-loommux requires Python 3.10 or newer. The installed package brings the
+loommux requires Python 3.13 or newer. The installed package brings the
 runtime dependencies needed to launch an IPython kernel.
 
 ```bash
@@ -49,7 +49,7 @@ python -m pip install loommux
 
 ### Windows
 
-Native Windows support covers Windows 10 and Windows 11 with CPython 3.10 or
+Native Windows support covers Windows 10 and Windows 11 with CPython 3.13 or
 newer. Install into the interpreter that the MCP host will use:
 
 ```powershell

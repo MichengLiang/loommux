@@ -3,7 +3,7 @@ name = "loommux"
 version = "0.1.11"
 description = "Persistent IPython MCP server with inspectable execution output"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "MichengLiang" }]
@@ -16,9 +16,6 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Interpreters",
 ]
@@ -90,7 +87,7 @@ include = [
 # all - 最严格的类型检查（BasedPyright 特有）
 
 typeCheckingMode = "standard"
-pythonVersion = "3.10"
+pythonVersion = "3.13"
 include = ["src"]
 exclude = [
     "**/__pycache__",
@@ -120,7 +117,7 @@ executionEnvironments = [
 # ========================================
 [tool.ruff]
 line-length = 320
-target-version = "py310"
+target-version = "py313"
 
 [tool.ruff.lint]
 # 全局启用严格规则

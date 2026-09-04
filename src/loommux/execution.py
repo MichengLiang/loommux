@@ -4,7 +4,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from functools import cache
-from typing import Any, Literal, TypeAlias
+from typing import Any, Literal
 
 import tiktoken
 
@@ -50,7 +50,7 @@ class PresentationFailure:
     message: str
 
 
-PresentationElement: TypeAlias = PresentationText | PresentationImage | PresentationFailure
+type PresentationElement = PresentationText | PresentationImage | PresentationFailure
 IMAGE_MIME_PREFERENCE = ("image/png", "image/jpeg", "image/webp", "image/gif")
 
 
