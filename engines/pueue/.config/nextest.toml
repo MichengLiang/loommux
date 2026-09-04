@@ -1,9 +1,0 @@
-[test-groups]
-# Each test process has its own daemon state, but cold parallel daemon startup
-# can exhaust the host readiness budget before any socket becomes observable.
-# Adapter concurrency remains exercised inside the dedicated workload tests.
-pueue-daemons = { max-threads = 1 }
-
-[[profile.default.overrides]]
-filter = 'binary(isolated_daemon) | binary(startup) | binary(stdio_blackbox)'
-test-group = 'pueue-daemons'
