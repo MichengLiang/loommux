@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
+import pytest
 
 from loommux.client import LeaseAwareClient
 
@@ -108,6 +109,7 @@ async def wait_for_resource_count(
     raise AssertionError(f"resource count did not become {expected}")
 
 
+@pytest.mark.timeout(60)
 def test_http_resources_are_private_shareable_and_lease_reclaimed(
     tmp_path: Path,
 ) -> None:
