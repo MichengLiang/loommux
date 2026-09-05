@@ -23,6 +23,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 - Make the HTTP resource integration test terminate its temporary server with
   Windows-compatible process APIs.
+- Keep the external Streamable HTTP subprocess integration test on Linux, where
+  its process-lifecycle harness is supported, while Windows continues to run
+  the in-process MCP and platform-specific kernel tests.
 
 ## [0.1.12] - 2026-09-05
 

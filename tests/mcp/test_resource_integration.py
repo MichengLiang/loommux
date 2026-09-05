@@ -109,6 +109,10 @@ async def wait_for_resource_count(
     raise AssertionError(f"resource count did not become {expected}")
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="external Streamable HTTP subprocess harness is Linux-only",
+)
 @pytest.mark.timeout(60)
 def test_http_resources_are_private_shareable_and_lease_reclaimed(
     tmp_path: Path,
