@@ -7,7 +7,17 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
-No unreleased changes.
+### Changed
+
+- CI now checks only the current Python project, includes the maintained
+  examples, and installs dependencies from the committed project lockfile.
+- Release verification uses the same locked dependency and example checks as
+  the main CI workflow.
+
+### Removed
+
+- Removed obsolete Pueue engine, Rust MSRV, and deleted AsciiDoc audit jobs from
+  GitHub Actions.
 
 ## [0.1.12] - 2026-09-05
 

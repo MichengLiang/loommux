@@ -31,6 +31,10 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
       - name: Verify tagged package version
         env:
           RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
@@ -44,9 +48,9 @@ jobs:
             echo "Tag $RELEASE_TAG does not match package version $package_version."
             exit 1
           fi
-      - run: uv sync --group dev
+      - run: uv sync --locked --group dev
       - run: uv run pytest
-      - run: uv run ruff check src tests
+      - run: uv run ruff check src tests examples
       - run: uv run basedpyright src
       - run: uv build
       - run: uv run twine check dist/*

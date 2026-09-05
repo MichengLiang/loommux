@@ -20,7 +20,7 @@ Run the complete local gate:
 
 ```bash
 uv run pytest
-uv run ruff check src tests
+uv run ruff check src tests examples
 uv run basedpyright src
 uv build
 uv run twine check dist/*
