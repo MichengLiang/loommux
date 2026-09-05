@@ -88,12 +88,14 @@ def test_shared_resource_tracks_client_leases_independently(
         )
         address = make_address()
         policy = make_policy()
-        async with manager.operation(address, make_client("first"), policy):
+        async with manager.operation(address, make_client("first"), policy) as resource:
             pass
-        await asyncio.sleep(0.02)
+        # Drive the first lease past its deadline directly. Sleeping for a
+        # 30-ms lease makes this state-machine test scheduler-sensitive on
+        # hosted Windows runners.
+        resource.client_leases["first"].deadline = 0
         async with manager.operation(address, make_client("second"), policy):
             pass
-        await asyncio.sleep(0.02)
 
         assert await manager.sweep_once() == 0
         [snapshot] = await manager.snapshot()
