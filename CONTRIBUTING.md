@@ -2,12 +2,12 @@
 
 ## Development setup
 
-Use Python 3.10 or newer and [uv](https://docs.astral.sh/uv/):
+Use Python 3.13 or newer and [uv](https://docs.astral.sh/uv/):
 
 ```bash
 git clone https://github.com/MichengLiang/loommux.git
 cd loommux
-uv sync --group dev
+uv sync --locked --group dev
 ```
 
 ## Before opening a pull request

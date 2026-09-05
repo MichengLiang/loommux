@@ -6,7 +6,7 @@ Describe the user-visible behavior and why this change is needed.
 
 - [ ] Tests added or updated
 - [ ] `uv run pytest`
-- [ ] `uv run ruff check src tests`
+- [ ] `uv run ruff check src tests examples`
 - [ ] `uv run basedpyright src`
 - [ ] Documentation updated when the public contract changed
 

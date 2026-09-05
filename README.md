@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/MichengLiang/loommux/actions/workflows/ci.yml/badge.svg)](https://github.com/MichengLiang/loommux/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/loommux.svg)](https://pypi.org/project/loommux/)
-[![Python](https://img.shields.io/pypi/pyversions/loommux.svg)](https://pypi.org/project/loommux/)
+[![Python >=3.13](https://img.shields.io/badge/python-%3E%3D3.13-3776AB.svg?logo=python&logoColor=white)](https://pypi.org/project/loommux/)
 [![License](https://img.shields.io/pypi/l/loommux.svg)](LICENSE)
 
 `loommux` is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
@@ -105,7 +105,7 @@ For development, use [uv](https://docs.astral.sh/uv/):
 ```bash
 git clone https://github.com/MichengLiang/loommux.git
 cd loommux
-uv sync --group dev
+uv sync --locked --group dev
 ```
 
 ## Default Studio Connection
@@ -198,6 +198,9 @@ async with LeaseAwareClient(
         {"freeform": "value = 1\nprint(value)"},
     )
 ```
+
+The complete runnable client-cooperation example is in
+[examples/lease-aware-client](examples/lease-aware-client/README.md).
 
 The complete identity, lifecycle, policy, orphan-execution, control API, and
 source-ownership contract is documented in
@@ -514,7 +517,7 @@ Run the Python checks from the repository root:
 
 ```bash
 uv run pytest
-uv run ruff check src tests
+uv run ruff check src tests examples
 uv run basedpyright src
 uv build --out-dir dist
 uv run twine check dist/*

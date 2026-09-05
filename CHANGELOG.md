@@ -13,6 +13,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   examples, and installs dependencies from the committed project lockfile.
 - Release verification uses the same locked dependency and example checks as
   the main CI workflow.
+- Align the README, contributor guide, and pull request checklist with the
+  supported Python 3.13+ baseline and the maintained example checks.
 
 ### Removed
 
@@ -88,6 +90,7 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Declared Pillow as a development dependency so rich presentation tests run
   in a clean CI environment.
 
+[Unreleased]: https://github.com/MichengLiang/loommux/compare/v0.1.12...HEAD
 [0.1.12]: https://github.com/MichengLiang/loommux/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/MichengLiang/loommux/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/MichengLiang/loommux/compare/v0.1.9...v0.1.10
