@@ -31,6 +31,11 @@ No unreleased changes.
 - Refined the public documentation to keep implementation details behind the
   IPython-oriented MCP operation model.
 
+### Fixed
+
+- Constrained the FastMCP dependency to the validated 3.x API range so release
+  builds do not silently resolve an incompatible future major version.
+
 ### Removed
 
 - Removed the fully deprecated Pueue engine documentation suite, generated
