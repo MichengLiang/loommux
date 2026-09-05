@@ -156,7 +156,7 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
     assert "后续工具\n使用它定位当前持久 IPython 会话中的这次执行" in run_cell
     assert "# loommux: --wait 120" in run_cell
     assert "# loommux: --full-output" in run_cell
-    assert "300 行" in run_cell
+    assert "5,000 token" in run_cell
     assert "UTF-8 字节数" in run_cell
     assert "wait" in run_cell
     assert "图像展示\n--------" in run_cell
@@ -309,7 +309,7 @@ async def test_result_modes_share_marked_complete_long_output(default_client: Cl
     assert default.structured_content is None
 
 
-async def test_token_light_many_line_result_bypasses_the_internal_line_gate(default_client: Client[Any]) -> None:
+async def test_token_light_many_line_result_is_delivered_under_the_token_limit(default_client: Client[Any]) -> None:
     source = "print('\\n'.join(f'line-{number}' for number in range(301)))"
     async with Client(create_structured_mcp()) as structured_client:
         structured = await structured_client.call_tool("run_cell", {"freeform": source})
@@ -322,13 +322,13 @@ async def test_token_light_many_line_result_bypasses_the_internal_line_gate(defa
     assert {"output_total_tokens", "output_token_limit", "output_token_encoding"}.isdisjoint(structured.structured_content)
 
 
-async def test_line_limited_result_reports_one_human_readable_size_and_exact_structured_metrics(default_client: Client[Any]) -> None:
+async def test_token_limited_result_reports_one_human_readable_size_and_exact_structured_metrics(default_client: Client[Any]) -> None:
     source = "print(('abcdefghij ' * 20 + '\\n') * 301, end='')"
     async with Client(create_structured_mcp()) as structured_client:
         structured = await structured_client.call_tool("run_cell", {"freeform": source})
     default = await default_client.call_tool("run_cell", {"freeform": source})
 
-    expected_notice = f"Output omitted: 301 lines, {len(TOKEN_HEAVY_MANY_LINES):,} characters, 64.96 KiB; exceeds the 300-line limit. Use read_output() to read all lines or search_output() to locate text."
+    expected_notice = f"Output omitted: 301 lines, {len(TOKEN_HEAVY_MANY_LINES):,} characters, 64.96 KiB; exceeds the 5,000-token limit. Use read_output() to read all lines or search_output() to locate text."
     assert structured.content[0].text == default.content[0].text == f"In [1]:\n{expected_notice}"
     assert structured.structured_content is not None
     assert structured.structured_content["output_total_lines"] == 301

@@ -16,6 +16,7 @@ from loommux.execution.terminal import TerminalTextNormalizer
 
 ExecutionStatus = Literal["running", "completed", "error", "interrupted", "killed"]
 OUTPUT_TOKEN_ENCODING = "o200k_base"
+OUTPUT_TOKEN_LIMIT = 5_000
 
 
 @cache
@@ -192,10 +193,10 @@ class Execution:
     def is_running(self) -> bool:
         return self.status == "running"
 
-    def snapshot(self, output_line_limit: int | None = None, output_token_bypass_limit: int | None = None) -> dict[str, Any]:
+    def snapshot(self) -> dict[str, Any]:
         combined_log = self.logs.combined
         output_total_lines = combined_log.line_count
-        omission_reason = self._output_omitted_reason(output_line_limit, output_token_bypass_limit, output_total_lines)
+        omission_reason = self._output_omitted_reason()
         omitted = omission_reason is not None
         result: dict[str, Any] = {
             "ok": self.status not in {"error", "killed"},
@@ -207,7 +208,6 @@ class Execution:
             "error": self._error_summary(),
             "output_omitted": omitted,
             "output_omitted_reason": omission_reason,
-            "output_line_limit": output_line_limit,
             "output_total_lines": output_total_lines,
             "output_total_characters": combined_log.character_count,
             "output_total_utf8_bytes": combined_log.utf8_byte_count,
@@ -216,7 +216,7 @@ class Execution:
             result["output_text"] = self.logs.combined.text
         return result
 
-    def status_snapshot(self, output_line_limit: int | None = None, output_token_bypass_limit: int | None = None) -> dict[str, Any]:
+    def status_snapshot(self) -> dict[str, Any]:
         combined_log = self.logs.combined
         output_total_lines = combined_log.line_count
         return {
@@ -232,7 +232,7 @@ class Execution:
             "output_total_lines": output_total_lines,
             "output_total_characters": combined_log.character_count,
             "output_total_utf8_bytes": combined_log.utf8_byte_count,
-            "output_omitted_reason": self._output_omitted_reason(output_line_limit, output_token_bypass_limit, output_total_lines),
+            "output_omitted_reason": self._output_omitted_reason(),
         }
 
     def _error_summary(self) -> dict[str, Any] | None:
@@ -240,39 +240,21 @@ class Execution:
             return None
         return {key: self.error.get(key) for key in ("ename", "evalue") if key in self.error}
 
-    def _output_omitted_reason(self, output_line_limit: int | None, output_token_bypass_limit: int | None, output_total_lines: int) -> str | None:
-        """Apply the public line limit only after the private token exemption.
-
-        The token threshold is intentionally not projected into response fields or
-        MCP descriptions. It only proves that a many-line combined log is still
-        compact enough for automatic delivery. If the tokenizer is unavailable,
-        the established 300-line policy remains the conservative fallback.
-        """
+    def _output_omitted_reason(self) -> str | None:
+        """Apply the sole automatic-delivery limit to terminal output."""
         if self.status == "running":
             return "running"
         if self._full_output_requested:
             return None
-        if output_token_bypass_limit is not None:
-            combined_log = self.logs.combined
-            # Ordinary BPE tokens each represent at least one UTF-8 byte. This
-            # exact shortcut avoids loading the encoding table for common small
-            # outputs while preserving the same token-threshold decision.
-            if combined_log.utf8_byte_count <= output_token_bypass_limit:
-                return None
-            output_token_count = self._combined_output_token_count()
-            if output_token_count is not None and output_token_count <= output_token_bypass_limit:
-                return None
-        if output_line_limit is not None and output_total_lines > output_line_limit:
-            return "line_limit_exceeded"
+        if self._combined_output_token_count() > OUTPUT_TOKEN_LIMIT:
+            return "token_limit_exceeded"
         return None
 
-    def _combined_output_token_count(self) -> int | None:
+    def _combined_output_token_count(self) -> int:
         if self._output_token_count_is_current:
+            assert self._output_token_count is not None
             return self._output_token_count
-        try:
-            count = _count_output_tokens(self.logs.combined.text)
-        except (ImportError, OSError, RuntimeError, ValueError):
-            count = None
+        count = _count_output_tokens(self.logs.combined.text)
         self._output_token_count = count
         self._output_token_count_is_current = True
         return count

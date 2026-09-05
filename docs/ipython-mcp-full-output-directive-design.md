@@ -27,11 +27,14 @@ public response data do not receive the option.
 
 ## Delivery Behavior
 
-Without `--full-output`, terminal combined output exceeding 300 lines remains
-stored but is omitted from `run_cell` and `wait`. With the option, a
-terminal response returns the entire combined stream regardless of its line
-count. A running execution still returns the normal running surface; callers
-can use output-reading tools for partial progress.
+Without `--full-output`, terminal combined output exceeding 5,000
+`o200k_base` tokens remains stored but is omitted from `run_cell` and `wait`.
+With the option, a terminal response returns the entire combined stream
+regardless of its token count. A running execution still returns the normal
+running surface; callers can use output-reading tools for partial progress.
+Token counting is a required runtime operation: if the `o200k_base` tokenizer
+cannot be loaded, the automatic delivery call fails rather than substituting a
+different output limit or delivery policy.
 
 An omitted-output notice identifies the retained normalized combined text by
 its total lines, Unicode code point characters, and UTF-8 size. Its human

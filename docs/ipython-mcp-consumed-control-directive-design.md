@@ -131,7 +131,7 @@ on an `Execution`.
 
 `--full-output` must survive as private execution runtime state because a
 running execution may later be observed through `wait`. The later `wait` call
-must know whether terminal combined output is exempt from the normal 300-line
+ must know whether terminal combined output is exempt from the normal 5,000-token
 delivery threshold. The implementation may choose the private field name, but
 it must preserve this behavior without exposing the state as a public response
 field.
@@ -407,7 +407,7 @@ history; those assertions require a real kernel.
 | V7 | Invalid directive | No execution number advances, current/recent selection remains unchanged, and no source reaches the kernel. |
 | V8 | No directives | Source is unchanged except for the existing validated Apply Patch conversion. |
 | V9 | Long output with `--full-output` | A running initial response followed by `wait` returns all 301 or more combined lines. |
-| V10 | Long output without `--full-output` | Existing line-limit omission behavior remains unchanged. |
+| V10 | Long output without `--full-output` | Combined output above 5,000 `o200k_base` tokens is omitted while the complete record remains readable through output tools. |
 | V11 | IPython history | A real-kernel history query contains clean source only: no `# loommux:` and no directive-derived leading blank lines. |
 | V12 | Apply Patch plus outer directive | The directive is removed, the patch value remains correct, and later executable source still runs. |
 | V13 | CRLF input | Active lines and their own CRLF terminators are removed with no added bytes. |

@@ -137,7 +137,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         --------
 
         若任一有效 ``# loommux:`` 控制注释包含 ``--full-output``，该 execution
-        在终态时直接交付完整 combined 正文，不受默认 300 行交付阈值限制::
+        在终态时直接交付完整 combined 正文，不受默认 5,000-token 交付阈值限制::
 
             # loommux: --full-output
             print("\\n".join(generate_manifest()))
@@ -162,17 +162,17 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
 
         每个已接受的提交都会获得一个连续递增的正整数 ``execution``。后续工具
         使用它定位当前持久 IPython 会话中的这次执行。若执行仍在运行，或未标记
-        execution 的 combined 输出超过 300 行，响应不携带完整输出正文；行数、
-        Unicode code point 字符数和 UTF-8 字节数描述同一份 normalized combined
-        文本。使用 ``wait`` 等待，使用 ``execution_status`` 查看状态，使用
-        ``read_output`` 或 ``search_output`` 读取或搜索保留的输出。
+        ``--full-output`` 的 combined 输出超过 5,000 token，响应不携带完整输出
+        正文；行数、Unicode code point 字符数和 UTF-8 字节数描述同一份
+        normalized combined 文本。使用 ``wait`` 等待，使用 ``execution_status``
+        查看状态，使用 ``read_output`` 或 ``search_output`` 读取或搜索保留的输出。
 
         Args:
             freeform: 原始 IPython cell 源码文本。
 
         Returns:
             已接受 execution 的当前状态；完成的小输出直接进入模型内容，
-            running 或行数受限状态给出 ``execution`` 与省略原因。
+            running 或 token 受限状态给出 ``execution`` 与省略原因。
         """
         return await call("run_cell", ctx, lambda session: session.run_cell(freeform))
 
@@ -322,9 +322,9 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         ------------
 
         当所选 execution 的原始 ``run_cell`` 请求含有效 ``--full-output`` 且已达到
-        终态时，本工具直接返回完整 combined 正文，不应用默认 300 行省略。该策略
-        仅保留为 private runtime state；仍在运行的 execution 继续返回 running，
-        而非不完整正文。
+        终态时，本工具直接返回完整 combined 正文，不应用默认 5,000-token
+        省略。该策略仅保留为 private runtime state；仍在运行的 execution 继续
+        返回 running，而非不完整正文。
 
         Args:
             execution: 要等待的正整数执行编号。省略时使用当前记录，随后

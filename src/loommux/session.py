@@ -11,8 +11,6 @@ from loommux.kernel.session import KernelSession
 from loommux.submission.cell import prepare_run_cell
 from loommux.submission.directives import LoommuxDirectiveError
 
-DEFAULT_OUTPUT_LINE_LIMIT = 300
-DEFAULT_OUTPUT_TOKEN_BYPASS_LIMIT = 5_000
 KERNEL_START_ATTEMPTS = 2
 OUTPUT_STREAMS = {"combined", "stdout", "stderr", "result", "traceback"}
 
@@ -282,10 +280,7 @@ class IPythonSession:
         return (None, {"ok": False, "status": "execution_not_found", "message": "execution was not found"}) if record is None else (record, None)
 
     def _execution_response(self, record: Execution) -> dict[str, Any]:
-        result = record.snapshot(
-            output_line_limit=DEFAULT_OUTPUT_LINE_LIMIT,
-            output_token_bypass_limit=DEFAULT_OUTPUT_TOKEN_BYPASS_LIMIT,
-        )
+        result = record.snapshot()
         if not record.is_running and record.has_rich_presentation:
             # This is consumed by the MCP result projection only. Keeping it private prevents
             # Base64 payloads from leaking into status JSON or text logs.
@@ -294,10 +289,7 @@ class IPythonSession:
         return result
 
     def _status_response(self, record: Execution) -> dict[str, Any]:
-        result = record.status_snapshot(
-            output_line_limit=DEFAULT_OUTPUT_LINE_LIMIT,
-            output_token_bypass_limit=DEFAULT_OUTPUT_TOKEN_BYPASS_LIMIT,
-        )
+        result = record.status_snapshot()
         result["kernel"] = self._kernel_status()
         return result
 

@@ -11,7 +11,7 @@ from fastmcp.tools import ToolResult
 from mcp.types import ImageContent, TextContent
 
 from loommux.execution.events import PresentationFailure, PresentationImage, PresentationText
-from loommux.mcp.presentation import format_execution_input, format_output_line_limit_notice, format_tool_result_text
+from loommux.mcp.presentation import format_execution_input, format_output_token_limit_notice, format_tool_result_text
 
 ResultMode = Literal["content", "structured"]
 
@@ -66,12 +66,12 @@ def _rich_execution_content(
     # Rich MCP content bypasses the plain-text execution formatter, so it must
     # project the same input coordinate explicitly before the first rich block.
     content: list[TextContent | ImageContent] = [TextContent(type="text", text=f"{format_execution_input(execution)}\n")]
-    text_omitted = status.get("output_omitted_reason") == "line_limit_exceeded"
+    text_omitted = status.get("output_omitted_reason") == "token_limit_exceeded"
     if text_omitted:
         content.append(
             TextContent(
                 type="text",
-                text=format_output_line_limit_notice(status),
+                text=format_output_token_limit_notice(status),
             )
         )
     accepted_images = 0

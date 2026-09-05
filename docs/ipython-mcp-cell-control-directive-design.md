@@ -115,7 +115,7 @@ and deletion ranges, so the two operations cannot drift apart.
 
 `--wait` is used only by the originating `run_cell` call. `--full-output` is
 kept as private runtime state because a later `wait` must still decide whether
-to omit a terminal combined log above 300 lines. Neither fact appears in
+to omit a terminal combined log above 5,000 tokens. Neither fact appears in
 `run_cell`, `wait`, or `execution_status` data.
 
 The [Apply Patch Literal Transform Design](ipython-mcp-protected-multiline-string-design.md)

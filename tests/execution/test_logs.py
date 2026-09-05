@@ -50,7 +50,7 @@ def test_execution_logs_keep_streams_and_author_public_execution_label() -> None
     assert logs.get("unknown") is None
 
 
-def test_execution_tracks_error_interrupt_and_omitted_snapshots() -> None:
+def test_execution_tracks_error_interrupt_and_complete_snapshots() -> None:
     record = Execution(execution=9, kernel_pid=12)
     record.append_stdout("one\n")
     record.append_result_text("first")
@@ -62,10 +62,11 @@ def test_execution_tracks_error_interrupt_and_omitted_snapshots() -> None:
     assert record.status == "interrupted"
     assert record.result_text == "first\nsecond"
     assert record.logs.traceback.text == "trace\n"
-    snapshot = record.snapshot(1)
+    snapshot = record.snapshot()
     status_snapshot = record.status_snapshot()
 
-    assert snapshot["output_omitted_reason"] == "line_limit_exceeded"
+    assert snapshot["output_omitted"] is False
+    assert snapshot["output_omitted_reason"] is None
     assert snapshot["output_total_characters"] == len(record.logs.combined.text)
     assert snapshot["output_total_utf8_bytes"] == len(record.logs.combined.text.encode("utf-8"))
     assert status_snapshot["error"] == {"ename": "KeyboardInterrupt", "evalue": ""}
@@ -74,13 +75,13 @@ def test_execution_tracks_error_interrupt_and_omitted_snapshots() -> None:
 
 
 @pytest.mark.parametrize(("token_count", "omitted"), [(5_000, False), (5_001, True)])
-def test_execution_applies_the_line_limit_only_after_the_private_token_bypass(
+def test_execution_applies_the_token_limit(
     monkeypatch: pytest.MonkeyPatch,
     token_count: int,
     omitted: bool,
 ) -> None:
     record = Execution(execution=3, kernel_pid=12)
-    record.append_stdout(("payload " * 20 + "\n") * 301)
+    record.append_stdout("payload " * 20)
     record.finish()
     calls = 0
 
@@ -91,26 +92,26 @@ def test_execution_applies_the_line_limit_only_after_the_private_token_bypass(
 
     monkeypatch.setattr(execution_module, "_count_output_tokens", count_tokens)
 
-    snapshot = record.snapshot(output_line_limit=300, output_token_bypass_limit=5_000)
-    status = record.status_snapshot(output_line_limit=300, output_token_bypass_limit=5_000)
+    snapshot = record.snapshot()
+    status = record.status_snapshot()
 
     assert snapshot["output_omitted"] is omitted
-    assert snapshot["output_omitted_reason"] == ("line_limit_exceeded" if omitted else None)
+    assert snapshot["output_omitted_reason"] == ("token_limit_exceeded" if omitted else None)
     assert status["output_omitted_reason"] == snapshot["output_omitted_reason"]
     assert {"output_total_tokens", "output_token_limit", "output_token_encoding"}.isdisjoint(snapshot)
     assert calls == 1
 
 
-def test_token_heavy_output_still_requires_more_than_the_public_line_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_token_heavy_single_line_output_is_omitted(monkeypatch: pytest.MonkeyPatch) -> None:
     record = Execution(execution=3, kernel_pid=12)
-    record.append_stdout("one token-heavy line " * 301)
+    record.append_stdout("one token-heavy line")
     record.finish()
     monkeypatch.setattr(execution_module, "_count_output_tokens", lambda _text: 5_001)
 
-    snapshot = record.snapshot(output_line_limit=1, output_token_bypass_limit=5_000)
+    snapshot = record.snapshot()
 
-    assert snapshot["output_omitted"] is False
-    assert snapshot["output_omitted_reason"] is None
+    assert snapshot["output_omitted"] is True
+    assert snapshot["output_omitted_reason"] == "token_limit_exceeded"
 
 
 def test_full_output_and_running_states_do_not_consult_the_tokenizer(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -121,13 +122,13 @@ def test_full_output_and_running_states_do_not_consult_the_tokenizer(monkeypatch
     marked.append_stdout(("payload " * 20 + "\n") * 301)
     marked.finish()
 
-    assert running.snapshot(output_line_limit=300, output_token_bypass_limit=5_000)["output_omitted_reason"] == "running"
-    assert marked.snapshot(output_line_limit=300, output_token_bypass_limit=5_000)["output_omitted"] is False
+    assert running.snapshot()["output_omitted_reason"] == "running"
+    assert marked.snapshot()["output_omitted"] is False
 
 
-def test_tokenizer_failure_conservatively_falls_back_to_the_line_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_tokenizer_failure_is_not_replaced_by_another_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     record = Execution(execution=3, kernel_pid=12)
-    record.append_stdout(("payload " * 20 + "\n") * 301)
+    record.append_stdout("payload")
     record.finish()
 
     def unavailable(_text: str) -> int:
@@ -135,10 +136,8 @@ def test_tokenizer_failure_conservatively_falls_back_to_the_line_limit(monkeypat
 
     monkeypatch.setattr(execution_module, "_count_output_tokens", unavailable)
 
-    snapshot = record.snapshot(output_line_limit=300, output_token_bypass_limit=5_000)
-
-    assert snapshot["output_omitted"] is True
-    assert snapshot["output_omitted_reason"] == "line_limit_exceeded"
+    with pytest.raises(OSError, match="encoding data is unavailable"):
+        record.snapshot()
 
 
 def test_o200k_counter_treats_special_token_shaped_output_as_ordinary_text() -> None:

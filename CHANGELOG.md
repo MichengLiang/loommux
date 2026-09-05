@@ -7,22 +7,32 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.1.13] - 2026-09-05
+
 ### Changed
 
-- CI now checks only the current Python project, includes the maintained
-  examples, and installs dependencies from the committed project lockfile.
-- Release verification uses the same locked dependency and example checks as
-  the main CI workflow.
+- Make automatic terminal output delivery use one hard limit of 5,000
+  `o200k_base` tokens instead of a line-count policy.
+- Keep complete output available through `read_output` and `search_output`
+  while omitting oversized automatic `run_cell` and `wait` bodies.
 - Align the README, contributor guide, and pull request checklist with the
   supported Python 3.13+ baseline and the maintained example checks.
 
 ### Removed
 
+- Remove the obsolete line-count delivery limit, its response field, omission
+  reason, formatter, tests, and documentation.
+- Remove the tokenizer fallback that substituted an unrelated delivery policy
+  when token counting failed.
 - Removed obsolete Pueue engine, Rust MSRV, and deleted AsciiDoc audit jobs from
   GitHub Actions.
 
 ### Fixed
 
+- Tokenizer failures now propagate instead of silently changing the output
+  delivery policy.
 - Make the HTTP resource integration test terminate its temporary server with
   Windows-compatible process APIs.
 - Keep the external Streamable HTTP subprocess integration test on Linux, where
@@ -90,7 +100,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Declared Pillow as a development dependency so rich presentation tests run
   in a clean CI environment.
 
-[Unreleased]: https://github.com/MichengLiang/loommux/compare/v0.1.12...HEAD
+[Unreleased]: https://github.com/MichengLiang/loommux/compare/v0.1.13...HEAD
+[0.1.13]: https://github.com/MichengLiang/loommux/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/MichengLiang/loommux/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/MichengLiang/loommux/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/MichengLiang/loommux/compare/v0.1.9...v0.1.10

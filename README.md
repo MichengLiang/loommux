@@ -354,19 +354,21 @@ Each execution retains five append-only text projections:
 | `result` | `text/plain` from IPython execute-result and display-data events. |
 | `traceback` | Traceback text from Python error events. |
 
-Completed combined output of at most 300 lines is returned by `run_cell` and
-`wait` beneath an `In [execution]:` header. A display result then keeps
-its IPython-style `Out[execution]:` line; a silent cell returns only the input
-header, and stdout or traceback remains in its original combined order. For an
-execution that is still running, or for an unmarked terminal execution whose
-combined output exceeds 300 lines, the response retains the record but omits
-the full body. Its omission notice reports the combined output's total lines,
-Unicode code point characters, and UTF-8 size using one binary unit (`B`,
+Completed combined output of at most 5,000 `o200k_base` tokens is returned by
+`run_cell` and `wait` beneath an `In [execution]:` header. A display result then
+keeps its IPython-style `Out[execution]:` line; a silent cell returns only the
+input header, and stdout or traceback remains in its original combined order.
+For an execution that is still running, or for an unmarked terminal execution
+whose combined output exceeds 5,000 tokens, the response retains the record but
+omits the full body. Its omission notice reports the combined output's total
+lines, Unicode code point characters, and UTF-8 size using one binary unit (`B`,
 `KiB`, `MiB`, and so on). The structured `run_cell`, `wait`, and
 `execution_status` surfaces expose the corresponding exact counts as
 `output_total_lines`, `output_total_characters`, and
 `output_total_utf8_bytes`. The output is not discarded; read or search it
-through the output tools.
+through the output tools. Token counting is required for this automatic
+delivery policy; if the `o200k_base` tokenizer cannot be loaded, the call fails
+instead of silently changing to another limit.
 
 `read_output` uses `start:stop` inclusive line coordinates. Positive
 endpoints are 1-indexed, endpoints may be omitted, and negative endpoints
@@ -401,10 +403,10 @@ build_report()
 ```
 
 The option applies only to that execution. Once the execution is terminal, it
-bypasses the normal 300-line delivery threshold and makes `run_cell` or a
-later `wait` return the complete collected `combined` output. It does
-not cause partial running output to be returned and does not alter the input
-or behavior of `read_output` and `search_output`.
+bypasses the normal 5,000-token delivery threshold and makes `run_cell` or a
+later `wait` return the complete collected `combined` output. It does not cause
+partial running output to be returned and does not alter the input or behavior
+of `read_output` and `search_output`.
 
 The full-output and wait options are independent and may appear in the same
 directive:

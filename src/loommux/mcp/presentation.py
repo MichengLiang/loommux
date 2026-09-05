@@ -52,20 +52,19 @@ def _execution_surface(status: Mapping[str, Any]) -> str:
     if state == "killed":
         body = _append_control_line(output, "Killed: restart() stopped this execution.")
         return _with_execution_input(execution, body)
-    if status.get("output_omitted_reason") == "line_limit_exceeded":
-        return _with_execution_input(execution, format_output_line_limit_notice(status))
+    if status.get("output_omitted_reason") == "token_limit_exceeded":
+        return _with_execution_input(execution, format_output_token_limit_notice(status))
     return _with_execution_input(execution, output)
 
 
-def format_output_line_limit_notice(status: Mapping[str, Any]) -> str:
-    """Describe an omitted combined log with its stable delivery measurements."""
+def format_output_token_limit_notice(status: Mapping[str, Any]) -> str:
+    """Describe an omitted combined log without exposing tokenizer internals."""
     total_lines = _number(status.get("output_total_lines"))
     total_characters = _number(status.get("output_total_characters"))
     total_bytes = _number(status.get("output_total_utf8_bytes"))
-    line_limit = _number(status.get("output_line_limit"))
     return (
         f"Output omitted: {total_lines:,} lines, {total_characters:,} characters, "
-        f"{_format_binary_size(total_bytes)}; exceeds the {line_limit:,}-line limit. "
+        f"{_format_binary_size(total_bytes)}; exceeds the 5,000-token limit. "
         "Use read_output() to read all lines or search_output() to locate text."
     )
 

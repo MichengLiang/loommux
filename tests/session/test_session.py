@@ -166,7 +166,7 @@ def test_directive_composes_with_a_bash_cell_magic(session: IPythonSession) -> N
     assert completed["output_text"] == "bash-finished\n"
 
 
-def test_unmarked_many_line_output_bypasses_the_line_limit_when_it_is_token_light(session: IPythonSession) -> None:
+def test_unmarked_many_line_output_is_delivered_when_it_is_under_the_token_limit(session: IPythonSession) -> None:
     response = session.run_cell("print('\\n'.join(f'line-{number}' for number in range(301)))")
 
     assert response["status"] == "completed"
@@ -174,12 +174,12 @@ def test_unmarked_many_line_output_bypasses_the_line_limit_when_it_is_token_ligh
     assert response["output_text"] == TOKEN_LIGHT_MANY_LINES
 
 
-def test_unmarked_token_heavy_many_line_output_keeps_the_default_omission_rule(session: IPythonSession) -> None:
+def test_unmarked_token_heavy_output_is_omitted(session: IPythonSession) -> None:
     response = session.run_cell("print(('abcdefghij ' * 20 + '\\n') * 301, end='')")
 
     assert response["status"] == "completed"
     assert response["output_omitted"] is True
-    assert response["output_omitted_reason"] == "line_limit_exceeded"
+    assert response["output_omitted_reason"] == "token_limit_exceeded"
     assert "output_text" not in response
     assert response["output_total_lines"] == 301
     assert response["output_total_characters"] == len(TOKEN_HEAVY_MANY_LINES)
