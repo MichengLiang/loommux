@@ -7,6 +7,10 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.1.12] - 2026-09-05
+
 ### Added
 
 - Added session-private and named shared logical kernel resources with
@@ -15,6 +19,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   orphaned-execution reclamation, and lazy recovery after kernel crashes.
 - Added a lease-aware Streamable HTTP client, HTTP resource APIs, and a
   dependency-free management console.
+- Added a runnable `examples/lease-aware-client` guide covering automatic and
+  manual FastMCP client cooperation for heartbeat leases.
 
 ### Changed
 
@@ -22,6 +28,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   session instead of sharing one process-global IPython session.
 - Kernel restart preserves logical resource identity while resource recycle
   retires the complete session and its retained history.
+- Refined the public documentation to keep implementation details behind the
+  IPython-oriented MCP operation model.
 
 ### Removed
 
@@ -55,5 +63,6 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Declared Pillow as a development dependency so rich presentation tests run
   in a clean CI environment.
 
+[0.1.12]: https://github.com/MichengLiang/loommux/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/MichengLiang/loommux/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/MichengLiang/loommux/compare/v0.1.9...v0.1.10
