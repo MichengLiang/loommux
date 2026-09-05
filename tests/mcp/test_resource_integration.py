@@ -74,11 +74,19 @@ def running_server(port: int, workspace: Path) -> Iterator[str]:
         yield origin
     finally:
         if process.poll() is None:
-            os.killpg(process.pid, signal.SIGTERM)
+            if sys.platform == "win32":
+                # Windows has no POSIX process groups; terminate the test
+                # server directly instead of calling the unavailable killpg.
+                process.terminate()
+            else:
+                os.killpg(process.pid, signal.SIGTERM)
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
+                if sys.platform == "win32":
+                    process.kill()
+                else:
+                    os.killpg(process.pid, signal.SIGKILL)
                 process.wait(timeout=5)
 
 

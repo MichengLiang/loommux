@@ -19,6 +19,11 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Removed obsolete Pueue engine, Rust MSRV, and deleted AsciiDoc audit jobs from
   GitHub Actions.
 
+### Fixed
+
+- Make the HTTP resource integration test terminate its temporary server with
+  Windows-compatible process APIs.
+
 ## [0.1.12] - 2026-09-05
 
 ### Added
