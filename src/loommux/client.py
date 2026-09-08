@@ -4,16 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import datetime
 from dataclasses import dataclass
 from math import isfinite
 from types import TracebackType
-from typing import Any
+from typing import Any, Literal, overload
 from urllib.parse import quote, urlsplit, urlunsplit
 
 import httpx
 from fastmcp import Client
-from fastmcp.client.client import CallToolResult
+from fastmcp.client.client import CallToolResult, ProgressHandler
+from fastmcp.client.tasks import ToolTask
 from fastmcp.client.transports import StreamableHttpTransport
+from mcp.types import Tool as MCPTool
 
 from loommux.resource import (
     LEASE_POLICY_GENERATION_HEADER,
@@ -38,15 +41,9 @@ class RemoteLeasePolicy:
         policy = cls(
             mode=str(payload["mode"]),
             generation=int(payload["generation"]),
-            private_activity_timeout_seconds=float(
-                payload["private_activity_timeout_seconds"]
-            ),
-            named_activity_timeout_seconds=float(
-                payload["named_activity_timeout_seconds"]
-            ),
-            heartbeat_interval_seconds=float(
-                payload["heartbeat_interval_seconds"]
-            ),
+            private_activity_timeout_seconds=float(payload["private_activity_timeout_seconds"]),
+            named_activity_timeout_seconds=float(payload["named_activity_timeout_seconds"]),
+            heartbeat_interval_seconds=float(payload["heartbeat_interval_seconds"]),
             heartbeat_timeout_seconds=float(payload["heartbeat_timeout_seconds"]),
         )
         if policy.mode not in {"activity", "heartbeat"} or policy.generation <= 0:
@@ -97,9 +94,7 @@ class LeaseAwareClient:
         }
         if self.resource_name:
             headers[RESOURCE_HEADER] = quote(self.resource_name, safe="")
-        self._client = Client(
-            StreamableHttpTransport(self.server_url, headers=headers)
-        )
+        self._client = Client(StreamableHttpTransport(self.server_url, headers=headers))
         try:
             await self._client.__aenter__()
         except BaseException:
@@ -131,28 +126,100 @@ class LeaseAwareClient:
             return None
         return await client.__aexit__(exc_type, exc, traceback)
 
+    @overload
     async def call_tool(
         self,
         name: str,
-        arguments: dict[str, Any],
-    ) -> CallToolResult:
-        if self._client is None:
-            raise RuntimeError("client is not inside its async context")
-        result = await self._client.call_tool(name, arguments)
-        if not isinstance(result, CallToolResult):
-            raise RuntimeError("task-mode tool results are not supported")
-        return result
+        arguments: dict[str, Any] | None = None,
+        *,
+        version: str | None = None,
+        timeout: datetime.timedelta | float | int | None = None,
+        progress_handler: ProgressHandler | None = None,
+        raise_on_error: bool = True,
+        meta: dict[str, Any] | None = None,
+        task: Literal[False] = False,
+        task_id: str | None = None,
+        ttl: int = 60000,
+    ) -> CallToolResult: ...
+
+    @overload
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+        *,
+        version: str | None = None,
+        timeout: datetime.timedelta | float | int | None = None,
+        progress_handler: ProgressHandler | None = None,
+        raise_on_error: bool = True,
+        meta: dict[str, Any] | None = None,
+        task: Literal[True],
+        task_id: str | None = None,
+        ttl: int = 60000,
+    ) -> ToolTask: ...
+
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+        *,
+        version: str | None = None,
+        timeout: datetime.timedelta | float | int | None = None,
+        progress_handler: ProgressHandler | None = None,
+        raise_on_error: bool = True,
+        meta: dict[str, Any] | None = None,
+        task: bool = False,
+        task_id: str | None = None,
+        ttl: int = 60000,
+    ) -> CallToolResult | ToolTask:
+        """Call a tool through the connected FastMCP client.
+
+        Lease awareness decorates the connection lifecycle; it does not narrow
+        the ordinary FastMCP call surface. Keeping these options aligned with
+        ``Client.call_tool()`` lets discovery-based hosts use this client
+        without reaching through to its private transport owner.
+        """
+        client = self._require_client()
+        if task:
+            return await client.call_tool(
+                name,
+                arguments,
+                version=version,
+                timeout=timeout,
+                progress_handler=progress_handler,
+                raise_on_error=raise_on_error,
+                meta=meta,
+                task=True,
+                task_id=task_id,
+                ttl=ttl,
+            )
+        return await client.call_tool(
+            name,
+            arguments,
+            version=version,
+            timeout=timeout,
+            progress_handler=progress_handler,
+            raise_on_error=raise_on_error,
+            meta=meta,
+            task=False,
+        )
+
+    async def list_tools(self, max_pages: int = 250) -> list[MCPTool]:
+        """Discover tools through the lease-bound MCP session."""
+        return await self._require_client().list_tools(max_pages=max_pages)
 
     async def ping(self) -> bool:
+        return await self._require_client().ping()
+
+    def _require_client(self) -> Client:
+        """Return the active transport owner through one lifecycle boundary."""
         if self._client is None:
             raise RuntimeError("client is not inside its async context")
-        return await self._client.ping()
+        return self._client
 
     async def _fetch_policy(self) -> RemoteLeasePolicy:
         async with httpx.AsyncClient(timeout=5) as http:
-            response = await http.get(
-                f"{self.control_url.rstrip('/')}/api/lease-policy"
-            )
+            response = await http.get(f"{self.control_url.rstrip('/')}/api/lease-policy")
             response.raise_for_status()
         return RemoteLeasePolicy.from_payload(response.json()["policy"])
 

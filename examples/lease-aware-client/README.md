@@ -31,6 +31,10 @@ await client.ping()
 - `manual_fastmcp_client.py`：教学写法，只使用 FastMCP `Client`，手动补齐
   loommux 所需的策略发现、请求头和 ping 循环。
 
+`LeaseAwareClient` 保留普通 FastMCP 客户端的工具发现与完整工具调用参数，
+因此也可以交给通过 `list_tools()` 动态注册工具的宿主。租约能力只装饰连接
+生命周期，不要求宿主读取其内部 Client 或实现 Loommux 专用调用分支。
+
 ## 启动服务器
 
 请在项目根目录 `/home/t103o/workbench/projects/loommux` 中执行：
