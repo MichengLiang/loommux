@@ -67,14 +67,14 @@ class LeaseAwareClient:
     def __init__(
         self,
         server_url: str,
-        operator: str,
+        operator: str | None = None,
         *,
         resource_name: str | None = None,
         control_url: str | None = None,
     ) -> None:
         self.server_url = server_url
         self.control_url = control_url or _control_origin(server_url)
-        self.operator = operator.strip()
+        self.operator = operator.strip() if operator is not None else None
         self.resource_name = resource_name.strip() if resource_name else None
         self.policy: RemoteLeasePolicy | None = None
         self.heartbeat_count = 0
@@ -89,9 +89,10 @@ class LeaseAwareClient:
         self.last_heartbeat_error = None
         self.policy = await self._fetch_policy()
         headers = {
-            OPERATOR_HEADER: quote(self.operator, safe=""),
             LEASE_POLICY_GENERATION_HEADER: str(self.policy.generation),
         }
+        if self.operator:
+            headers[OPERATOR_HEADER] = quote(self.operator, safe="")
         if self.resource_name:
             headers[RESOURCE_HEADER] = quote(self.resource_name, safe="")
         self._client = Client(StreamableHttpTransport(self.server_url, headers=headers))

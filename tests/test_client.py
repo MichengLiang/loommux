@@ -4,6 +4,7 @@ import pytest
 
 import loommux.client as client_module
 from loommux.client import LeaseAwareClient, RemoteLeasePolicy
+from loommux.resource import LEASE_POLICY_GENERATION_HEADER, OPERATOR_HEADER
 
 
 def test_remote_policy_validation() -> None:
@@ -81,6 +82,47 @@ def test_client_rejects_nested_entry() -> None:
             await client.__aenter__()
 
     asyncio.run(scenario())
+
+
+def test_client_omits_operator_header_when_operator_is_missing_or_none(monkeypatch) -> None:
+    captured_headers = []
+
+    class RecordingClient:
+        def __init__(self, transport) -> None:
+            captured_headers.append(transport.headers)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return None
+
+    async def fetch_policy(self):
+        return RemoteLeasePolicy(
+            mode="activity",
+            generation=7,
+            private_activity_timeout_seconds=30,
+            named_activity_timeout_seconds=90,
+            heartbeat_interval_seconds=15,
+            heartbeat_timeout_seconds=60,
+        )
+
+    monkeypatch.setattr(client_module, "Client", RecordingClient)
+    monkeypatch.setattr(LeaseAwareClient, "_fetch_policy", fetch_policy)
+
+    async def scenario() -> None:
+        async with LeaseAwareClient("http://127.0.0.1:8801/mcp"):
+            pass
+        async with LeaseAwareClient("http://127.0.0.1:8801/mcp", None):
+            pass
+
+    asyncio.run(scenario())
+
+    assert captured_headers == [
+        {LEASE_POLICY_GENERATION_HEADER: "7"},
+        {LEASE_POLICY_GENERATION_HEADER: "7"},
+    ]
+    assert all(OPERATOR_HEADER not in headers for headers in captured_headers)
 
 
 def test_client_forwards_discovery_and_complete_tool_call_surface(monkeypatch) -> None:

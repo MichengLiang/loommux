@@ -199,6 +199,10 @@ async with LeaseAwareClient(
     )
 ```
 
+The operator label is optional. Omitting it or passing `None` leaves the
+`X-Loommux-Operator` header absent, so the server uses its session-derived
+fallback display name.
+
 The complete runnable client-cooperation example is in
 [examples/lease-aware-client](examples/lease-aware-client/README.md).
 
