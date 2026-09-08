@@ -213,9 +213,7 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
     assert "连续的下一个编号" in reset
     assert "当前持久 IPython 会话的 execution 历史" in reset
 
-    model_descriptions = "\n".join(
-        tool.description or "" for tool in tools.values()
-    )
+    model_descriptions = "\n".join(tool.description or "" for tool in tools.values())
     for implementation_term in (
         "kernel resource",
         "resource manager",
@@ -328,8 +326,14 @@ async def test_token_limited_result_reports_one_human_readable_size_and_exact_st
         structured = await structured_client.call_tool("run_cell", {"freeform": source})
     default = await default_client.call_tool("run_cell", {"freeform": source})
 
-    expected_notice = f"Output omitted: 301 lines, {len(TOKEN_HEAVY_MANY_LINES):,} characters, 64.96 KiB; exceeds the 5,000-token limit. Use read_output() to read all lines or search_output() to locate text."
-    assert structured.content[0].text == default.content[0].text == f"In [1]:\n{expected_notice}"
+    assert structured.content[0].text == default.content[0].text
+    notice = structured.content[0].text
+    assert notice.startswith("In [1]:\nOutput omitted: 301 lines")
+    assert f"{len(TOKEN_HEAVY_MANY_LINES):,} characters" in notice
+    assert "64.96 KiB" in notice
+    assert "read_output()" in notice
+    assert "search_output()" in notice
+    assert "# loommux: --full-output" in notice
     assert structured.structured_content is not None
     assert structured.structured_content["output_total_lines"] == 301
     assert structured.structured_content["output_total_characters"] == len(TOKEN_HEAVY_MANY_LINES)

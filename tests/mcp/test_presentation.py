@@ -33,19 +33,26 @@ def test_execution_states_name_the_integer_coordinate() -> None:
     killed = {"ok": False, "execution": 5, "status": "killed"}
 
     assert format_tool_result_text("run_cell", running) == "In [5]:\nRunning: use wait() for completion, read_output() for collected output, or search_output() to locate text."
-    assert format_tool_result_text("wait", large) == "In [5]:\nOutput omitted: 301 lines, 2,600 characters, 2.54 KiB; exceeds the 5,000-token limit. Use read_output() to read all lines or search_output() to locate text."
+    assert format_tool_result_text("wait", large) == f"In [5]:\n{format_output_token_limit_notice(large)}"
     assert format_tool_result_text("run_cell", error) == "In [5]:\nError: ZeroDivisionError: division by zero"
     assert format_tool_result_text("wait", killed) == "In [5]:\nKilled: restart() stopped this execution."
 
 
-def test_token_limited_notice_selects_exactly_one_binary_size_unit() -> None:
+def test_token_limited_notice_reports_size_and_recovery_paths() -> None:
     status = {
         "output_total_lines": 301,
         "output_total_characters": 1_023,
         "output_total_utf8_bytes": 1_023,
     }
 
-    assert "1,023 B;" in format_output_token_limit_notice(status)
+    notice = format_output_token_limit_notice(status)
+    assert "301 lines" in notice
+    assert "1,023 characters" in notice
+    assert "1,023 B;" in notice
+    assert "read_output()" in notice
+    assert "search_output()" in notice
+    assert "# loommux: --full-output" in notice
+
     status["output_total_utf8_bytes"] = 1_024
     assert "1 KiB;" in format_output_token_limit_notice(status)
 
@@ -199,7 +206,13 @@ def test_rich_execution_keeps_images_but_omits_token_limited_text() -> None:
     assert isinstance(result.content[0], TextContent)
     assert result.content[0].text == "In [5]:\n"
     assert isinstance(result.content[1], TextContent)
-    assert result.content[1].text == "Output omitted: 301 lines, 2,600 characters, 2.54 KiB; exceeds the 5,000-token limit. Use read_output() to read all lines or search_output() to locate text."
+    assert result.content[1].text == format_output_token_limit_notice(
+        {
+            "output_total_lines": 301,
+            "output_total_characters": 2_600,
+            "output_total_utf8_bytes": 2_600,
+        }
+    )
     assert "read_output() to read all lines or search_output()" in result.content[1].text
     assert "line-0" not in result.content[1].text
 

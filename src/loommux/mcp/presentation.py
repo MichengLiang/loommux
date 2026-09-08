@@ -62,11 +62,11 @@ def format_output_token_limit_notice(status: Mapping[str, Any]) -> str:
     total_lines = _number(status.get("output_total_lines"))
     total_characters = _number(status.get("output_total_characters"))
     total_bytes = _number(status.get("output_total_utf8_bytes"))
-    return (
-        f"Output omitted: {total_lines:,} lines, {total_characters:,} characters, "
-        f"{_format_binary_size(total_bytes)}; exceeds the 5,000-token limit. "
-        "Use read_output() to read all lines or search_output() to locate text."
-        "对于明确需要完整阅读的信息请标注 ``# loommux: --full-output``"
+    return "\n".join(
+        (
+            f"Output omitted: {total_lines:,} lines, {total_characters:,} characters, {_format_binary_size(total_bytes)}; exceeds the 5,000-token limit. Use read_output() to read all lines or search_output() to locate text.",
+            "对于明确需要完整阅读的信息，请标注 ``# loommux: --full-output``。",
+        )
     )
 
 
