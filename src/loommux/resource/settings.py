@@ -15,7 +15,7 @@ class ResourceServerSettings:
     """Validated process-level defaults used to build lease policy generation one."""
 
     lease_mode: LeaseMode = LeaseMode.ACTIVITY
-    private_activity_timeout_seconds: float = 30 * 60
+    private_activity_timeout_seconds: float = 80 * 60
     named_activity_timeout_seconds: float = 24 * 60 * 60
     heartbeat_interval_seconds: float = 15
     heartbeat_timeout_seconds: float = 60
