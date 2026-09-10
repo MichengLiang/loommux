@@ -16,6 +16,14 @@ def install_lease_aware_ping_handler(
 ) -> None:
     """Preserve the protocol response and renew only an existing client lease."""
 
+    # FastMCP 3.x answers `ping` on its low-level server and never routes it
+    # through the middleware chain, so the SDK's request-handler registry is the
+    # only place a heartbeat can be observed without wrapping the whole server.
+    # Both that registry and FastMCP's own `_mcp_server` are undocumented
+    # surfaces, which is why pyproject declares the exact ranges this code was
+    # written against: MCP 2.x renames the registry to `_request_handlers` and
+    # exposes `add_request_handler` instead, and FastMCP 4.x moves `ping` into
+    # its middleware, where this hook would silently stop renewing leases.
     low_level_server = mcp._mcp_server
     original_handler = low_level_server.request_handlers[mcp_types.PingRequest]
 

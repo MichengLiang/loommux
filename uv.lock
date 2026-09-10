@@ -956,13 +956,14 @@ wheels = [
 
 [[package]]
 name = "loommux"
-version = "0.1.14"
+version = "0.1.15"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
     { name = "httpx" },
     { name = "ipykernel" },
     { name = "jupyter-client" },
+    { name = "mcp" },
     { name = "pywin32", marker = "sys_platform == 'win32'" },
     { name = "tiktoken" },
 ]
@@ -985,6 +986,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "ipykernel", specifier = ">=7.3.0" },
     { name = "jupyter-client", specifier = ">=8.10.0" },
+    { name = "mcp", specifier = ">=1.29.1,<2" },
     { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=312" },
     { name = "tiktoken", specifier = ">=0.14.0" },
 ]

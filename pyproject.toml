@@ -1,6 +1,6 @@
 [project]
 name = "loommux"
-version = "0.1.14"
+version = "0.1.15"
 description = "Persistent IPython MCP server with inspectable execution output"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -24,6 +24,11 @@ dependencies = [
     "httpx>=0.28.1",
     "ipykernel>=7.3.0",
     "jupyter-client>=8.10.0",
+    # loommux imports mcp.types directly and installs its lease-renewal handler
+    # on the SDK's low-level ping request registry, so the SDK major is part of
+    # loommux's contract. Leaving it to fastmcp's own extra let mcp 2.x reach an
+    # environment where that registry had already been renamed.
+    "mcp>=1.29.1,<2",
     "pywin32>=312; sys_platform == 'win32'",
     "tiktoken>=0.14.0",
 ]

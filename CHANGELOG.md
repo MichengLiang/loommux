@@ -9,6 +9,20 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 No unreleased changes.
 
+## [0.1.15] - 2026-09-10
+
+### Fixed
+
+- Declare the MCP SDK range that loommux is written against
+  (`mcp>=1.29.1,<2`). Loommux imports `mcp.types` directly and installs its
+  lease-renewal handler on the SDK's low-level ping request registry, but no
+  requirement stated any of that: the SDK arrived only through FastMCP's
+  `server` extra, so `loommux` depended on internals of a package whose version
+  it never named.
+- Document why the heartbeat hook lives on the SDK handler registry and which
+  majors invalidate it, so a future dependency bump cannot move `ping` into
+  FastMCP's middleware and leave leases silently unrenewed.
+
 ## [0.1.14] - 2026-09-10
 
 ### Added
@@ -140,7 +154,8 @@ No unreleased changes.
 - Declared Pillow as a development dependency so rich presentation tests run
   in a clean CI environment.
 
-[Unreleased]: https://github.com/MichengLiang/loommux/compare/v0.1.14...HEAD
+[Unreleased]: https://github.com/MichengLiang/loommux/compare/v0.1.15...HEAD
+[0.1.15]: https://github.com/MichengLiang/loommux/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/MichengLiang/loommux/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/MichengLiang/loommux/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/MichengLiang/loommux/compare/v0.1.11...v0.1.12

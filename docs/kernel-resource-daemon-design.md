@@ -144,6 +144,14 @@ Tool activity and successful standard MCP `ping` refresh the heartbeat
 deadline. The client sends ping at the advertised interval. The timeout must
 be greater than the interval.
 
+Renewal attaches to the SDK's low-level ping request handler. FastMCP 3.x
+answers `ping` before its middleware chain, so the handler registry is the only
+supported place where a heartbeat is visible; the SDK's `request_handlers`
+registry and FastMCP's `_mcp_server` are therefore pinned by
+`mcp>=1.29.1,<2` and `fastmcp>=3.4.7,<4` in `pyproject.toml`. MCP 2.x renames
+the registry and FastMCP 4.x routes `ping` through middleware, so both majors
+require rewriting this hook rather than inheriting it.
+
 Ping never creates a resource or missing lease. Kernel health observation is
 also separate from client liveness and does not renew participation.
 
