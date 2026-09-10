@@ -66,6 +66,7 @@ def format_output_token_limit_notice(status: Mapping[str, Any]) -> str:
         (
             f"Output omitted: {total_lines:,} lines, {total_characters:,} characters, {_format_binary_size(total_bytes)}; exceeds the 5,000-token limit. Use read_output() to read all lines or search_output() to locate text.",
             "对于明确需要完整阅读的信息，请标注 ``# loommux: --full-output``。",
+            "或更精细地了解所需信息的更精确的位置，再完整获取。",
         )
     )
 
