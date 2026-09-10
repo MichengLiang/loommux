@@ -9,6 +9,46 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 No unreleased changes.
 
+## [0.1.14] - 2026-09-10
+
+### Added
+
+- Give `LeaseAwareClient` the complete FastMCP client surface: `list_tools()`
+  for discovery plus a `call_tool()` that forwards `version`, `timeout`,
+  `progress_handler`, `raise_on_error`, `meta`, `task`, `task_id`, and `ttl`,
+  with overloaded result types that distinguish `CallToolResult` from
+  `ToolTask`. Lease awareness decorates the connection lifecycle instead of
+  narrowing the ordinary client contract, so a host that registers tools
+  dynamically can call them without reaching through to the private FastMCP
+  client that owns the transport.
+
+### Changed
+
+- Make the operator label optional. Omitting it or passing `None` leaves the
+  `X-Loommux-Operator` header absent, so the server keeps its session-derived
+  fallback display name instead of receiving a blank operator identity.
+- Extend the default private activity timeout from 30 to 80 minutes, so an MCP
+  host that pauses between calls does not lose its private IPython session.
+- Have the omitted-output notice name its recovery paths and the
+  `# loommux: --full-output` directive, so a caller whose body was omitted sees
+  how to read, search, or request the retained output without consulting
+  separate documentation. The notice is now several lines; the human-readable
+  size line is unchanged.
+
+### Fixed
+
+- Make the declared lease defaults effective. The 80-minute private activity
+  timeout lived only on the settings dataclass while
+  `ResourceServerSettings.from_environ()` still fell back to 30 minutes, so a
+  server started without `LOOMMUX_PRIVATE_TTL_SECONDS` kept the shorter lease.
+- Declare every generation-one lease duration once in `resource/policy.py` and
+  resolve the settings dataclass, the environment reader, and a directly built
+  policy manager against it, so the documented default, the effective default,
+  and the programmatic default cannot drift apart again.
+- Assert omission semantics instead of copies of the notice prose in the
+  presentation tests, so the notice's guidance can change without breaking
+  assertions that were only restating the previous wording.
+
 ## [0.1.13] - 2026-09-05
 
 ### Changed
@@ -100,7 +140,8 @@ No unreleased changes.
 - Declared Pillow as a development dependency so rich presentation tests run
   in a clean CI environment.
 
-[Unreleased]: https://github.com/MichengLiang/loommux/compare/v0.1.13...HEAD
+[Unreleased]: https://github.com/MichengLiang/loommux/compare/v0.1.14...HEAD
+[0.1.14]: https://github.com/MichengLiang/loommux/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/MichengLiang/loommux/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/MichengLiang/loommux/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/MichengLiang/loommux/compare/v0.1.10...v0.1.11

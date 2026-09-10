@@ -4,6 +4,18 @@ from loommux.resource import LeaseMode
 from loommux.resource.settings import ResourceServerSettings
 
 
+def test_unset_environment_uses_the_declared_lease_defaults() -> None:
+    """An unset variable must produce the duration the project declares."""
+
+    settings = ResourceServerSettings.from_environ({})
+
+    # The first assertion guards the two declaration sites against drifting
+    # apart; the second pins the value the documentation publishes.
+    assert settings == ResourceServerSettings()
+    assert settings.private_activity_timeout_seconds == 80 * 60
+    assert settings.named_activity_timeout_seconds == 24 * 60 * 60
+
+
 def test_settings_read_all_resource_lease_values() -> None:
     settings = ResourceServerSettings.from_environ(
         {

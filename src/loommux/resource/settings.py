@@ -7,7 +7,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from math import isfinite
 
-from loommux.resource.policy import LeaseMode
+from loommux.resource.policy import (
+    DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+    DEFAULT_HEARTBEAT_TIMEOUT_SECONDS,
+    DEFAULT_NAMED_ACTIVITY_TIMEOUT_SECONDS,
+    DEFAULT_PRIVATE_ACTIVITY_TIMEOUT_SECONDS,
+    LeaseMode,
+)
 
 
 @dataclass(frozen=True)
@@ -15,10 +21,10 @@ class ResourceServerSettings:
     """Validated process-level defaults used to build lease policy generation one."""
 
     lease_mode: LeaseMode = LeaseMode.ACTIVITY
-    private_activity_timeout_seconds: float = 80 * 60
-    named_activity_timeout_seconds: float = 24 * 60 * 60
-    heartbeat_interval_seconds: float = 15
-    heartbeat_timeout_seconds: float = 60
+    private_activity_timeout_seconds: float = DEFAULT_PRIVATE_ACTIVITY_TIMEOUT_SECONDS
+    named_activity_timeout_seconds: float = DEFAULT_NAMED_ACTIVITY_TIMEOUT_SECONDS
+    heartbeat_interval_seconds: float = DEFAULT_HEARTBEAT_INTERVAL_SECONDS
+    heartbeat_timeout_seconds: float = DEFAULT_HEARTBEAT_TIMEOUT_SECONDS
     sweep_interval_seconds: float = 10
     orphan_grace_seconds: float = 30
 
@@ -37,22 +43,22 @@ class ResourceServerSettings:
             private_activity_timeout_seconds=_positive_float(
                 values,
                 "LOOMMUX_PRIVATE_TTL_SECONDS",
-                30 * 60,
+                DEFAULT_PRIVATE_ACTIVITY_TIMEOUT_SECONDS,
             ),
             named_activity_timeout_seconds=_positive_float(
                 values,
                 "LOOMMUX_NAMED_TTL_SECONDS",
-                24 * 60 * 60,
+                DEFAULT_NAMED_ACTIVITY_TIMEOUT_SECONDS,
             ),
             heartbeat_interval_seconds=_positive_float(
                 values,
                 "LOOMMUX_HEARTBEAT_INTERVAL_SECONDS",
-                15,
+                DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
             ),
             heartbeat_timeout_seconds=_positive_float(
                 values,
                 "LOOMMUX_HEARTBEAT_TIMEOUT_SECONDS",
-                60,
+                DEFAULT_HEARTBEAT_TIMEOUT_SECONDS,
             ),
             sweep_interval_seconds=_positive_float(
                 values,

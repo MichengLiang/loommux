@@ -213,12 +213,16 @@ the MCP client context closes.
 | Environment variable | Default |
 | --- | ---: |
 | `LOOMMUX_LEASE_MODE` | `activity` |
-| `LOOMMUX_PRIVATE_TTL_SECONDS` | `1800` |
+| `LOOMMUX_PRIVATE_TTL_SECONDS` | `4800` |
 | `LOOMMUX_NAMED_TTL_SECONDS` | `86400` |
 | `LOOMMUX_HEARTBEAT_INTERVAL_SECONDS` | `15` |
 | `LOOMMUX_HEARTBEAT_TIMEOUT_SECONDS` | `60` |
 | `LOOMMUX_SWEEP_INTERVAL_SECONDS` | `10` |
 | `LOOMMUX_ORPHAN_GRACE_SECONDS` | `30` |
+
+The lease durations are declared once in `resource/policy.py`; the settings
+dataclass and the environment reader both resolve to those same values, so an
+unset variable cannot fall back to a duration the project no longer advertises.
 
 All durations must be positive. Heartbeat timeout must be strictly greater
 than heartbeat interval.

@@ -15,6 +15,18 @@ class LeaseMode(StrEnum):
     HEARTBEAT = "heartbeat"
 
 
+# Generation-one lease durations are declared exactly once here. Server settings
+# read environment overrides against these fallbacks, and a policy manager built
+# without explicit values adopts the same contract. Two declaration sites let the
+# advertised default and the effective default drift apart: the 80-minute
+# private timeout existed only on the settings dataclass while the environment
+# reader still fell back to the earlier 30 minutes.
+DEFAULT_PRIVATE_ACTIVITY_TIMEOUT_SECONDS: float = 80 * 60
+DEFAULT_NAMED_ACTIVITY_TIMEOUT_SECONDS: float = 24 * 60 * 60
+DEFAULT_HEARTBEAT_INTERVAL_SECONDS: float = 15
+DEFAULT_HEARTBEAT_TIMEOUT_SECONDS: float = 60
+
+
 @dataclass(frozen=True)
 class LeasePolicy:
     """One immutable lease contract retained by already-created leases."""
@@ -51,10 +63,10 @@ class LeasePolicyManager:
         self,
         *,
         initial_mode: LeaseMode = LeaseMode.ACTIVITY,
-        private_activity_timeout_seconds: float = 30 * 60,
-        named_activity_timeout_seconds: float = 24 * 60 * 60,
-        heartbeat_interval_seconds: float = 15,
-        heartbeat_timeout_seconds: float = 60,
+        private_activity_timeout_seconds: float = DEFAULT_PRIVATE_ACTIVITY_TIMEOUT_SECONDS,
+        named_activity_timeout_seconds: float = DEFAULT_NAMED_ACTIVITY_TIMEOUT_SECONDS,
+        heartbeat_interval_seconds: float = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+        heartbeat_timeout_seconds: float = DEFAULT_HEARTBEAT_TIMEOUT_SECONDS,
     ) -> None:
         self._validate(
             private_activity_timeout_seconds=private_activity_timeout_seconds,

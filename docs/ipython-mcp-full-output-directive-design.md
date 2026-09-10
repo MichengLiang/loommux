@@ -39,7 +39,11 @@ different output limit or delivery policy.
 An omitted-output notice identifies the retained normalized combined text by
 its total lines, Unicode code point characters, and UTF-8 size. Its human
 readable size uses one binary unit selected from `B`, `KiB`, `MiB`, and larger
-units; structured responses retain the exact UTF-8 byte count.
+units; structured responses retain the exact UTF-8 byte count. The notice also
+names its recovery paths, so an oversized body never leaves the caller without
+the next move: `read_output` reads the complete stored stream, `search_output`
+locates text inside it, and the `# loommux: --full-output` directive requests
+the complete body for an execution whose full output is the intended result.
 
 The option is per execution. It survives a later `wait`, error,
 interrupt, or reset-induced `killed` state, but it does not alter

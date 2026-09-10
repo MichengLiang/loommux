@@ -369,10 +369,12 @@ lines, Unicode code point characters, and UTF-8 size using one binary unit (`B`,
 `KiB`, `MiB`, and so on). The structured `run_cell`, `wait`, and
 `execution_status` surfaces expose the corresponding exact counts as
 `output_total_lines`, `output_total_characters`, and
-`output_total_utf8_bytes`. The output is not discarded; read or search it
-through the output tools. Token counting is required for this automatic
-delivery policy; if the `o200k_base` tokenizer cannot be loaded, the call fails
-instead of silently changing to another limit.
+`output_total_utf8_bytes`. The output is not discarded; the notice itself names
+the recovery paths, and the caller reads or searches the retained text through
+`read_output` and `search_output`, or requests the complete body with the
+`# loommux: --full-output` directive. Token counting is required for this
+automatic delivery policy; if the `o200k_base` tokenizer cannot be loaded, the
+call fails instead of silently changing to another limit.
 
 `read_output` uses `start:stop` inclusive line coordinates. Positive
 endpoints are 1-indexed, endpoints may be omitted, and negative endpoints
