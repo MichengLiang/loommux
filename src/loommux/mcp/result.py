@@ -111,7 +111,7 @@ def _make_image_content(
         decoded = base64.b64decode(element.data, validate=True)
     except (ValueError, TypeError):
         return None, f"Image delivery failed for {location}: invalid Base64 image data."
-    detail = "high" if element.detail is None else element.detail
+    detail = "original" if element.detail is None else element.detail
     if not isinstance(detail, str) or detail not in ALLOWED_IMAGE_DETAILS:
         return None, f"Image delivery failed for {location}: detail must be low, high, or original; received {detail!r}."
     if len(decoded) > limits.max_image_bytes:
