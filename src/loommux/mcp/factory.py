@@ -152,10 +152,10 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         --------
 
         IPython ``display()`` 产生的 PNG、JPEG、WEBP 或单帧 GIF 图像会按输出
-        顺序直接交付给agent。普通 ``display(image)`` 使用高视觉细节；本次展示
+        顺序直接交付给agent。普通 ``display(image)`` 使用 original 细节；本次展示
         需要整体确认或密集文字时，分别书写 ``display(image,
         metadata={"detail": "low"})`` 或 ``display(image, metadata={"detail":
-        "original"})``。``detail`` 只作用于这一处 ``display()`` 调用。
+        "high"})``。``detail`` 只作用于这一处 ``display()`` 调用。
 
         执行编号与后续操作
         --------------------
