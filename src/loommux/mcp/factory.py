@@ -28,6 +28,11 @@ from loommux.resource.settings import ResourceServerSettings
 from loommux.session import IPythonSession
 from loommux.workspace_resolver import resolve_workspace_launch
 
+# Claude Code persists text results above 50,000 characters to a file unless the
+# tool declares its own ceiling. Tools that deliver an execution's full body opt in
+# to a higher host ceiling; loommux's own delivery policy is unchanged.
+_FULL_BODY_TOOL_META = {"anthropic/maxResultSizeChars": 200_000}
+
 
 def create_mcp(result_mode: ResultMode) -> FastMCP:
     """Build one MCP server whose tools consume selected kernel resources."""
@@ -103,7 +108,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
     install_lease_aware_ping_handler(mcp, lambda: manager)
     install_control_routes(mcp, lambda: manager)
 
-    @mcp.tool(output_schema=None)
+    @mcp.tool(output_schema=None, meta=_FULL_BODY_TOOL_META)
     async def run_cell(freeform: str, ctx: Context) -> ToolResult:
         """向持久 IPython kernel 提交一个原始 IPython cell。
 
@@ -304,7 +309,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         """
         return await call("search_output", ctx, lambda session: session.search_output(query, execution, stream, query_mode, context_before, context_after, ignore_case, max_chars))
 
-    @mcp.tool(output_schema=None)
+    @mcp.tool(output_schema=None, meta=_FULL_BODY_TOOL_META)
     async def wait(ctx: Context, execution: int | None = None, timeout_seconds: float = 30) -> ToolResult:
         """等待一个 execution 结束，或在指定时限到达时返回其当前状态。
 
