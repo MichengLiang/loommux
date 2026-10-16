@@ -20,6 +20,16 @@ _IPYTHON_COLOR_CLEANUP = (
     "os.environ.pop('CLICOLOR_FORCE', None); "
     "os.environ.pop('FORCE_COLOR', None)"
 )
+# Agents submit source, not pasted REPL transcripts. IPython's prompt strippers run
+# before cell-magic dispatch, so an indented ``>>>`` line anywhere in a cell would
+# rewrite every ``>>>`` and ``...`` prefix, including doctest text in magic bodies.
+_IPYTHON_PROMPT_STRIPPING_REMOVAL = (
+    "import IPython.core.inputtransformer2 as _loommux_it2; "
+    "_loommux_tm = get_ipython().input_transformer_manager; "
+    "_loommux_tm.cleanup_transforms = [t for t in _loommux_tm.cleanup_transforms "
+    "if t not in (_loommux_it2.classic_prompt, _loommux_it2.ipython_prompt)]; "
+    "del _loommux_it2, _loommux_tm"
+)
 
 
 @dataclass(frozen=True)
@@ -60,6 +70,7 @@ class KernelLaunch:
             "--HistoryManager.enabled=False",
             "--InteractiveShellApp.exec_PYTHONSTARTUP=False",
             f"--InteractiveShellApp.exec_lines={_IPYTHON_COLOR_CLEANUP}",
+            f"--InteractiveShellApp.exec_lines={_IPYTHON_PROMPT_STRIPPING_REMOVAL}",
         )
         return cls(command, environment, runtime_root, ipython_dir, jupyter_config_dir, connection_file)
 

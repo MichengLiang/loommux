@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from loommux.kernel.launch import KernelLaunch
+from loommux.kernel.launch import _IPYTHON_PROMPT_STRIPPING_REMOVAL, KernelLaunch
 from loommux.kernel.runtime import KernelRuntime, _kernel_spec, _KernelContainment
 from loommux.session import IPythonSession
 
@@ -44,6 +44,7 @@ def test_kernel_launch_builds_the_required_command_and_controlled_environment(tm
                 "os.environ.pop('CLICOLOR_FORCE', None); "
                 "os.environ.pop('FORCE_COLOR', None)"
             ),
+            f"--InteractiveShellApp.exec_lines={_IPYTHON_PROMPT_STRIPPING_REMOVAL}",
         )
         assert launch.ipython_dir.is_dir()
         assert launch.jupyter_config_dir.is_dir()
@@ -315,7 +316,9 @@ def _assert_kernel_policy(session: IPythonSession, launch: KernelLaunch) -> None
         "print(shell.cache_size)\n"
         "print(shell.colors)\n"
         "print({name: os.environ.get(name) for name in ('FORCE_COLOR', 'CLICOLOR', 'CLICOLOR_FORCE')})\n"
-        "print(os.environ['LOOMMUX_TEST_PRESERVED'])"
+        "print(os.environ['LOOMMUX_TEST_PRESERVED'])\n"
+        "print(shell.transform_cell('%%body\\n    >>> add(1, 2)\\n    ... 3\\n'))\n"
+        "print('_loommux_it2' in shell.user_ns, '_loommux_tm' in shell.user_ns)"
     )
 
     assert response["status"] == "completed"
@@ -326,6 +329,9 @@ def _assert_kernel_policy(session: IPythonSession, launch: KernelLaunch) -> None
     assert lines[4].lower() == "nocolor"
     assert lines[5] == "{'FORCE_COLOR': None, 'CLICOLOR': None, 'CLICOLOR_FORCE': None}"
     assert lines[6] == "preserved"
+    # Doctest prompts in a cell body reach the magic unchanged.
+    assert "    >>> add(1, 2)\\n    ... 3\\n" in lines[7]
+    assert lines[-1] == "False False"
 
 
 def _assert_hostile_user_state_is_untouched(profile_marker: Path, jupyter_marker: Path, python_startup_marker: Path, history_database: Path, original_mtime_ns: int) -> None:
