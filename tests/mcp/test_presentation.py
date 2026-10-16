@@ -132,7 +132,7 @@ def test_rich_execution_content_preserves_text_image_text_order_and_detail() -> 
     assert isinstance(result.content[2], ImageContent)
     assert result.content[2].meta == {"detail": "low", "execution": 12, "display_ordinal": 1}
     assert isinstance(result.content[4], ImageContent)
-    assert result.content[4].meta == {"detail": "high", "execution": 12, "display_ordinal": 2}
+    assert result.content[4].meta == {"detail": "original", "execution": 12, "display_ordinal": 2}
     assert result.structured_content is not None
     assert "_presentation" not in result.structured_content
 

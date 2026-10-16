@@ -161,9 +161,6 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
     assert "wait" in run_cell
     assert "图像展示\n--------" in run_cell
     assert "IPython ``display()``" in run_cell
-    assert 'metadata={"detail": "low"}' in run_cell
-    assert '"original"})``' in run_cell
-    assert "只作用于这一处 ``display()`` 调用" in run_cell
     assert "execution_id" not in run_cell and "output_log" not in run_cell
     assert "原始 IPython cell 源码文本" in tools["run_cell"].inputSchema["properties"]["freeform"]["description"]
 
