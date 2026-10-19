@@ -554,6 +554,13 @@ class KernelResourceManager:
             "active_operations": resource.active_operations,
             "busy": resource.is_busy,
             "kernel_pid": session_status.get("kernel_pid"),
+            "kernel_state": (
+                "running"
+                if session_status.get("kernel_started")
+                else "restarting"
+                if session_status.get("kernel_restarting")
+                else "stopped"
+            ),
             "current_execution": session_status.get("current_execution"),
             "recent_execution": session_status.get("recent_execution"),
             "execution_count": len(resource.session.executions),

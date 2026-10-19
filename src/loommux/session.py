@@ -31,6 +31,7 @@ class IPythonSession:
         self.executions: dict[int, Execution] = {}
         self.current_execution: int | None = None
         self.recent_execution: int | None = None
+        self._kernel_restarting = False
         self._next_execution = 1
         self._lock = threading.RLock()
 
@@ -127,6 +128,7 @@ class IPythonSession:
                 "workspace_resolution": self.workspace_resolution,
                 "python": str(self.python_path) if self.python_path is not None else None,
                 "kernel_started": kernel is not None,
+                "kernel_restarting": self._kernel_restarting,
                 "kernel_pid": kernel.pid if kernel is not None else None,
                 "busy": self.current_execution is not None,
                 "current_execution": self.current_execution,
@@ -192,17 +194,15 @@ class IPythonSession:
             if self.workspace is None or self.python_path is None or self.kernel is not old_kernel:
                 return {"ok": False, "status": "kernel_not_started", "message": "kernel is not started"}
             self.kernel = None
+            self._kernel_restarting = True
             self.current_execution = None
             record.record_error({"ename": "KeyboardInterrupt", "evalue": "", "traceback": []})
             record.finish()
             workspace, python_path = self.workspace, self.python_path
-        old_kernel.shutdown(mark_execution_killed=False)
         try:
-            kernel = self._start_kernel(workspace, python_path)
+            kernel = self._replace_kernel(old_kernel, workspace, python_path)
         except Exception as exc:
             return self._workspace_error("kernel_start_failed", f"kernel failed to restart after interrupt: {exc}", workspace, python_path)
-        with self._lock:
-            self.kernel = kernel
         return {"ok": True, "status": "interrupt_sent", "execution": record.execution, "kernel_pid": kernel.pid}
 
     def restart(self) -> dict[str, Any]:
@@ -212,17 +212,14 @@ class IPythonSession:
             workspace, python_path, old_kernel = self.workspace, self.python_path, self.kernel
             running = self.executions.get(self.current_execution) if self.current_execution is not None else None
             self.kernel = None
+            self._kernel_restarting = True
             self.current_execution = None
             if running is not None and running.is_running:
                 running.kill()
-        if old_kernel is not None:
-            old_kernel.shutdown(mark_execution_killed=False)
         try:
-            kernel = self._start_kernel(workspace, python_path)
+            kernel = self._replace_kernel(old_kernel, workspace, python_path)
         except Exception as exc:
             return self._workspace_error("kernel_start_failed", f"kernel failed to restart: {exc}", workspace, python_path)
-        with self._lock:
-            self.kernel = kernel
         return {"ok": True, "status": "restarted", "workspace": str(workspace), "workspace_resolution": self.workspace_resolution, "python": str(python_path), "kernel_started": True, "kernel_pid": kernel.pid, "busy": False, "current_execution": None, "recent_execution": self.recent_execution}
 
     def _close_kernel(self) -> None:
@@ -286,6 +283,25 @@ class IPythonSession:
             self._on_execution_idle,
             self._on_kernel_exit,
         )
+
+    def _replace_kernel(self, old_kernel: KernelSession | None, workspace: Path, python_path: Path) -> KernelSession:
+        """Install a new kernel after the caller detached ``old_kernel``.
+
+        The caller sets ``_kernel_restarting`` in the same locked step that
+        detaches the old kernel, so ``status()`` reports the gap as a restart
+        rather than as a stopped kernel. This clears it whether the start
+        succeeds or raises; after a failure the session has no kernel.
+        """
+        try:
+            if old_kernel is not None:
+                old_kernel.shutdown(mark_execution_killed=False)
+            kernel = self._start_kernel(workspace, python_path)
+            with self._lock:
+                self.kernel = kernel
+            return kernel
+        finally:
+            with self._lock:
+                self._kernel_restarting = False
 
     def _start_kernel(self, workspace: Path, python_path: Path) -> KernelSession:
         """Start a new kernel process, giving a failed start one fresh process.

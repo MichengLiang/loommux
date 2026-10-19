@@ -95,6 +95,7 @@ def test_read_search_and_status_surfaces_are_output_oriented() -> None:
     assert format_tool_result_text("read_output", {"ok": True, "returned_lines": 0, "text": ""}) == "No output lines are available."
     assert format_tool_result_text("search_output", {"ok": True, "matched_lines": 0}) == "No matching output lines were found."
     assert format_tool_result_text("status", {"ok": True, "kernel_started": True, "busy": False, "recent_execution": 5, "workspace": "/tmp/ws", "workspace_resolution": "launch_cwd"}) == "kernel: idle\nrecent_execution: 5\nworkspace: /tmp/ws\nworkspace_resolution: launch_cwd"
+    assert format_tool_result_text("status", {"ok": True, "kernel_started": False, "kernel_restarting": True, "busy": False, "recent_execution": 5}).startswith("kernel: restarting\n")
     assert format_tool_result_text("execution_status", {"ok": True, "execution": 5, "status": "completed", "output_total_lines": 2}).startswith("execution 5: completed")
 
 

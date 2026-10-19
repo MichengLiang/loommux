@@ -44,8 +44,10 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   requires a server whose `/api/lease-policy` publishes it; pair client and
   server from the same release.
 - A resource no longer has a `crashed` lifecycle. A registered resource is
-  `running` or `orphaned`; a kernel process that is not alive shows as a
-  `null` `kernel_pid` in `/api/resources` and as "not running" in the console.
+  `running` or `orphaned`. `/api/resources` reports the kernel separately as
+  `kernel_state` (`running`, `restarting`, or `stopped`) with a `null`
+  `kernel_pid` while no kernel runs; the console shows "restarting" or "not
+  running", and the `status` tool shows `kernel: restarting` during a restart.
 
 ### Fixed
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -112,6 +113,38 @@ def test_kernel_start_reports_failure_after_the_retry(tmp_path: Path, monkeypatc
         assert started["status"] == "kernel_start_failed"
         assert "transient startup failure" in started["message"]
         assert not kernels
+    finally:
+        session.close()
+
+
+def test_status_reports_a_restart_in_progress_and_clears_it_after_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    entered = threading.Event()
+    release = threading.Event()
+
+    class SlowKernel(ControlledKernel):
+        def start(self) -> None:
+            entered.set()
+            assert release.wait(timeout=5)
+            super().start()
+
+    session = IPythonSession()
+    kernels: list[ControlledKernel] = [ControlledKernel(False), SlowKernel(False), ControlledKernel(True), ControlledKernel(True)]
+    monkeypatch.setattr(session, "_new_kernel_session", lambda *_args: kernels.pop(0))
+    try:
+        assert session.start_workspace(workspace, "launch_cwd")["ok"] is True
+        restart = threading.Thread(target=session.restart)
+        restart.start()
+        assert entered.wait(timeout=5)
+        during = session.status()
+        release.set()
+        restart.join(timeout=5)
+
+        assert (during["kernel_started"], during["kernel_restarting"]) == (False, True)
+        assert session.status()["kernel_restarting"] is False
+        assert session.restart()["status"] == "kernel_start_failed"
+        assert (session.status()["kernel_started"], session.status()["kernel_restarting"]) == (False, False)
     finally:
         session.close()
 

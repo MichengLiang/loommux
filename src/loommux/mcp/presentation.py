@@ -147,7 +147,15 @@ def _search_output_surface(status: Mapping[str, Any]) -> str:
 
 
 def _python_status_surface(status: Mapping[str, Any]) -> str:
-    state = "busy" if status.get("busy") is True else "idle" if status.get("kernel_started") is True else "not_started"
+    state = (
+        "busy"
+        if status.get("busy") is True
+        else "idle"
+        if status.get("kernel_started") is True
+        else "restarting"
+        if status.get("kernel_restarting") is True
+        else "not_started"
+    )
     lines = [f"kernel: {state}"]
     if state == "busy":
         lines.append(f"current_execution: {_compact(status.get('current_execution'))}")

@@ -36,6 +36,7 @@ class FakeSession:
         self.executions: dict[int, object] = {}
         self.closed = False
         self.interrupt_count = 0
+        self.restarting = False
 
     def start_workspace(
         self,
@@ -58,6 +59,7 @@ class FakeSession:
     def status(self) -> dict[str, Any]:
         return {
             "kernel_started": self.kernel is not None,
+            "kernel_restarting": self.restarting,
             "kernel_pid": self.kernel.pid if self.kernel else None,
             "current_execution": self.current_execution,
             "recent_execution": self.recent_execution,
@@ -327,6 +329,7 @@ def test_observers_report_a_dead_kernel_without_changing_the_lifecycle(
         health = await manager.health(resource.resource_id)
 
         assert snapshot["kernel_pid"] is None
+        assert snapshot["kernel_state"] == "stopped"
         assert snapshot["lifecycle"] == "running"
         assert health["ok"] is False
         assert resource.lifecycle is ResourceLifecycle.RUNNING
@@ -353,9 +356,12 @@ def test_observing_a_restart_gap_does_not_stall_the_next_operation(
 
         def restart(self) -> dict[str, Any]:
             self.kernel = None
+            self.restarting = True
             type(self).in_gap.set()
             assert type(self).release.wait(timeout=2)
-            return super().restart()
+            result = super().restart()
+            self.restarting = False
+            return result
 
     async def scenario() -> None:
         manager = KernelResourceManager(
@@ -374,6 +380,7 @@ def test_observing_a_restart_gap_does_not_stall_the_next_operation(
         [snapshot] = await manager.snapshot()
         await manager.sweep_once()
         assert snapshot["kernel_pid"] is None
+        assert snapshot["kernel_state"] == "restarting"
         GappedRestartSession.release.set()
         await restart
 
@@ -383,6 +390,8 @@ def test_observing_a_restart_gap_does_not_stall_the_next_operation(
         async with manager.operation(address("gap"), client, policy()) as resource:
             assert resource.lifecycle is ResourceLifecycle.RUNNING
             assert resource.kernel_pid is not None
+        [snapshot] = await manager.snapshot()
+        assert snapshot["kernel_state"] == "running"
         await manager.stop()
 
     asyncio.run(scenario())

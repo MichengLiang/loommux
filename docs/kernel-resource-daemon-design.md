@@ -93,8 +93,11 @@ follow its removal from the registry. The states record what the manager has
 done with the resource, and only the manager's own operations change them.
 
 Whether the current kernel process is alive is a separate fact at the next
-identity layer. `IPythonSession` reports it, and `/api/resources` projects it
-as `kernel_pid`, which is `null` while no kernel process runs. Observers (the
+identity layer. `IPythonSession` reports it, including whether a restart has
+detached the old kernel and not yet installed the new one, and `/api/resources`
+projects it as `kernel_state` (`running`, `restarting`, or `stopped`) beside
+`kernel_pid`, which is `null` while no kernel process runs. The `status` tool
+shows the same restart as `kernel: restarting`. Observers (the
 sweep, console refreshes, and `health`) read that fact and never store it as
 resource state: a restart leaves the session briefly without a kernel, and a
 reading taken in that gap must not outlive it. A stored "crashed" reading once
