@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from datetime import UTC, datetime
 from math import isfinite
 from pathlib import Path
@@ -122,7 +122,19 @@ class KernelResourceManager:
         address: ResourceAddress,
         client: LeaseClient,
         policy: LeasePolicy,
+        *,
+        replaces_kernel: bool = False,
     ) -> AsyncIterator[KernelResource]:
+        """Admit one client operation on the resource at ``address``.
+
+        ``replaces_kernel`` marks an operation that may swap the session's
+        kernel process, such as a restart. It then holds the resource's
+        lifecycle lock, which already serializes recovery, control-plane
+        restarts, and retirement: a concurrent call that reads the replacement
+        gap waits in recovery instead of starting a second kernel. Of two
+        concurrent replacements, the kernel installed first is overwritten by
+        the other and never shut down.
+        """
         while True:
             resource = await self.get_or_create(address)
             await self._recover_if_needed(resource)
@@ -147,7 +159,10 @@ class KernelResourceManager:
                 self._record_request_locked(lease)
                 break
         try:
-            yield resource
+            async with resource.lifecycle_lock if replaces_kernel else nullcontext():
+                if replaces_kernel:
+                    await self._assert_registered(resource)
+                yield resource
         finally:
             async with self._registry_lock:
                 resource.active_operations = max(

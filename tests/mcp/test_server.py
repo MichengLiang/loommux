@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import threading
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -9,9 +11,11 @@ from typing import Any
 import pytest
 from fastmcp import Client
 
+from loommux.kernel.session import KernelSession
 from loommux.mcp.factory import create_mcp as create_policy_mcp
 from loommux.mcp.result import make_tool_result
 from loommux.mcp.server import create_mcp as create_default_mcp
+from loommux.session import IPythonSession
 
 WORKSPACE_CONFIG_ENV = "LOOMMUX_WORKSPACE_CONFIG"
 TOKEN_LIGHT_MANY_LINES = "\n".join(f"line-{number}" for number in range(301)) + "\n"
@@ -427,3 +431,36 @@ async def test_in_process_session_is_connected_for_the_process_lifetime(workspac
 
     assert [block.type for block in status.content] == ["text"]
     assert "Lease alert" not in status.content[0].text
+
+
+async def test_a_call_during_the_restart_tool_gap_waits_instead_of_restarting_again(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(workspace)
+    original_restart = IPythonSession.restart
+    original_start = KernelSession.start
+    restarts = 0
+    in_gap = threading.Event()
+
+    def counting_restart(self: IPythonSession) -> dict[str, Any]:
+        nonlocal restarts
+        restarts += 1
+        return original_restart(self)
+
+    def slow_start(self: KernelSession, timeout_seconds: float = 10.0) -> None:
+        # restart has already dropped the old kernel; widen that gap so the
+        # concurrent call below reliably observes it.
+        in_gap.set()
+        time.sleep(0.5)
+        original_start(self, timeout_seconds)
+
+    async with Client(create_structured_mcp()) as client:
+        await client.call_tool("status", {})
+        monkeypatch.setattr(IPythonSession, "restart", counting_restart)
+        monkeypatch.setattr(KernelSession, "start", slow_start)
+        restart = asyncio.create_task(client.call_tool("restart", {}))
+        assert await asyncio.to_thread(in_gap.wait, 5)
+        status = await client.call_tool("status", {})
+        restarted = await restart
+
+    assert restarts == 1
+    assert status.data["kernel_started"] is True
+    assert status.data["kernel_pid"] == restarted.data["kernel_pid"]

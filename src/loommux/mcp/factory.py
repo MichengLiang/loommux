@@ -73,6 +73,8 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         tool_name: str,
         ctx: Context,
         operation: Callable[[IPythonSession], dict[str, Any]],
+        *,
+        replaces_kernel: bool = False,
     ) -> ToolResult:
         selected_manager = manager
         if selected_manager is None:
@@ -100,7 +102,12 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
                 raise ResourceRoutingError(
                     f"server does not know lease policy generation {generation}"
                 )
-            async with selected_manager.operation(address, client, policy) as resource:
+            async with selected_manager.operation(
+                address,
+                client,
+                policy,
+                replaces_kernel=replaces_kernel,
+            ) as resource:
                 status = await asyncio.to_thread(operation, resource.session)
             verdict = await selected_manager.client_verdict(address.key, client.client_id)
             if verdict is not None and verdict.standing.alert:
@@ -403,7 +410,13 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         Returns:
             已发送信号时返回目标 ``execution``；kernel 空闲时返回 idle。
         """
-        return await call("interrupt", ctx, lambda session: session.interrupt())
+        # On Windows an interrupt replaces the kernel process.
+        return await call(
+            "interrupt",
+            ctx,
+            lambda session: session.interrupt(),
+            replaces_kernel=True,
+        )
 
     @mcp.tool(output_schema=None)
     async def restart(ctx: Context) -> ToolResult:
@@ -420,6 +433,11 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             新 kernel 的状态与 PID；重启失败时返回 workspace 或 kernel
             启动错误。
         """
-        return await call("restart", ctx, lambda session: session.restart())
+        return await call(
+            "restart",
+            ctx,
+            lambda session: session.restart(),
+            replaces_kernel=True,
+        )
 
     return mcp

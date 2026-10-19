@@ -47,6 +47,10 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   reset that after the restart succeeded, and the next tool call on the
   resource retried without ever yielding the event loop, so the console, new
   connections, Ctrl+C, and SIGTERM all stopped responding.
+- Serialize the `restart` and `interrupt` tools with kernel recovery. A tool
+  call that arrived during a restart and found no kernel started a second
+  kernel, and whichever of the two was installed first was overwritten and
+  never shut down.
 - Check kernel liveness by polling the kernel process instead of calling
   Jupyter's `KernelManager.is_alive`. That call waited on a helper thread
   without a timeout whenever the server's event loop asked (every tool call,

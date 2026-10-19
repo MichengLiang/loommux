@@ -113,6 +113,15 @@ serialize every resource.
 next execution number while replacing the kernel process and namespace.
 `recycle` removes the logical resource and closes its session.
 
+Every operation that may replace the kernel process holds the resource's
+lifecycle lock: the `restart` tool, the Windows `interrupt` tool (ipykernel
+cannot receive Ctrl+C there, so the kernel is replaced), the control-plane
+restart, and recovery of a dead kernel. Retirement holds the same lock. A
+call that arrives during a replacement and finds no kernel therefore waits
+for that replacement in recovery instead of starting a second kernel; of two
+concurrent replacements, the kernel installed first is overwritten by the
+other and never shut down.
+
 If a kernel exits unexpectedly, its running execution is finished as `killed`
 with a `KernelProcessExited` diagnostic. The resource becomes recoverable and
 the next operation restarts the `IPythonSession` under the same resource ID.

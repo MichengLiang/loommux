@@ -386,3 +386,52 @@ def test_observing_a_restart_gap_does_not_stall_the_next_operation(
         await manager.stop()
 
     asyncio.run(scenario())
+
+
+def test_a_kernel_replacing_operation_holds_off_recovery(tmp_path: Path) -> None:
+    class CountingGappedSession(FakeSession):
+        restarts = 0
+        in_gap = threading.Event()
+        release = threading.Event()
+
+        def restart(self) -> dict[str, Any]:
+            type(self).restarts += 1
+            self.kernel = None
+            type(self).in_gap.set()
+            assert type(self).release.wait(timeout=2)
+            return super().restart()
+
+    async def scenario() -> None:
+        manager = KernelResourceManager(
+            tmp_path,
+            "launch_cwd",
+            session_factory=CountingGappedSession,
+        )
+        client = LeaseClient("client", "client")
+
+        async def restart_tool() -> None:
+            async with manager.operation(
+                address("replace"),
+                client,
+                policy(),
+                replaces_kernel=True,
+            ) as resource:
+                await asyncio.to_thread(resource.session.restart)
+
+        async def other_tool() -> int | None:
+            async with manager.operation(address("replace"), client, policy()) as resource:
+                return resource.kernel_pid
+
+        restart = asyncio.create_task(restart_tool())
+        assert await asyncio.to_thread(CountingGappedSession.in_gap.wait, 1)
+        other = asyncio.create_task(other_tool())
+        await asyncio.sleep(0.05)
+        assert not other.done()
+
+        CountingGappedSession.release.set()
+        await restart
+        assert await other is not None
+        assert CountingGappedSession.restarts == 1
+        await manager.stop()
+
+    asyncio.run(scenario())
