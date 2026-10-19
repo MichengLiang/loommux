@@ -50,26 +50,12 @@ class IPythonSession:
             return self._workspace_error("workspace_not_found", "workspace does not exist", workspace, python_path)
         if not workspace.is_dir():
             return self._workspace_error("workspace_not_directory", "workspace path is not a directory", workspace, python_path)
-        kernel: KernelSession | None = None
-        start_error: Exception | None = None
-        # A kernel can miss its first readiness handshake while its ZMQ channels
-        # initialize. Retry once with a fresh process rather than rejecting a
-        # valid workspace because of that transient startup race.
-        for _attempt in range(KERNEL_START_ATTEMPTS):
-            candidate = self._new_kernel_session(workspace, python_path)
-            try:
-                candidate.start()
-            except Exception as exc:
-                start_error = exc
-                # A retry must never retain the failed session's private root.
-                candidate.shutdown(mark_execution_killed=False)
-            else:
-                kernel = candidate
-                break
-        if kernel is None:
-            if isinstance(start_error, TimeoutError):
-                return self._workspace_error("kernel_start_timeout", "kernel did not become ready before timeout", workspace, python_path)
-            return self._workspace_error("kernel_start_failed", f"kernel failed to start: {start_error}", workspace, python_path)
+        try:
+            kernel = self._start_kernel(workspace, python_path)
+        except TimeoutError:
+            return self._workspace_error("kernel_start_timeout", "kernel did not become ready before timeout", workspace, python_path)
+        except Exception as exc:
+            return self._workspace_error("kernel_start_failed", f"kernel failed to start: {exc}", workspace, python_path)
         with self._lock:
             self.workspace, self.workspace_resolution, self.python_path, self.kernel = workspace, workspace_resolution, python_path, kernel
             # A server lifespan has one session. This path is startup only; restart
@@ -211,11 +197,9 @@ class IPythonSession:
             record.finish()
             workspace, python_path = self.workspace, self.python_path
         old_kernel.shutdown(mark_execution_killed=False)
-        kernel = self._new_kernel_session(workspace, python_path)
         try:
-            kernel.start()
+            kernel = self._start_kernel(workspace, python_path)
         except Exception as exc:
-            kernel.shutdown(mark_execution_killed=False)
             return self._workspace_error("kernel_start_failed", f"kernel failed to restart after interrupt: {exc}", workspace, python_path)
         with self._lock:
             self.kernel = kernel
@@ -233,11 +217,9 @@ class IPythonSession:
                 running.kill()
         if old_kernel is not None:
             old_kernel.shutdown(mark_execution_killed=False)
-        kernel = self._new_kernel_session(workspace, python_path)
         try:
-            kernel.start()
+            kernel = self._start_kernel(workspace, python_path)
         except Exception as exc:
-            kernel.shutdown(mark_execution_killed=False)
             return self._workspace_error("kernel_start_failed", f"kernel failed to restart: {exc}", workspace, python_path)
         with self._lock:
             self.kernel = kernel
@@ -304,6 +286,27 @@ class IPythonSession:
             self._on_execution_idle,
             self._on_kernel_exit,
         )
+
+    def _start_kernel(self, workspace: Path, python_path: Path) -> KernelSession:
+        """Start a new kernel process, giving a failed start one fresh process.
+
+        A kernel can miss its first readiness handshake while its ZMQ channels
+        initialize, and over TCP another process can take a port between
+        Jupyter choosing it and the kernel binding it. Neither says anything
+        about the workspace, so every start (first start, restart, and the
+        Windows interrupt replacement) retries before reporting failure. A
+        failed ``KernelSession.start`` has already shut itself down.
+        """
+        for _attempt in range(KERNEL_START_ATTEMPTS - 1):
+            kernel = self._new_kernel_session(workspace, python_path)
+            try:
+                kernel.start()
+            except Exception:
+                continue
+            return kernel
+        kernel = self._new_kernel_session(workspace, python_path)
+        kernel.start()
+        return kernel
 
     @staticmethod
     def _validate_timeout(timeout_seconds: float) -> dict[str, Any] | None:

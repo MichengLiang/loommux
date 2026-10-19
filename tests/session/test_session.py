@@ -49,27 +49,28 @@ def test_omitted_selection_uses_current_then_recent_and_empty_session_is_not_fou
         session.close()
 
 
+class ControlledKernel:
+    """A kernel whose start fails on request; a failed start cleans up after itself."""
+
+    def __init__(self, should_fail: bool) -> None:
+        self.should_fail = should_fail
+        self.pid = 123
+        self.latest_execution_count = 0
+
+    def start(self) -> None:
+        if self.should_fail:
+            raise RuntimeError("transient startup failure")
+
+    def shutdown(self, *, mark_execution_killed: bool = True) -> None:
+        pass
+
+    def is_alive(self) -> bool:
+        return True
+
+
 def test_workspace_start_retries_one_transient_kernel_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-
-    class ControlledKernel:
-        def __init__(self, should_fail: bool) -> None:
-            self.should_fail = should_fail
-            self.pid = 123
-            self.latest_execution_count = 0
-            self.shutdown_calls = 0
-
-        def start(self) -> None:
-            if self.should_fail:
-                raise RuntimeError("transient startup failure")
-
-        def shutdown(self, *, mark_execution_killed: bool = True) -> None:
-            self.shutdown_calls += 1
-
-        def is_alive(self) -> bool:
-            return True
-
     session = IPythonSession()
     failed_kernel = ControlledKernel(True)
     started_kernel = ControlledKernel(False)
@@ -79,7 +80,38 @@ def test_workspace_start_retries_one_transient_kernel_failure(tmp_path: Path, mo
         started = session.start_workspace(workspace, "launch_cwd")
         assert started["ok"] is True
         assert not kernels
-        assert failed_kernel.shutdown_calls == 1
+        assert session.kernel is started_kernel
+    finally:
+        session.close()
+
+
+def test_restart_retries_one_transient_kernel_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session = IPythonSession()
+    replacement = ControlledKernel(False)
+    kernels = [ControlledKernel(False), ControlledKernel(True), replacement]
+    monkeypatch.setattr(session, "_new_kernel_session", lambda *_args: kernels.pop(0))
+    try:
+        assert session.start_workspace(workspace, "launch_cwd")["ok"] is True
+        assert session.restart()["status"] == "restarted"
+        assert not kernels
+        assert session.kernel is replacement
+    finally:
+        session.close()
+
+
+def test_kernel_start_reports_failure_after_the_retry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session = IPythonSession()
+    kernels = [ControlledKernel(True), ControlledKernel(True)]
+    monkeypatch.setattr(session, "_new_kernel_session", lambda *_args: kernels.pop(0))
+    try:
+        started = session.start_workspace(workspace, "launch_cwd")
+        assert started["status"] == "kernel_start_failed"
+        assert "transient startup failure" in started["message"]
+        assert not kernels
     finally:
         session.close()
 

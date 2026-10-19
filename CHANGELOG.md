@@ -64,6 +64,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   that only a full garbage collection freed, which an idle server never ran:
   a server holding one kernel kept 863 file descriptors after a minute of
   load.
+- Retry a failed kernel start once with a fresh process on restart and on the
+  Windows interrupt replacement, as the first start already did. A restart
+  that lost a port to another process failed outright.
 - Raise the console's muted text and green badge colors to WCAG AA contrast
   (4.35:1 and 4.43:1 before), and its policy labels from 11 px to 14 px.
 - Stop demoting the console's small text twice: metric labels go from 10 px
