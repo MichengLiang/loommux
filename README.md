@@ -180,6 +180,11 @@ stack is printed to the server's stderr and the server keeps running. The
 handler runs below the event loop, so it works while the loop is frozen;
 include its output when reporting the hang.
 
+On Linux with glibc, a long-running server with many concurrent clients holds
+memory in per-thread malloc arenas that it has already freed. Starting it with
+`MALLOC_ARENA_MAX=2` keeps that bounded: under the same two-minute load the
+server's resident memory levelled off at 277 MB instead of growing past 600 MB.
+
 ## Kernel Resources And Client Leases
 
 An ordinary MCP connection selects a resource without changing the eight-tool

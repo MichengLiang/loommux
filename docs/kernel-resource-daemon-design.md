@@ -433,6 +433,12 @@ loop free:
    happens to complete synchronously spins forever.
 3. Observers read and never write the state that decides admission. Section 4
    gives the lifecycle rule and the freeze that a stored observation caused.
+4. Operating-system resources are released by their owner when it shuts down,
+   never left to the cyclic garbage collector, which an idle server never
+   runs. Each kernel runtime closes the event loop its Jupyter blocking calls
+   share; the iopub collector closes its own; MCP sessions rely on the SDK's
+   deregistration (section 5). Event loops left to the collector once kept 863
+   descriptors after a minute of load.
 
 When a server stops answering, `kill -USR1 <pid>` prints every thread's stack
 to stderr without stopping it (not on Windows). Take several dumps a second
@@ -440,11 +446,15 @@ or two apart and compare them: a single dump of a spinning loop catches one
 arbitrary frame of the spin and can look like a thread blocked somewhere it
 only passes through.
 
-These rules were verified under load: ten concurrent private and shared
-clients ran random `run_cell`, `wait`, `status`, `interrupt`, and `restart`
-calls, cancelled mid-call and disconnected at random, against a server with a
-0.2-second sweep and 1-second grace periods while a watchdog polled the
-console. Before the fixes it froze within about ten seconds; after them it
-served 4,543 calls from 705 sessions over 180 seconds without an error, the
-console never took longer than 0.2 seconds to answer, and the kernel
-processes matched the registered resources once the load stopped.
+`scripts/stress.py` checks these rules under load and is required for
+lifecycle, concurrency, and output changes (see CONTRIBUTING). Ten concurrent
+private and shared clients run random `run_cell`, `wait`, `status`,
+`interrupt`, and `restart` calls, abandoned mid-call and disconnected at
+random, against a server with a 0.2-second sweep and 1-second grace periods
+while a watchdog polls the console; afterwards every resource is recycled and,
+without a forced garbage collection, the server must hold no kernel process
+and be back at its starting descriptors. Before these rules held it froze
+within about ten seconds, and later kept hundreds of descriptors; now it
+serves about 7,900 calls from 1,200 sessions in 180 seconds without an error,
+the console answers within 0.21 seconds, and it ends with 7 descriptors
+against 8 at start.

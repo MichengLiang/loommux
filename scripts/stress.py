@@ -12,7 +12,10 @@ disconnect at random while a watchdog polls the console.
 
 It fails (exit 3) if the console stops answering for 8 s; the server is then
 sent SIGUSR1, which makes it print every thread's stack into the server log.
-After the load it recycles every resource and, without forcing a garbage
+It fails (exit 1) on any client error other than the client library's own
+race on a stream it abandoned, and on a server log that records an ASGI
+exception or a crashed MCP session. After the load it recycles every
+resource and, without forcing a garbage
 collection, requires the server to hold no kernel processes and to return to
 its starting file descriptors (exit 1 otherwise). Those are the two ways a
 long-running server failed before: an event loop that never yielded, and
@@ -28,6 +31,7 @@ import json
 import logging
 import os
 import random
+import re
 import signal
 import socket
 import subprocess
@@ -62,12 +66,16 @@ CONSOLE_STALL_SECONDS = 8
 # collector cost three descriptors per kernel start or shutdown, 863 after a
 # 60 s run, so a small allowance separates noise from that failure.
 FD_ALLOWANCE = 12
+# What uvicorn and the MCP SDK log when a request or a session fails on the
+# server's side ("Session <id> crashed", "Stateless session crashed").
+SERVER_FAILURE = re.compile(r"Exception in ASGI application|[Ss]ession (\S+ )?crashed")
 
 
 class Stats:
     def __init__(self) -> None:
         self.calls = 0
         self.errors = 0
+        self.abandoned_stream_races = 0
         self.sessions = 0
         self.max_console_seconds = 0.0
 
@@ -115,6 +123,7 @@ def _run(server: subprocess.Popen[bytes], base: str, options: argparse.Namespace
     report: dict[str, object] = {
         "calls": stats.calls,
         "errors": stats.errors,
+        "abandoned_stream_races": stats.abandoned_stream_races,
         "sessions": stats.sessions,
         "max_console_seconds": round(stats.max_console_seconds, 3),
         "server_log": str(log_path),
@@ -146,9 +155,14 @@ def _run(server: subprocess.Popen[bytes], base: str, options: argparse.Namespace
     else:
         failures = []
         report["descriptors"] = "not checked on this platform"
+    server_failures = [line for line in log_path.read_text().splitlines() if SERVER_FAILURE.search(line)]
+    if server_failures:
+        failures.append(f"server logged {len(server_failures)} failures, first: {server_failures[0][:160]}")
+    if stats.errors:
+        failures.append(f"{stats.errors} client errors")
     report["result"] = "; ".join(failures) or "ok"
     print(json.dumps(report, indent=2))
-    return 1 if failures or stats.errors else 0
+    return 1 if failures else 0
 
 
 async def _load(base: str, options: argparse.Namespace, stats: Stats) -> bool:
@@ -192,6 +206,11 @@ async def _client_loop(base: str, name: str, resource: str | None, deadline: flo
                     with anyio.move_on_after(random.choice((0.2, 2, 30))):
                         await client.call_tool(*_random_call(), raise_on_error=False)
                     stats.calls += 1
+        except (anyio.ClosedResourceError, anyio.BrokenResourceError):
+            # The MCP client sometimes trips over a stream it closed itself
+            # after a call was abandoned midway; the server log is the
+            # authority on server-side failures.
+            stats.abandoned_stream_races += 1
         except Exception as exc:
             stats.errors += 1
             print(f"{name}: {type(exc).__name__}: {exc}"[:200], file=sys.stderr, flush=True)
