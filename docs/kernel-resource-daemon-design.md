@@ -391,3 +391,41 @@ src/loommux/client.py
 `IPythonSession` remains protocol-neutral. It owns one logical workbench's
 execution history and replaceable `KernelSession`; resource code owns
 multiplicity and participation; MCP code owns transport projection.
+
+## 11. Event-loop discipline
+
+An HTTP server runs every tool call, the sweep, the console, the control
+plane, and uvicorn's own Ctrl+C and SIGTERM handling on one asyncio event
+loop. Anything that holds that loop stops all of them at once, and the
+operator can no longer even stop the process gracefully. Three rules keep the
+loop free:
+
+1. Work that can take long runs in worker threads: kernel start, restart,
+   shutdown, interrupt, and waits on a running cell all go through
+   `asyncio.to_thread`. What stays on the loop must be cheap and bounded.
+   Kernel liveness, read on the loop by every tool call, sweep, and console
+   refresh, is therefore a poll of the kernel process. Jupyter's
+   `KernelManager.is_alive` is not: it is a `run_sync` wrapper that, called
+   from a thread with a running loop, waits on a helper thread without a
+   timeout.
+2. A retry loop on the event loop must suspend between attempts, or be
+   unable to repeat without one. Awaiting a coroutine that completes without
+   suspending does not yield the loop, so a `while True` whose every await
+   happens to complete synchronously spins forever.
+3. Observers read and never write the state that decides admission. Section 4
+   gives the lifecycle rule and the freeze that a stored observation caused.
+
+When a server stops answering, `kill -USR1 <pid>` prints every thread's stack
+to stderr without stopping it (not on Windows). Take several dumps a second
+or two apart and compare them: a single dump of a spinning loop catches one
+arbitrary frame of the spin and can look like a thread blocked somewhere it
+only passes through.
+
+These rules were verified under load: ten concurrent private and shared
+clients ran random `run_cell`, `wait`, `status`, `interrupt`, and `restart`
+calls, cancelled mid-call and disconnected at random, against a server with a
+0.2-second sweep and 1-second grace periods while a watchdog polled the
+console. Before the fixes it froze within about ten seconds; after them it
+served 4,543 calls from 705 sessions over 180 seconds without an error, the
+console never took longer than 0.2 seconds to answer, and the kernel
+processes matched the registered resources once the load stopped.
