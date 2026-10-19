@@ -174,6 +174,7 @@ def test_dead_kernel_is_recovered_inside_the_same_logical_resource(
                 named_activity_timeout_seconds=30,
                 heartbeat_interval_seconds=10,
                 heartbeat_timeout_seconds=20,
+                connection_grace_seconds=20,
             ),
         ) as recovered:
             assert recovered.resource_id == resource_id

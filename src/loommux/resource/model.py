@@ -47,8 +47,12 @@ class LeaseClient:
 class ClientLease:
     """One client's immutable policy snapshot and mutable liveness facts.
 
-    ``renewed_at`` is a monotonic timestamp; ``last_seen_at`` is the same
-    renewal on the wall clock, kept only for operators reading snapshots.
+    ``renewed_at`` and ``requested_at`` are monotonic timestamps.
+    ``renewed_at`` moves whenever the lease is renewed, including when the
+    server finishes an operation; ``requested_at`` moves only when the client
+    itself sends something (a tool call or a ping), so it alone is evidence
+    that the client is still alive. ``last_seen_at`` is the latest renewal on
+    the wall clock, kept only for operators reading snapshots.
     """
 
     lease_id: str
@@ -57,6 +61,7 @@ class ClientLease:
     created_at: datetime
     last_seen_at: datetime
     renewed_at: float
+    requested_at: float
     active_operations: int = 0
 
     @classmethod
@@ -68,13 +73,15 @@ class ClientLease:
         now: datetime | None = None,
     ) -> ClientLease:
         timestamp = datetime.now(UTC) if now is None else now
+        instant = monotonic()
         return cls(
             lease_id=uuid4().hex,
             client=client,
             policy=policy,
             created_at=timestamp,
             last_seen_at=timestamp,
-            renewed_at=monotonic(),
+            renewed_at=instant,
+            requested_at=instant,
         )
 
 

@@ -86,6 +86,11 @@ def install_control_routes(
                     "heartbeat_timeout_seconds",
                     previous.heartbeat_timeout_seconds,
                 ),
+                connection_grace_seconds=_number(
+                    body,
+                    "connection_grace_seconds",
+                    previous.connection_grace_seconds,
+                ),
             )
         except (
             ValueError,

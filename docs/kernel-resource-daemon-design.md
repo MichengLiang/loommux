@@ -122,6 +122,7 @@ LeasePolicy
     named_activity_timeout_seconds
     heartbeat_interval_seconds
     heartbeat_timeout_seconds
+    connection_grace_seconds
 ```
 
 The current defaults may change, but an existing lease continues to use the
@@ -133,6 +134,19 @@ and sends the selected generation in
 `X-Loommux-Lease-Policy-Generation`. This closes the race between policy
 discovery and first resource use.
 
+A lease does not store a deadline. It records renewal facts and
+`resource/liveness.py` derives its standing on demand, so the sweeper, the
+resource snapshot, and the tool-result alert read one decision:
+
+```text
+ClientLease
+    renewed_at      every renewal, including operation completion
+    requested_at    only client-originated traffic: tool-call entry and ping
+```
+
+`requested_at` alone is evidence that the client is alive; completion of a
+long operation after the client left proves nothing about the client.
+
 ### Activity mode
 
 Tool entry and completion refresh the lease deadline. Private and named
@@ -143,6 +157,53 @@ resources use their corresponding fixed activity timeout.
 Tool activity and successful standard MCP `ping` refresh the heartbeat
 deadline. The client sends ping at the advertised interval. The timeout must
 be greater than the interval.
+
+### Connection mode
+
+A connection lease is held for as long as its MCP session keeps a standalone
+server-push stream open: the Streamable HTTP `GET` stream that a client opens
+after initialization, or the process's own standard streams for stdio. A
+client that holds that stream for its whole lifetime turns "the stream is
+open" into "the client is still there", without sending anything: when the
+client process exits, its socket closes and so does the stream. Claude Code
+2.1.303 behaves this way; it opens the stream right after
+`notifications/initialized`, never pings while idle, does not send `DELETE`
+on exit, and its stream closes within about a second of `/exit` or
+`kill -9`.
+
+`ConnectionRegistry` (`resource/connections.py`) records the transport facts
+per session: when it was first seen, how many streams are open, when the
+count last fell to zero, and whether the session is bound to the process
+lifetime. `assess_lease()` turns them into one standing:
+
+| Standing | Condition | Lease |
+| --- | --- | --- |
+| `connected` | a stream is open, or the session is bound to the process | held, no expiry |
+| `awaiting_stream` | no stream yet, within grace of first sight | held while the grace runs |
+| `reconnecting` | stream closed, within grace of the close | held while the grace runs |
+| `disconnected` | closed, grace over, no request since the close | released |
+| `unbound` | no stream ever, grace over | alert; activity window |
+| `stream_lost` | closed, grace over, a request arrived after the close | alert; activity window |
+
+The two alert standings mean the client's transport no longer behaves the
+way this mode relies on. Such a lease degrades to the activity window of its
+own policy generation instead of being released, so a client whose behavior
+changed keeps working as it would under activity mode while the alert stays
+visible. A later stream returns the lease to `connected`.
+
+`connection_grace_seconds` defaults to 60. The MCP TypeScript SDK embedded in
+Claude Code retries a dropped stream twice, 1 s and then 1.5 s apart, so a
+minute absorbs a reconnect with wide margin while a closed host still
+releases its kernel within about one sweep after that minute.
+
+The registry forgets a session once it is disconnected and no lease refers
+to it. A forgotten session that later calls a tool is judged as never having
+opened a stream, which still alerts if no stream follows.
+
+### Ping renewal
+
+A successful standard MCP `ping` renews an existing lease under every mode
+and counts as client-originated traffic.
 
 Renewal attaches to the SDK's low-level ping request handler. FastMCP 3.x
 answers `ping` before its middleware chain, so the handler registry is the only
@@ -157,8 +218,9 @@ also separate from client liveness and does not renew participation.
 
 ## 6. Expiry and orphaned execution
 
-A sweep first removes expired leases whose client has no active operation.
-It then evaluates resources with no remaining participants.
+A sweep first removes leases whose standing is expired and whose client has
+no active operation. It then evaluates resources with no remaining
+participants and forgets disconnected sessions that no lease refers to.
 
 An idle unowned resource is reclaimed immediately. A resource whose cell is
 still running enters `orphaned`. This distinction matters because a loommux
@@ -225,8 +287,11 @@ the MCP client context closes.
 | `LOOMMUX_NAMED_TTL_SECONDS` | `86400` |
 | `LOOMMUX_HEARTBEAT_INTERVAL_SECONDS` | `15` |
 | `LOOMMUX_HEARTBEAT_TIMEOUT_SECONDS` | `60` |
+| `LOOMMUX_CONNECTION_GRACE_SECONDS` | `60` |
 | `LOOMMUX_SWEEP_INTERVAL_SECONDS` | `10` |
 | `LOOMMUX_ORPHAN_GRACE_SECONDS` | `30` |
+
+`LOOMMUX_LEASE_MODE` accepts `activity`, `heartbeat`, or `connection`.
 
 The lease durations are declared once in `resource/policy.py`; the settings
 dataclass and the environment reader both resolve to those same values, so an
@@ -241,6 +306,8 @@ than heartbeat interval.
 src/loommux/resource/
     model.py       resource, lease, address, and lifecycle values
     policy.py      immutable policy generations
+    connections.py per-session stream presence reported by the transport
+    liveness.py    lease standing derived from renewal and presence facts
     settings.py    server-owned environment defaults
     routing.py     MCP request identity to resource address
     manager.py     provisioning, leases, recovery, sweeping, and retirement

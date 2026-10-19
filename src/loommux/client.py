@@ -35,6 +35,7 @@ class RemoteLeasePolicy:
     named_activity_timeout_seconds: float
     heartbeat_interval_seconds: float
     heartbeat_timeout_seconds: float
+    connection_grace_seconds: float
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> RemoteLeasePolicy:
@@ -45,14 +46,16 @@ class RemoteLeasePolicy:
             named_activity_timeout_seconds=float(payload["named_activity_timeout_seconds"]),
             heartbeat_interval_seconds=float(payload["heartbeat_interval_seconds"]),
             heartbeat_timeout_seconds=float(payload["heartbeat_timeout_seconds"]),
+            connection_grace_seconds=float(payload["connection_grace_seconds"]),
         )
-        if policy.mode not in {"activity", "heartbeat"} or policy.generation <= 0:
+        if policy.mode not in {"activity", "heartbeat", "connection"} or policy.generation <= 0:
             raise ValueError("server returned an invalid lease policy identity")
         durations = (
             policy.private_activity_timeout_seconds,
             policy.named_activity_timeout_seconds,
             policy.heartbeat_interval_seconds,
             policy.heartbeat_timeout_seconds,
+            policy.connection_grace_seconds,
         )
         if any(not isfinite(value) or value <= 0 for value in durations):
             raise ValueError("server returned an invalid lease duration")
@@ -62,7 +65,13 @@ class RemoteLeasePolicy:
 
 
 class LeaseAwareClient:
-    """Pin one server policy generation and own its heartbeat task."""
+    """Pin one server policy generation and own its heartbeat task.
+
+    Only a heartbeat policy needs work from this client. A connection policy
+    is satisfied by the transport itself: the FastMCP Streamable HTTP client
+    keeps the session's standalone GET stream open for the whole context, and
+    that open stream is what holds the lease.
+    """
 
     def __init__(
         self,

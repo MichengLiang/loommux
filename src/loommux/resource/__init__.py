@@ -1,5 +1,7 @@
 """Own logical IPython resources independently from MCP transports."""
 
+from loommux.resource.connections import ConnectionRegistry, SessionPresence
+from loommux.resource.liveness import LeaseStanding, LeaseVerdict, assess_lease
 from loommux.resource.manager import (
     KernelResourceManager,
     ResourceBusyError,
@@ -28,12 +30,15 @@ from loommux.resource.settings import ResourceServerSettings
 
 __all__ = [
     "ClientLease",
+    "ConnectionRegistry",
     "KernelResource",
     "KernelResourceManager",
     "LeaseClient",
     "LeaseMode",
     "LeasePolicy",
     "LeasePolicyManager",
+    "LeaseStanding",
+    "LeaseVerdict",
     "ResourceServerSettings",
     "ResourceAddress",
     "ResourceBusyError",
@@ -42,9 +47,11 @@ __all__ = [
     "ResourceNotFoundError",
     "ResourceProvisionError",
     "ResourceRoutingError",
+    "SessionPresence",
     "RESOURCE_HEADER",
     "OPERATOR_HEADER",
     "LEASE_POLICY_GENERATION_HEADER",
+    "assess_lease",
     "resolve_address",
     "resolve_client",
     "resolve_policy_generation",

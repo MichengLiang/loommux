@@ -21,6 +21,7 @@ def test_policy_updates_are_versioned_and_idempotent() -> None:
             named_activity_timeout_seconds=90,
             heartbeat_interval_seconds=15,
             heartbeat_timeout_seconds=60,
+            connection_grace_seconds=60,
         )
         second = await manager.update(
             mode=LeaseMode.HEARTBEAT,
@@ -28,6 +29,7 @@ def test_policy_updates_are_versioned_and_idempotent() -> None:
             named_activity_timeout_seconds=120,
             heartbeat_interval_seconds=10,
             heartbeat_timeout_seconds=50,
+            connection_grace_seconds=45,
         )
 
         assert unchanged is first
@@ -52,3 +54,9 @@ def test_policy_rejects_invalid_heartbeat_windows(
             heartbeat_interval_seconds=interval,
             heartbeat_timeout_seconds=timeout,
         )
+
+
+@pytest.mark.parametrize("grace", [0, -1, float("nan"), float("inf")])
+def test_policy_rejects_an_invalid_connection_grace(grace: float) -> None:
+    with pytest.raises(ValueError, match="connection grace"):
+        LeasePolicyManager(connection_grace_seconds=grace)

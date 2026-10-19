@@ -13,6 +13,7 @@ class LeaseMode(StrEnum):
 
     ACTIVITY = "activity"
     HEARTBEAT = "heartbeat"
+    CONNECTION = "connection"
 
 
 # Generation-one lease durations are declared exactly once here. Server settings
@@ -25,6 +26,12 @@ DEFAULT_PRIVATE_ACTIVITY_TIMEOUT_SECONDS: float = 80 * 60
 DEFAULT_NAMED_ACTIVITY_TIMEOUT_SECONDS: float = 24 * 60 * 60
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS: float = 15
 DEFAULT_HEARTBEAT_TIMEOUT_SECONDS: float = 60
+# How long a connection lease waits for a standalone stream, either the first
+# one or a replacement after a drop, before deciding. The MCP TypeScript SDK
+# that Claude Code embeds retries a dropped stream twice, 1 s and then 1.5 s
+# apart, so a minute absorbs any reconnect with wide margin while a closed
+# host still releases its kernel within roughly one sweep after that minute.
+DEFAULT_CONNECTION_GRACE_SECONDS: float = 60
 
 
 @dataclass(frozen=True)
@@ -37,8 +44,14 @@ class LeasePolicy:
     named_activity_timeout_seconds: float
     heartbeat_interval_seconds: float
     heartbeat_timeout_seconds: float
+    connection_grace_seconds: float
 
     def timeout_for(self, *, shared: bool) -> float:
+        """Return the renewal window that expires an unrenewed lease.
+
+        A connection lease is held by its open stream instead; it uses the
+        activity window only after it has degraded to activity semantics.
+        """
         if self.mode is LeaseMode.HEARTBEAT:
             return self.heartbeat_timeout_seconds
         if shared:
@@ -53,6 +66,7 @@ class LeasePolicy:
             "named_activity_timeout_seconds": self.named_activity_timeout_seconds,
             "heartbeat_interval_seconds": self.heartbeat_interval_seconds,
             "heartbeat_timeout_seconds": self.heartbeat_timeout_seconds,
+            "connection_grace_seconds": self.connection_grace_seconds,
         }
 
 
@@ -67,12 +81,14 @@ class LeasePolicyManager:
         named_activity_timeout_seconds: float = DEFAULT_NAMED_ACTIVITY_TIMEOUT_SECONDS,
         heartbeat_interval_seconds: float = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
         heartbeat_timeout_seconds: float = DEFAULT_HEARTBEAT_TIMEOUT_SECONDS,
+        connection_grace_seconds: float = DEFAULT_CONNECTION_GRACE_SECONDS,
     ) -> None:
         self._validate(
             private_activity_timeout_seconds=private_activity_timeout_seconds,
             named_activity_timeout_seconds=named_activity_timeout_seconds,
             heartbeat_interval_seconds=heartbeat_interval_seconds,
             heartbeat_timeout_seconds=heartbeat_timeout_seconds,
+            connection_grace_seconds=connection_grace_seconds,
         )
         self._policy = LeasePolicy(
             mode=initial_mode,
@@ -81,6 +97,7 @@ class LeasePolicyManager:
             named_activity_timeout_seconds=named_activity_timeout_seconds,
             heartbeat_interval_seconds=heartbeat_interval_seconds,
             heartbeat_timeout_seconds=heartbeat_timeout_seconds,
+            connection_grace_seconds=connection_grace_seconds,
         )
         self._by_generation = {self._policy.generation: self._policy}
         self._lock = asyncio.Lock()
@@ -101,12 +118,14 @@ class LeasePolicyManager:
         named_activity_timeout_seconds: float,
         heartbeat_interval_seconds: float,
         heartbeat_timeout_seconds: float,
+        connection_grace_seconds: float,
     ) -> LeasePolicy:
         self._validate(
             private_activity_timeout_seconds=private_activity_timeout_seconds,
             named_activity_timeout_seconds=named_activity_timeout_seconds,
             heartbeat_interval_seconds=heartbeat_interval_seconds,
             heartbeat_timeout_seconds=heartbeat_timeout_seconds,
+            connection_grace_seconds=connection_grace_seconds,
         )
         async with self._lock:
             current = self._policy
@@ -116,6 +135,7 @@ class LeasePolicyManager:
                 named_activity_timeout_seconds,
                 heartbeat_interval_seconds,
                 heartbeat_timeout_seconds,
+                connection_grace_seconds,
             )
             current_values = (
                 current.mode,
@@ -123,6 +143,7 @@ class LeasePolicyManager:
                 current.named_activity_timeout_seconds,
                 current.heartbeat_interval_seconds,
                 current.heartbeat_timeout_seconds,
+                current.connection_grace_seconds,
             )
             if values == current_values:
                 return current
@@ -134,6 +155,7 @@ class LeasePolicyManager:
                 named_activity_timeout_seconds=named_activity_timeout_seconds,
                 heartbeat_interval_seconds=heartbeat_interval_seconds,
                 heartbeat_timeout_seconds=heartbeat_timeout_seconds,
+                connection_grace_seconds=connection_grace_seconds,
             )
             self._policy = policy
             self._by_generation[policy.generation] = policy
@@ -146,12 +168,14 @@ class LeasePolicyManager:
         named_activity_timeout_seconds: float,
         heartbeat_interval_seconds: float,
         heartbeat_timeout_seconds: float,
+        connection_grace_seconds: float,
     ) -> None:
         durations = {
             "private activity timeout": private_activity_timeout_seconds,
             "named activity timeout": named_activity_timeout_seconds,
             "heartbeat interval": heartbeat_interval_seconds,
             "heartbeat timeout": heartbeat_timeout_seconds,
+            "connection grace": connection_grace_seconds,
         }
         for label, value in durations.items():
             if not isfinite(value) or value <= 0:

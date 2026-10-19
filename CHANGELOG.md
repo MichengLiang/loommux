@@ -7,7 +7,19 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
-No unreleased changes.
+### Added
+
+- Report each lease's `standing`, `alert`, and `grace_remaining_seconds` in
+  `/api/resources`; `remaining_seconds` and `timeout_seconds` are `null` while
+  an open stream holds a connection lease.
+- `/api/lease-policy`, its `PUT`, `LeaseAwareClient`, and
+  `LOOMMUX_CONNECTION_GRACE_SECONDS` (default 60) carry the connection grace
+  period of the `connection` lease mode.
+
+### Fixed
+
+- Document that a standard MCP `ping` renews a lease under every mode, not
+  only in heartbeat mode.
 
 ## [0.1.15] - 2026-09-10
 

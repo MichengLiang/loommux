@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from math import isfinite
 
 from loommux.resource.policy import (
+    DEFAULT_CONNECTION_GRACE_SECONDS,
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     DEFAULT_HEARTBEAT_TIMEOUT_SECONDS,
     DEFAULT_NAMED_ACTIVITY_TIMEOUT_SECONDS,
@@ -25,6 +26,7 @@ class ResourceServerSettings:
     named_activity_timeout_seconds: float = DEFAULT_NAMED_ACTIVITY_TIMEOUT_SECONDS
     heartbeat_interval_seconds: float = DEFAULT_HEARTBEAT_INTERVAL_SECONDS
     heartbeat_timeout_seconds: float = DEFAULT_HEARTBEAT_TIMEOUT_SECONDS
+    connection_grace_seconds: float = DEFAULT_CONNECTION_GRACE_SECONDS
     sweep_interval_seconds: float = 10
     orphan_grace_seconds: float = 30
 
@@ -37,7 +39,7 @@ class ResourceServerSettings:
         try:
             mode = LeaseMode(values.get("LOOMMUX_LEASE_MODE", "activity").strip().lower())
         except ValueError as exc:
-            raise ValueError("LOOMMUX_LEASE_MODE must be activity or heartbeat") from exc
+            raise ValueError("LOOMMUX_LEASE_MODE must be activity, heartbeat, or connection") from exc
         settings = cls(
             lease_mode=mode,
             private_activity_timeout_seconds=_positive_float(
@@ -59,6 +61,11 @@ class ResourceServerSettings:
                 values,
                 "LOOMMUX_HEARTBEAT_TIMEOUT_SECONDS",
                 DEFAULT_HEARTBEAT_TIMEOUT_SECONDS,
+            ),
+            connection_grace_seconds=_positive_float(
+                values,
+                "LOOMMUX_CONNECTION_GRACE_SECONDS",
+                DEFAULT_CONNECTION_GRACE_SECONDS,
             ),
             sweep_interval_seconds=_positive_float(
                 values,

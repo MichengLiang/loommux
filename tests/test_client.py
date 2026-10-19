@@ -16,11 +16,61 @@ def test_remote_policy_validation() -> None:
             "named_activity_timeout_seconds": 90,
             "heartbeat_interval_seconds": 15,
             "heartbeat_timeout_seconds": 60,
+            "connection_grace_seconds": 60,
         }
     )
 
     assert policy.mode == "heartbeat"
     assert policy.generation == 3
+
+
+def test_remote_policy_accepts_the_connection_mode() -> None:
+    policy = RemoteLeasePolicy.from_payload(
+        {
+            "mode": "connection",
+            "generation": 2,
+            "private_activity_timeout_seconds": 4800,
+            "named_activity_timeout_seconds": 86400,
+            "heartbeat_interval_seconds": 15,
+            "heartbeat_timeout_seconds": 60,
+            "connection_grace_seconds": 60,
+        }
+    )
+
+    assert policy.mode == "connection"
+    assert policy.connection_grace_seconds == 60
+
+
+def test_connection_policy_needs_no_client_heartbeat(monkeypatch) -> None:
+    class RecordingClient:
+        def __init__(self, _transport) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return None
+
+    async def fetch_policy(self):
+        return RemoteLeasePolicy(
+            mode="connection",
+            generation=1,
+            private_activity_timeout_seconds=30,
+            named_activity_timeout_seconds=90,
+            heartbeat_interval_seconds=15,
+            heartbeat_timeout_seconds=60,
+            connection_grace_seconds=60,
+        )
+
+    monkeypatch.setattr(client_module, "Client", RecordingClient)
+    monkeypatch.setattr(LeaseAwareClient, "_fetch_policy", fetch_policy)
+
+    async def scenario() -> None:
+        async with LeaseAwareClient("http://127.0.0.1:8801/mcp", "test") as client:
+            assert client._heartbeat_task is None
+
+    asyncio.run(scenario())
 
 
 def test_remote_policy_rejects_an_impossible_heartbeat_window() -> None:
@@ -33,6 +83,7 @@ def test_remote_policy_rejects_an_impossible_heartbeat_window() -> None:
                 "named_activity_timeout_seconds": 90,
                 "heartbeat_interval_seconds": 15,
                 "heartbeat_timeout_seconds": 15,
+                "connection_grace_seconds": 60,
             }
         )
 
@@ -59,6 +110,7 @@ def test_failed_client_entry_closes_partial_client(monkeypatch) -> None:
             named_activity_timeout_seconds=90,
             heartbeat_interval_seconds=15,
             heartbeat_timeout_seconds=60,
+            connection_grace_seconds=60,
         )
 
     monkeypatch.setattr(client_module, "Client", FailingClient)
@@ -105,6 +157,7 @@ def test_client_omits_operator_header_when_operator_is_missing_or_none(monkeypat
             named_activity_timeout_seconds=90,
             heartbeat_interval_seconds=15,
             heartbeat_timeout_seconds=60,
+            connection_grace_seconds=60,
         )
 
     monkeypatch.setattr(client_module, "Client", RecordingClient)
@@ -161,6 +214,7 @@ def test_client_forwards_discovery_and_complete_tool_call_surface(monkeypatch) -
             named_activity_timeout_seconds=90,
             heartbeat_interval_seconds=15,
             heartbeat_timeout_seconds=60,
+            connection_grace_seconds=60,
         )
 
     monkeypatch.setattr(client_module, "Client", RecordingClient)

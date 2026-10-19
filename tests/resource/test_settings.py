@@ -50,8 +50,21 @@ def test_settings_reject_non_positive_durations(value: str) -> None:
 
 
 def test_settings_reject_unknown_lease_mode() -> None:
-    with pytest.raises(ValueError, match="activity or heartbeat"):
+    with pytest.raises(ValueError, match="activity, heartbeat, or connection"):
         ResourceServerSettings.from_environ({"LOOMMUX_LEASE_MODE": "other"})
+
+
+def test_settings_read_the_connection_mode_and_its_grace() -> None:
+    settings = ResourceServerSettings.from_environ(
+        {
+            "LOOMMUX_LEASE_MODE": " Connection ",
+            "LOOMMUX_CONNECTION_GRACE_SECONDS": "12.5",
+        }
+    )
+
+    assert settings.lease_mode is LeaseMode.CONNECTION
+    assert settings.connection_grace_seconds == 12.5
+    assert ResourceServerSettings.from_environ({}).connection_grace_seconds == 60
 
 
 def test_settings_reject_invalid_heartbeat_relationship() -> None:

@@ -12,7 +12,8 @@ from pathlib import Path
 from time import monotonic
 from typing import Any
 
-from loommux.resource.liveness import assess_lease
+from loommux.resource.connections import ConnectionRegistry
+from loommux.resource.liveness import LeaseVerdict, assess_lease
 from loommux.resource.model import (
     ClientLease,
     KernelResource,
@@ -58,6 +59,7 @@ class KernelResourceManager:
         *,
         session_factory: SessionFactory = IPythonSession,
         policy_manager: LeasePolicyManager | None = None,
+        connections: ConnectionRegistry | None = None,
         sweep_interval_seconds: float = 10,
         orphan_grace_seconds: float = 30,
     ) -> None:
@@ -71,6 +73,7 @@ class KernelResourceManager:
         self.workspace_resolution = workspace_resolution
         self._session_factory = session_factory
         self.policy_manager = policy_manager or LeasePolicyManager()
+        self.connections = connections or ConnectionRegistry()
         self._sweep_interval_seconds = sweep_interval_seconds
         self._orphan_grace_seconds = orphan_grace_seconds
         self._resources_by_key: dict[str, KernelResource] = {}
@@ -139,9 +142,10 @@ class KernelResourceManager:
                 if lease is None:
                     lease = ClientLease.create(client, policy)
                     resource.client_leases[client.client_id] = lease
+                    self.connections.presence(client.client_id)
                 resource.active_operations += 1
                 lease.active_operations += 1
-                self._renew_lease_locked(lease)
+                self._record_request_locked(lease)
                 break
         try:
             yield resource
@@ -175,8 +179,21 @@ class KernelResourceManager:
             lease = resource.client_leases.get(client_id)
             if lease is None:
                 return False
-            self._renew_lease_locked(lease)
+            self._record_request_locked(lease)
             return True
+
+    async def client_verdict(
+        self,
+        address_key: str,
+        client_id: str,
+    ) -> LeaseVerdict | None:
+        """Judge one client's lease without renewing it."""
+        async with self._registry_lock:
+            resource = self._resources_by_key.get(address_key)
+            lease = None if resource is None else resource.client_leases.get(client_id)
+            if resource is None or lease is None:
+                return None
+            return self._assess(resource, lease, monotonic())
 
     async def list_resources(self) -> list[KernelResource]:
         async with self._registry_lock:
@@ -331,10 +348,17 @@ class KernelResourceManager:
                     client_id
                     for client_id, lease in resource.client_leases.items()
                     if lease.active_operations == 0
-                    and assess_lease(lease, shared=resource.address.shared).expires_at <= now
+                    and self._assess(resource, lease, now).expired(now)
                 ]
                 for client_id in expired_clients:
                     resource.client_leases.pop(client_id)
+            self.connections.prune(
+                keep={
+                    client_id
+                    for resource in self._resources_by_id.values()
+                    for client_id in resource.client_leases
+                }
+            )
 
             closing: list[KernelResource] = []
             for resource in list(self._resources_by_id.values()):
@@ -447,6 +471,24 @@ class KernelResourceManager:
         lease.last_seen_at = datetime.now(UTC)
         lease.renewed_at = monotonic()
 
+    @staticmethod
+    def _record_request_locked(lease: ClientLease) -> None:
+        KernelResourceManager._renew_lease_locked(lease)
+        lease.requested_at = lease.renewed_at
+
+    def _assess(
+        self,
+        resource: KernelResource,
+        lease: ClientLease,
+        now: float,
+    ) -> LeaseVerdict:
+        return assess_lease(
+            lease,
+            self.connections.presence(lease.client.client_id),
+            shared=resource.address.shared,
+            now=now,
+        )
+
     async def _sweeper_loop(self) -> None:
         while not self._stop_event.is_set():
             try:
@@ -462,8 +504,7 @@ class KernelResourceManager:
                     # reclamation for every other resource in this server.
                     logger.exception("kernel resource sweep failed")
 
-    @staticmethod
-    def _snapshot_resource(resource: KernelResource) -> dict[str, Any]:
+    def _snapshot_resource(self, resource: KernelResource) -> dict[str, Any]:
         session_status = resource.session.status()
         if (
             resource.lifecycle is ResourceLifecycle.RUNNING
@@ -476,7 +517,7 @@ class KernelResourceManager:
             resource.client_leases.values(),
             key=lambda item: item.created_at,
         ):
-            verdict = assess_lease(lease, shared=resource.address.shared)
+            verdict = self._assess(resource, lease, now)
             leases.append(
                 {
                     "lease_id": lease.lease_id,
@@ -487,8 +528,11 @@ class KernelResourceManager:
                     "created_at": lease.created_at.isoformat(),
                     "last_seen_at": lease.last_seen_at.isoformat(),
                     "active_operations": lease.active_operations,
+                    "standing": verdict.standing.value,
+                    "alert": verdict.standing.alert,
                     "timeout_seconds": verdict.window_seconds,
                     "remaining_seconds": verdict.remaining_seconds(now),
+                    "grace_remaining_seconds": verdict.grace_remaining_seconds(now),
                 }
             )
         return {

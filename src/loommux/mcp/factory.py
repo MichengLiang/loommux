@@ -89,6 +89,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             named_activity_timeout_seconds=settings.named_activity_timeout_seconds,
             heartbeat_interval_seconds=settings.heartbeat_interval_seconds,
             heartbeat_timeout_seconds=settings.heartbeat_timeout_seconds,
+            connection_grace_seconds=settings.connection_grace_seconds,
         )
         manager = KernelResourceManager(
             resolution.workspace,

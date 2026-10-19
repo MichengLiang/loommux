@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 from loommux.resource import (
@@ -10,6 +11,8 @@ from loommux.resource import (
     ResourceAddress,
     ResourceLifecycle,
 )
+from loommux.resource.connections import ConnectionRegistry
+from loommux.resource.liveness import LeaseStanding
 
 
 class FakeKernel:
@@ -52,6 +55,7 @@ def make_policy(
     *,
     timeout: float = 0.03,
     mode: LeaseMode = LeaseMode.HEARTBEAT,
+    grace: float | None = None,
 ) -> LeasePolicy:
     return LeasePolicy(
         mode=mode,
@@ -60,6 +64,7 @@ def make_policy(
         named_activity_timeout_seconds=timeout,
         heartbeat_interval_seconds=0.01,
         heartbeat_timeout_seconds=timeout,
+        connection_grace_seconds=timeout if grace is None else grace,
     )
 
 
@@ -221,5 +226,116 @@ def test_running_orphan_receives_grace_before_forced_reclamation(
         await asyncio.sleep(0.04)
         assert await manager.sweep_once() == 1
         assert resource.lifecycle is ResourceLifecycle.STOPPED
+
+    asyncio.run(scenario())
+
+
+def connection_manager(tmp_path: Path, registry: ConnectionRegistry) -> KernelResourceManager:
+    return KernelResourceManager(
+        tmp_path,
+        "launch_cwd",
+        session_factory=FakeSession,
+        connections=registry,
+        orphan_grace_seconds=1,
+    )
+
+
+def test_open_stream_holds_a_connection_lease_until_the_stream_departs(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        registry = ConnectionRegistry()
+        manager = connection_manager(tmp_path, registry)
+        client = make_client("streaming")
+        registry.stream_opened(client.client_id)
+        policy = make_policy(mode=LeaseMode.CONNECTION, grace=0.03)
+        async with manager.operation(make_address(), client, policy) as resource:
+            pass
+        lease = resource.client_leases[client.client_id]
+        lease.renewed_at -= 3600
+        lease.requested_at -= 3600
+
+        assert await manager.sweep_once() == 0
+        [snapshot] = await manager.snapshot()
+        assert snapshot["leases"][0]["standing"] == "connected"
+        assert snapshot["leases"][0]["remaining_seconds"] is None
+        assert snapshot["leases"][0]["alert"] is False
+
+        registry.stream_closed(client.client_id, now=monotonic() - 1)
+
+        assert await manager.sweep_once() == 1
+        assert resource.lifecycle is ResourceLifecycle.STOPPED
+        assert client.client_id not in registry
+
+    asyncio.run(scenario())
+
+
+def test_connection_lease_without_a_stream_alerts_and_keeps_the_activity_window(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        registry = ConnectionRegistry()
+        manager = connection_manager(tmp_path, registry)
+        client = make_client("streamless")
+        policy = make_policy(mode=LeaseMode.CONNECTION, timeout=60, grace=0.03)
+        async with manager.operation(make_address(), client, policy) as resource:
+            pass
+
+        awaiting = await manager.client_verdict(resource.address.key, client.client_id)
+        registry.presence(client.client_id).first_seen_at -= 3600
+
+        assert awaiting is not None
+        assert awaiting.standing is LeaseStanding.AWAITING_STREAM
+        assert await manager.sweep_once() == 0
+        [snapshot] = await manager.snapshot()
+        assert snapshot["leases"][0]["standing"] == "unbound"
+        assert snapshot["leases"][0]["alert"] is True
+        assert snapshot["leases"][0]["timeout_seconds"] == 60
+        assert await manager.client_verdict("named:missing", client.client_id) is None
+        await manager.stop()
+
+    asyncio.run(scenario())
+
+
+def test_ping_after_the_stream_drops_proves_the_client_lost_only_its_stream(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        registry = ConnectionRegistry()
+        manager = connection_manager(tmp_path, registry)
+        client = make_client("pinging")
+        registry.stream_opened(client.client_id)
+        policy = make_policy(mode=LeaseMode.CONNECTION, timeout=60, grace=0.03)
+        async with manager.operation(make_address(), client, policy) as resource:
+            pass
+        resource.client_leases[client.client_id].requested_at -= 3600
+        registry.stream_closed(client.client_id, now=monotonic() - 1)
+
+        assert await manager.renew_client_lease(resource.address.key, client.client_id)
+        verdict = await manager.client_verdict(resource.address.key, client.client_id)
+
+        assert verdict is not None
+        assert verdict.standing is LeaseStanding.STREAM_LOST
+        assert await manager.sweep_once() == 0
+        await manager.stop()
+
+    asyncio.run(scenario())
+
+
+def test_sweep_forgets_departed_sessions_that_never_held_a_lease(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        registry = ConnectionRegistry()
+        manager = connection_manager(tmp_path, registry)
+        registry.stream_opened("visitor")
+        registry.stream_closed("visitor")
+        registry.stream_opened("present")
+
+        await manager.sweep_once()
+
+        assert "visitor" not in registry
+        assert "present" in registry
+        await manager.stop()
 
     asyncio.run(scenario())

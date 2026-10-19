@@ -35,6 +35,26 @@ def test_http_control_plane_exposes_console_and_policy(
     assert updated.json()["policy"]["generation"] == 2
 
 
+def test_http_control_plane_switches_to_the_connection_mode(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    app = create_mcp().http_app(path="/mcp")
+
+    with TestClient(app) as client:
+        initial = client.get("/api/lease-policy").json()["policy"]
+        updated = client.put(
+            "/api/lease-policy",
+            json={"mode": "connection", "connection_grace_seconds": 45},
+        ).json()
+
+    assert initial["connection_grace_seconds"] == 60
+    assert updated["policy"]["mode"] == "connection"
+    assert updated["policy"]["connection_grace_seconds"] == 45
+    assert updated["policy"]["heartbeat_timeout_seconds"] == initial["heartbeat_timeout_seconds"]
+
+
 def test_http_control_plane_rejects_invalid_policy(
     tmp_path: Path,
     monkeypatch,
