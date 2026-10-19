@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -22,6 +25,50 @@ def test_line_log_reads_ranges_and_clipping() -> None:
     log.append("A中🙂\n")
     assert log.character_count == len("alpha\nbeta\ngamma\nA中🙂\n")
     assert log.utf8_byte_count == len("alpha\nbeta\ngamma\nA中🙂\n".encode())
+
+
+def test_line_log_appends_in_linear_time() -> None:
+    log = LineLog()
+    chunk = "x" * 1023 + "\n"
+    started = time.perf_counter()
+    for _ in range(20_000):
+        log.append(chunk)
+    assert log.line_count == 20_000
+    # Rebuilding the string per append took about 18 s here; linear takes milliseconds.
+    assert time.perf_counter() - started < 2
+
+
+def test_line_log_keeps_every_chunk_appended_while_another_thread_reads() -> None:
+    chunks = 50_000
+
+    def one_round() -> LineLog:
+        log = LineLog()
+        done = threading.Event()
+
+        def collector() -> None:
+            for _ in range(chunks):
+                log.append("a\n")
+            done.set()
+
+        writer = threading.Thread(target=collector)
+        writer.start()
+        while not done.is_set():
+            _ = log.text
+        writer.join()
+        return log
+
+    # The unsafe window is one bytecode between a reader's join and its clearing
+    # of the queue. A 1 µs switch interval lets the writer land there in about one
+    # round in seven without the lock, so fifty rounds miss it about once in 3,000.
+    interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        logs = [one_round() for _ in range(50)]
+    finally:
+        sys.setswitchinterval(interval)
+
+    assert all(log.line_count == chunks for log in logs)
+    assert all(log.text == "a\n" * chunks for log in logs)
 
 
 def test_line_log_search_supports_context_and_query_modes() -> None:

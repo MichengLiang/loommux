@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
@@ -20,20 +21,33 @@ class ResolvedLineRange:
 
 
 class LineLog:
-    """Retain one normalized text stream and expose stable line operations."""
+    """Retain one normalized text stream and expose stable line operations.
+
+    Appends only queue their chunk; the first read afterwards joins the queue
+    into the retained text once. Rebuilding the whole string on every append
+    cost time quadratic in the output (40 MB in 1 KB chunks took 198 s), and
+    the kernel's iopub collector does those appends while holding its lock.
+    The collector appends while tool calls read from other threads, so the
+    queue and its join share one lock: a chunk appended between a reader's
+    join and its clearing of the queue would otherwise be lost.
+    """
 
     def __init__(self) -> None:
+        self._lock = threading.Lock()
         self._text = ""
+        self._pending: list[str] = []
+        self._lines: list[str] | None = []
         self._character_count = 0
         self._utf8_byte_count = 0
 
     @property
     def text(self) -> str:
-        return self._text
+        with self._lock:
+            return self._joined_locked()
 
     @property
     def line_count(self) -> int:
-        return len(self._lines())
+        return len(self._split_lines())
 
     @property
     def character_count(self) -> int:
@@ -44,18 +58,23 @@ class LineLog:
         return self._utf8_byte_count
 
     def append(self, text: str) -> None:
-        self._text += text
-        # These counts describe the normalized text held by this log, not Python
-        # object storage or a later MCP/JSON envelope. Keeping them incrementally
-        # avoids re-encoding an arbitrarily large retained output for every status.
-        self._character_count += len(text)
-        self._utf8_byte_count += len(text.encode("utf-8"))
+        if not text:
+            return
+        encoded_size = len(text.encode("utf-8"))
+        with self._lock:
+            self._pending.append(text)
+            # These counts describe the normalized text held by this log, not
+            # Python object storage or a later MCP/JSON envelope. Keeping them
+            # incrementally avoids re-encoding a large retained output for
+            # every status.
+            self._character_count += len(text)
+            self._utf8_byte_count += encoded_size
 
     def read(self, line_range: str | None = None, *, max_chars: int | None = None) -> dict[str, object]:
         max_chars_error = _validate_max_chars(max_chars)
         if max_chars_error is not None:
             return max_chars_error
-        lines = self._lines()
+        lines = self._split_lines()
         resolved = _resolve_line_range(line_range, len(lines))
         if isinstance(resolved, dict):
             return resolved
@@ -80,14 +99,25 @@ class LineLog:
         if isinstance(matcher_result, dict):
             return matcher_result
         matcher, interpretation = matcher_result
-        lines = self._lines()
+        lines = self._split_lines()
         matched = {number: count for number, line in enumerate(lines, start=1) if (count := matcher(line))}
         selected_numbers = {number for match in matched for number in range(max(1, match - context_before), min(len(lines), match + context_after) + 1)}
         rendered = [f"{'M' if number in matched else 'C'} {number} | {_clip_line(lines[number - 1], max_chars)}" for number in sorted(selected_numbers)]
         return {"ok": True, "query": query, "query_interpretation": interpretation, "matched_lines": len(matched), "matches": sum(matched.values()), "context_before": context_before, "context_after": context_after, "total_lines": len(lines), "text": "\n".join(rendered)}
 
-    def _lines(self) -> list[str]:
-        return self._text.splitlines() if self._text else []
+    def _split_lines(self) -> list[str]:
+        with self._lock:
+            text = self._joined_locked()
+            if self._lines is None:
+                self._lines = text.splitlines()
+            return self._lines
+
+    def _joined_locked(self) -> str:
+        if self._pending:
+            self._text = "".join((self._text, *self._pending))
+            self._pending.clear()
+            self._lines = None
+        return self._text
 
 
 class ExecutionLogs:

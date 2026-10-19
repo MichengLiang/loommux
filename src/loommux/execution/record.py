@@ -47,9 +47,6 @@ class Execution:
     # This flag is the sole request-derived state that a later wait() needs.
     # Source and initial wait policy have no runtime consumer after submission.
     _full_output_requested: bool = field(default=False, repr=False)
-    stdout: str = ""
-    stderr: str = ""
-    result_text: str = ""
     error: dict[str, Any] | None = None
     completed_at: float | None = None
     execution_count_at_submit: int | None = None
@@ -58,6 +55,9 @@ class Execution:
     done: threading.Event = field(default_factory=threading.Event, repr=False)
     logs: ExecutionLogs = field(default_factory=ExecutionLogs, init=False)
     presentation: list[PresentationElement] = field(default_factory=list, init=False)
+    # Kept as parts and joined on read: appending to one string attribute
+    # copies all of it each time, which is quadratic for many displays.
+    _result_parts: list[str] = field(default_factory=list, init=False, repr=False)
     _next_display_ordinal: int = field(default=1, init=False, repr=False)
     _stdout_normalizer: TerminalTextNormalizer = field(default_factory=TerminalTextNormalizer, init=False, repr=False)
     _stderr_normalizer: TerminalTextNormalizer = field(default_factory=TerminalTextNormalizer, init=False, repr=False)
@@ -68,7 +68,6 @@ class Execution:
 
     def append_stdout(self, text: str) -> str:
         normalized = self._stdout_normalizer.normalize(text)
-        self.stdout += normalized
         self.logs.append_stdout(normalized)
         if normalized:
             self._invalidate_output_token_count()
@@ -78,7 +77,6 @@ class Execution:
 
     def append_stderr(self, text: str) -> str:
         normalized = self._stderr_normalizer.normalize(text)
-        self.stderr += normalized
         self.logs.append_stderr(normalized)
         if normalized:
             self._invalidate_output_token_count()
@@ -88,10 +86,8 @@ class Execution:
 
     def append_result_text(self, text: str) -> str:
         normalized = self._result_normalizer.normalize(text)
-        if normalized and self.result_text:
-            self.result_text += "\n"
         if normalized:
-            self.result_text += normalized
+            self._result_parts.append(normalized)
         self.logs.append_result(normalized, self.execution)
         if normalized:
             self._invalidate_output_token_count()
@@ -193,6 +189,10 @@ class Execution:
     def is_running(self) -> bool:
         return self.status == "running"
 
+    @property
+    def result_text(self) -> str:
+        return "\n".join(self._result_parts)
+
     def snapshot(self) -> dict[str, Any]:
         combined_log = self.logs.combined
         output_total_lines = combined_log.line_count
@@ -202,8 +202,8 @@ class Execution:
             "ok": self.status not in {"error", "killed"},
             "execution": self.execution,
             "status": self.status,
-            "stdout": "" if omitted else self.stdout,
-            "stderr": "" if omitted else self.stderr,
+            "stdout": "" if omitted else self.logs.stdout.text,
+            "stderr": "" if omitted else self.logs.stderr.text,
             "result_text": "" if omitted else self.result_text,
             "error": self._error_summary(),
             "output_omitted": omitted,

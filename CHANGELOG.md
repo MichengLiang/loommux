@@ -71,6 +71,10 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Retry a failed kernel start once with a fresh process on restart and on the
   Windows interrupt replacement, as the first start already did. A restart
   that lost a port to another process failed outright.
+- Record cell output in time linear in its size. Each output chunk used to
+  rebuild the execution's whole retained text three times over, so a cell
+  printing 10 MB in 1 KB chunks spent 44 s in loommux (now 1.5 s), and
+  progress bars slowed down the longer a cell ran.
 - Raise the console's muted text and green badge colors to WCAG AA contrast
   (4.35:1 and 4.43:1 before), and its policy labels from 11 px to 14 px.
 - Stop demoting the console's small text twice: metric labels go from 10 px
