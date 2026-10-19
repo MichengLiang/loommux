@@ -20,6 +20,7 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   after its stream is gone (`stream_lost`), and add `lease_alert` to the
   structured status. Such a lease falls back to the activity window instead
   of being released.
+- Log one `lease alert` warning when a lease enters an alert standing.
 - Report each lease's `standing`, `alert`, and `grace_remaining_seconds` in
   `/api/resources`; `remaining_seconds` and `timeout_seconds` are `null` while
   an open stream holds a connection lease.

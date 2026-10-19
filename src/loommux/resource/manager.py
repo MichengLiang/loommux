@@ -13,7 +13,7 @@ from time import monotonic
 from typing import Any
 
 from loommux.resource.connections import ConnectionRegistry
-from loommux.resource.liveness import LeaseVerdict, assess_lease
+from loommux.resource.liveness import LeaseStanding, LeaseVerdict, assess_lease
 from loommux.resource.model import (
     ClientLease,
     KernelResource,
@@ -344,14 +344,11 @@ class KernelResourceManager:
                     and not resource.session.status().get("kernel_started", False)
                 ):
                     resource.lifecycle = ResourceLifecycle.CRASHED
-                expired_clients = [
-                    client_id
-                    for client_id, lease in resource.client_leases.items()
-                    if lease.active_operations == 0
-                    and self._assess(resource, lease, now).expired(now)
-                ]
-                for client_id in expired_clients:
-                    resource.client_leases.pop(client_id)
+                for client_id, lease in list(resource.client_leases.items()):
+                    verdict = self._assess(resource, lease, now)
+                    self._report_alert_locked(resource, lease, verdict)
+                    if lease.active_operations == 0 and verdict.expired(now):
+                        del resource.client_leases[client_id]
             self.connections.prune(
                 keep={
                     client_id
@@ -473,8 +470,27 @@ class KernelResourceManager:
 
     @staticmethod
     def _record_request_locked(lease: ClientLease) -> None:
-        KernelResourceManager._renew_lease_locked(lease)
-        lease.requested_at = lease.renewed_at
+        lease.last_seen_at = datetime.now(UTC)
+        lease.renewed_at = lease.requested_at = monotonic()
+
+    @staticmethod
+    def _report_alert_locked(
+        resource: KernelResource,
+        lease: ClientLease,
+        verdict: LeaseVerdict,
+    ) -> None:
+        alert: LeaseStanding | None = verdict.standing if verdict.standing.alert else None
+        if alert is lease.reported_alert:
+            return
+        lease.reported_alert = alert
+        if alert is not None:
+            logger.warning(
+                "lease alert: %s on %s is %s; the client does not keep open the standalone GET stream this connection lease relies on, so it falls back to the %g-second activity window",
+                lease.client.display_name,
+                resource.address.display_name,
+                alert.value,
+                verdict.window_seconds,
+            )
 
     def _assess(
         self,

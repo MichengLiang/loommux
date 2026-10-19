@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 if TYPE_CHECKING:
+    from loommux.resource.liveness import LeaseStanding
     from loommux.resource.policy import LeasePolicy
     from loommux.session import IPythonSession
 
@@ -53,6 +54,9 @@ class ClientLease:
     itself sends something (a tool call or a ping), so it alone is evidence
     that the client is still alive. ``last_seen_at`` is the latest renewal on
     the wall clock, kept only for operators reading snapshots.
+    ``reported_alert`` is the alert standing the server last logged for this
+    lease, so a sweep logs each entry into an alert once rather than every
+    pass; it is ``None`` while the lease is not alerting.
     """
 
     lease_id: str
@@ -63,6 +67,7 @@ class ClientLease:
     renewed_at: float
     requested_at: float
     active_operations: int = 0
+    reported_alert: LeaseStanding | None = None
 
     @classmethod
     def create(

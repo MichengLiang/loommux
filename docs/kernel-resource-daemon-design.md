@@ -216,14 +216,21 @@ A tool call whose MCP request context carries no HTTP request comes from
 stdio or from an in-process client. Such a session lives exactly as long as
 the server process, so it is bound to the process and stays `connected`.
 
-#### Alerts in tool results
+#### Alerts
 
-After each tool call the server judges the caller's lease. When its standing
-is an alert, the tool result gains a final text block naming the standing,
-its cause, and the activity window now in force, and the structured status
-gains `lease_alert`. The person running loommux may never open the console,
-but the model reading the tool result will relay the alert to them; only
-the affected session sees it.
+An alert standing surfaces in three places, each for a different reader:
+
+- **Tool results.** After each tool call the server judges the caller's
+  lease. When its standing is an alert, the tool result gains a final text
+  block naming the standing, its cause, and the activity window now in
+  force, and the structured status gains `lease_alert`. The person running
+  loommux may never open the console, but the model reading the tool result
+  will relay the alert to them; only the affected session sees it.
+- **Server log.** The sweep logs one warning when a lease enters an alert
+  standing, not on every pass; `ClientLease.reported_alert` remembers what
+  was logged and clears when the lease stops alerting, so a later entry is
+  logged again.
+- **Console.** The lease-signal row turns red (section 7).
 
 ### Ping renewal
 

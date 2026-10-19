@@ -339,3 +339,33 @@ def test_sweep_forgets_departed_sessions_that_never_held_a_lease(
         await manager.stop()
 
     asyncio.run(scenario())
+
+
+def test_sweep_logs_each_entry_into_an_alert_once(tmp_path: Path, caplog) -> None:
+    async def scenario() -> None:
+        registry = ConnectionRegistry()
+        manager = connection_manager(tmp_path, registry)
+        client = make_client("streamless")
+        policy = make_policy(mode=LeaseMode.CONNECTION, timeout=60, grace=0.03)
+        async with manager.operation(make_address(), client, policy) as resource:
+            pass
+        registry.presence(client.client_id).first_seen_at -= 3600
+
+        with caplog.at_level("WARNING", logger="loommux.resource.manager"):
+            await manager.sweep_once()
+            await manager.sweep_once()
+            registry.stream_opened(client.client_id)
+            await manager.sweep_once()
+            registry.stream_closed(client.client_id, now=monotonic() - 1)
+            await manager.sweep_once()
+
+        lease = resource.client_leases[client.client_id]
+        alerts = [record.getMessage() for record in caplog.records]
+        assert len(alerts) == 2
+        assert "client-streamless on shared is unbound" in alerts[0]
+        assert "60-second activity window" in alerts[0]
+        assert "is stream_lost" in alerts[1]
+        assert lease.reported_alert is LeaseStanding.STREAM_LOST
+        await manager.stop()
+
+    asyncio.run(scenario())
