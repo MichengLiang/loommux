@@ -79,15 +79,27 @@ tool list. Administrative execution coordinates are the pair
 
 ## 4. Resource and process lifecycle
 
-A registered logical resource moves through these states:
+A logical resource moves through these states:
 
 ```text
 running
 orphaned
 closing
 stopped
-crashed
 ```
+
+A registered resource is `running` or `orphaned`; `closing` and `stopped`
+follow its removal from the registry. The states record what the manager has
+done with the resource, and only the manager's own operations change them.
+
+Whether the current kernel process is alive is a separate fact at the next
+identity layer. `IPythonSession` reports it, and `/api/resources` projects it
+as `kernel_pid`, which is `null` while no kernel process runs. Observers (the
+sweep, console refreshes, and `health`) read that fact and never store it as
+resource state: a restart leaves the session briefly without a kernel, and a
+reading taken in that gap must not outlive it. A stored "crashed" reading once
+outlived a successful restart and made the next tool call retry forever
+without yielding the event loop, freezing the whole server.
 
 `busy` is not a lifecycle state. It is derived from active control operations
 or a running IPython execution.

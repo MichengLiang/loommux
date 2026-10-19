@@ -36,9 +36,17 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - `LeasePolicy` requires `connection_grace_seconds`, and `LeaseAwareClient`
   requires a server whose `/api/lease-policy` publishes it; pair client and
   server from the same release.
+- A resource no longer has a `crashed` lifecycle. A registered resource is
+  `running` or `orphaned`; a kernel process that is not alive shows as a
+  `null` `kernel_pid` in `/api/resources` and as "not running" in the console.
 
 ### Fixed
 
+- Fix a server freeze. A sweep, console refresh, or health check that read a
+  resource while a restart had no kernel yet stored it as `crashed`; nothing
+  reset that after the restart succeeded, and the next tool call on the
+  resource retried without ever yielding the event loop, so the console, new
+  connections, Ctrl+C, and SIGTERM all stopped responding.
 - Check kernel liveness by polling the kernel process instead of calling
   Jupyter's `KernelManager.is_alive`. That call waited on a helper thread
   without a timeout whenever the server's event loop asked (every tool call,

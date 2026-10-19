@@ -125,7 +125,7 @@ def test_protocol_renewal_does_not_create_a_resource(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_protocol_renewal_preserves_a_crashed_resource_lease(
+def test_protocol_renewal_keeps_the_lease_of_a_resource_whose_kernel_exited(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
@@ -138,7 +138,7 @@ def test_protocol_renewal_preserves_a_crashed_resource_lease(
         client = make_client("connected")
         async with manager.operation(address, client, make_policy()) as resource:
             pass
-        resource.lifecycle = ResourceLifecycle.CRASHED
+        resource.session.kernel = None
         previous_renewal = resource.client_leases[client.client_id].renewed_at
 
         await asyncio.sleep(0.01)

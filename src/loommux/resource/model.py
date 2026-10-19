@@ -17,13 +17,20 @@ if TYPE_CHECKING:
 
 
 class ResourceLifecycle(StrEnum):
-    """Stable lifecycle states for one logical IPython resource."""
+    """What the resource manager has done with one logical IPython resource.
+
+    A registered resource is ``running`` or ``orphaned``; ``closing`` and
+    ``stopped`` follow its removal from the registry. Only the manager's own
+    operations move a resource between states. Whether the current kernel
+    process is alive is a separate fact that ``IPythonSession.status()``
+    reports, because a restart leaves the session briefly without a kernel and
+    a reading taken in that gap must not outlive it.
+    """
 
     RUNNING = "running"
     ORPHANED = "orphaned"
     CLOSING = "closing"
     STOPPED = "stopped"
-    CRASHED = "crashed"
 
 
 @dataclass(frozen=True)

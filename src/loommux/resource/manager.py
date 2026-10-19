@@ -99,11 +99,7 @@ class KernelResourceManager:
             if self._stopping:
                 raise ResourceManagerError("resource manager is stopping")
             resource = self._resources_by_key.get(address.key)
-            if resource is not None and resource.lifecycle in {
-                ResourceLifecycle.RUNNING,
-                ResourceLifecycle.ORPHANED,
-                ResourceLifecycle.CRASHED,
-            }:
+            if resource is not None:
                 return resource
 
             provisioning = self._provisioning_by_key.get(address.key)
@@ -131,13 +127,16 @@ class KernelResourceManager:
             resource = await self.get_or_create(address)
             await self._recover_if_needed(resource)
             async with self._registry_lock:
+                # Recovery may suspend, and a resource retired meanwhile is no
+                # longer registered. The retry cannot spin without yielding:
+                # with no suspension nothing could have retired it, and a
+                # retired address makes get_or_create return its successor or
+                # await a new provisioning task.
                 if self._resources_by_key.get(address.key) is not resource:
                     continue
                 if resource.lifecycle is ResourceLifecycle.ORPHANED:
                     resource.lifecycle = ResourceLifecycle.RUNNING
                     resource.orphaned_at = None
-                if resource.lifecycle is not ResourceLifecycle.RUNNING:
-                    continue
                 lease = resource.client_leases.get(client.client_id)
                 if lease is None:
                     lease = ClientLease.create(client, policy)
@@ -171,12 +170,7 @@ class KernelResourceManager:
     ) -> bool:
         async with self._registry_lock:
             resource = self._resources_by_key.get(address_key)
-            if resource is None or resource.lifecycle not in {
-                ResourceLifecycle.RUNNING,
-                ResourceLifecycle.CRASHED,
-            }:
-                return False
-            lease = resource.client_leases.get(client_id)
+            lease = None if resource is None else resource.client_leases.get(client_id)
             if lease is None:
                 return False
             self._record_request_locked(lease)
@@ -270,12 +264,9 @@ class KernelResourceManager:
         async with resource.lifecycle_lock:
             await self._assert_registered(resource)
             result = await asyncio.to_thread(resource.session.restart)
-            resource.lifecycle = (
-                ResourceLifecycle.RUNNING
-                if result.get("ok")
-                else ResourceLifecycle.CRASHED
-            )
             if not result.get("ok"):
+                # The session is left without a kernel; the next operation on
+                # this resource recovers it.
                 raise ResourceProvisionError(
                     str(result.get("message", "kernel restart failed"))
                 )
@@ -288,8 +279,6 @@ class KernelResourceManager:
             await self._assert_registered(resource)
             status = resource.session.status()
             healthy = status.get("kernel_started") is True
-            if not healthy and resource.lifecycle is ResourceLifecycle.RUNNING:
-                resource.lifecycle = ResourceLifecycle.CRASHED
             return {
                 "ok": healthy,
                 "resource_id": resource.resource_id,
@@ -339,11 +328,6 @@ class KernelResourceManager:
         now = monotonic()
         async with self._registry_lock:
             for resource in self._resources_by_id.values():
-                if (
-                    resource.lifecycle is ResourceLifecycle.RUNNING
-                    and not resource.session.status().get("kernel_started", False)
-                ):
-                    resource.lifecycle = ResourceLifecycle.CRASHED
                 for client_id, lease in list(resource.client_leases.items()):
                     verdict = self._assess(resource, lease, now)
                     self._report_alert_locked(resource, lease, verdict)
@@ -394,7 +378,6 @@ class KernelResourceManager:
             async with self._registry_lock:
                 if self._resources_by_id.get(resource.resource_id) is not resource:
                     raise ResourceNotFoundError("resource was retired during recovery")
-                resource.lifecycle = ResourceLifecycle.CRASHED
             result = await asyncio.to_thread(resource.session.restart)
             if not result.get("ok"):
                 async with self._registry_lock:
@@ -406,7 +389,6 @@ class KernelResourceManager:
                 raise ResourceProvisionError(
                     str(result.get("message", "kernel recovery failed"))
                 )
-            resource.lifecycle = ResourceLifecycle.RUNNING
 
     async def _require_resource(self, resource_id: str) -> KernelResource:
         async with self._registry_lock:
@@ -522,11 +504,6 @@ class KernelResourceManager:
 
     def _snapshot_resource(self, resource: KernelResource) -> dict[str, Any]:
         session_status = resource.session.status()
-        if (
-            resource.lifecycle is ResourceLifecycle.RUNNING
-            and not session_status.get("kernel_started", False)
-        ):
-            resource.lifecycle = ResourceLifecycle.CRASHED
         now = monotonic()
         leases = []
         for lease in sorted(

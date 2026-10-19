@@ -82,6 +82,18 @@ def address(key: str) -> ResourceAddress:
     )
 
 
+def policy() -> LeasePolicy:
+    return LeasePolicy(
+        mode=LeaseMode.ACTIVITY,
+        generation=1,
+        private_activity_timeout_seconds=30,
+        named_activity_timeout_seconds=30,
+        heartbeat_interval_seconds=10,
+        heartbeat_timeout_seconds=20,
+        connection_grace_seconds=20,
+    )
+
+
 def test_same_address_shares_one_provisioning_task(tmp_path: Path) -> None:
     async def scenario() -> None:
         FakeSession.created = 0
@@ -167,15 +179,7 @@ def test_dead_kernel_is_recovered_inside_the_same_logical_resource(
         async with manager.operation(
             address("recover"),
             LeaseClient("client", "client"),
-            LeasePolicy(
-                mode=LeaseMode.ACTIVITY,
-                generation=1,
-                private_activity_timeout_seconds=30,
-                named_activity_timeout_seconds=30,
-                heartbeat_interval_seconds=10,
-                heartbeat_timeout_seconds=20,
-                connection_grace_seconds=20,
-            ),
+            policy(),
         ) as recovered:
             assert recovered.resource_id == resource_id
             assert recovered.kernel_pid != previous_pid
@@ -307,7 +311,7 @@ def test_detached_resource_cannot_be_restarted_after_waiting_for_lifecycle(
     asyncio.run(scenario())
 
 
-def test_snapshot_immediately_projects_a_dead_kernel_as_crashed(
+def test_observers_report_a_dead_kernel_without_changing_the_lifecycle(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
@@ -316,13 +320,69 @@ def test_snapshot_immediately_projects_a_dead_kernel_as_crashed(
             "launch_cwd",
             session_factory=FakeSession,
         )
-        resource = await manager.get_or_create(address("crashed"))
+        resource = await manager.get_or_create(address("dead"))
         resource.session.kernel = None
 
         [snapshot] = await manager.snapshot()
+        health = await manager.health(resource.resource_id)
 
-        assert snapshot["lifecycle"] == "crashed"
-        assert resource.lifecycle is ResourceLifecycle.CRASHED
+        assert snapshot["kernel_pid"] is None
+        assert snapshot["lifecycle"] == "running"
+        assert health["ok"] is False
+        assert resource.lifecycle is ResourceLifecycle.RUNNING
+        async with manager.operation(
+            address("dead"),
+            LeaseClient("client", "client"),
+            policy(),
+        ) as recovered:
+            assert recovered is resource
+            assert recovered.kernel_pid is not None
+        await manager.stop()
+
+    asyncio.run(scenario())
+
+
+def test_observing_a_restart_gap_does_not_stall_the_next_operation(
+    tmp_path: Path,
+) -> None:
+    class GappedRestartSession(FakeSession):
+        # IPythonSession.restart drops the old kernel before the new one is
+        # ready, so observers can read "no kernel" while the restart succeeds.
+        in_gap = threading.Event()
+        release = threading.Event()
+
+        def restart(self) -> dict[str, Any]:
+            self.kernel = None
+            type(self).in_gap.set()
+            assert type(self).release.wait(timeout=2)
+            return super().restart()
+
+    async def scenario() -> None:
+        manager = KernelResourceManager(
+            tmp_path,
+            "launch_cwd",
+            session_factory=GappedRestartSession,
+        )
+        client = LeaseClient("client", "client")
+
+        async def restart_tool() -> None:
+            async with manager.operation(address("gap"), client, policy()) as resource:
+                await asyncio.to_thread(resource.session.restart)
+
+        restart = asyncio.create_task(restart_tool())
+        assert await asyncio.to_thread(GappedRestartSession.in_gap.wait, 1)
+        [snapshot] = await manager.snapshot()
+        await manager.sweep_once()
+        assert snapshot["kernel_pid"] is None
+        GappedRestartSession.release.set()
+        await restart
+
+        # A gap reading once became a stored lifecycle that nothing reset, and
+        # this operation then retried forever without yielding the event loop;
+        # only the pytest-timeout thread can end such a test.
+        async with manager.operation(address("gap"), client, policy()) as resource:
+            assert resource.lifecycle is ResourceLifecycle.RUNNING
+            assert resource.kernel_pid is not None
         await manager.stop()
 
     asyncio.run(scenario())
