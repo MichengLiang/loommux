@@ -174,6 +174,12 @@ application also serves a resource console at `/` and operational JSON APIs
 under `/api`. Binding it beyond the local machine exposes arbitrary Python
 execution and requires network controls and authentication outside loommux.
 
+If a server stops answering (the console, new connections, and Ctrl+C all go
+quiet), run `kill -USR1 <loommux pid>` on Linux or macOS. Every thread's Python
+stack is printed to the server's stderr and the server keeps running. The
+handler runs below the event loop, so it works while the loop is frozen;
+include its output when reporting the hang.
+
 ## Kernel Resources And Client Leases
 
 An ordinary MCP connection selects a resource without changing the eight-tool

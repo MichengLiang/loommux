@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import faulthandler
+import signal
+import sys
 from collections.abc import Callable, Sequence
 from typing import cast
 
@@ -29,6 +32,13 @@ def run_entrypoint(
     parser.add_argument("--port", type=_port, default=default_port, help="HTTP bind port; ignored by stdio.")
     parser.add_argument("--path", type=_path, default=default_path, help="Streamable HTTP route; ignored by stdio.")
     options = parser.parse_args(argv)
+    if sys.platform != "win32":
+        # A server whose event loop is stuck never runs uvicorn's Ctrl+C and
+        # SIGTERM handling, and finding out where it is stuck starts with its
+        # stacks. faulthandler prints every thread's stack from a C-level signal
+        # handler, so `kill -USR1 <pid>` works while the event loop is frozen and
+        # needs none of the ptrace privileges py-spy or gdb require.
+        faulthandler.register(signal.SIGUSR1, all_threads=True)
     mcp = create_server(cast(ResultMode, options.result_mode))
     if not options.server:
         mcp.run(transport="stdio")

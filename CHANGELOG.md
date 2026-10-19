@@ -30,6 +30,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - The resource console offers the `connection` mode and its grace, shows each
   lease's standing and grace countdown, and keeps a lease-signal row that
   turns red while any lease is in an alert standing.
+- On Linux and macOS, `kill -USR1 <pid>` prints every thread's Python stack to
+  a loommux server's stderr without stopping it, including while its event
+  loop is frozen.
 
 ### Changed
 

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import re
+import subprocess
+import sys
+
 import pytest
 
 import loommux.mcp.server as server
@@ -67,3 +71,23 @@ def test_main_forwards_the_single_entrypoint_arguments(monkeypatch: pytest.Monke
 def test_invalid_or_removed_options_are_rejected_before_starting(argv: list[str]) -> None:
     with pytest.raises(SystemExit, match="2"):
         run_entrypoint(lambda _mode: RecordingMCP(), argv=argv)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="faulthandler.register is POSIX-only")
+def test_sigusr1_prints_every_thread_stack_while_the_server_runs() -> None:
+    script = (
+        "import os, signal, threading, time\n"
+        "from loommux.mcp.entrypoints import run_entrypoint\n"
+        "class BlockedMCP:\n"
+        "    def run(self, **kwargs):\n"
+        "        threading.Thread(target=time.sleep, args=(5,), daemon=True).start()\n"
+        "        os.kill(os.getpid(), signal.SIGUSR1)\n"
+        "        time.sleep(0.2)\n"
+        "run_entrypoint(lambda mode: BlockedMCP(), argv=['--server'])\n"
+    )
+
+    completed = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=10)
+
+    assert completed.returncode == 0
+    assert len(re.findall(r"[Tt]hread 0x[0-9a-f]+ \(most recent call first\)", completed.stderr)) >= 2
+    assert "in run" in completed.stderr
