@@ -108,6 +108,9 @@ class KernelSession:
             try:
                 message = client.get_iopub_msg(timeout=0.1)
             except Exception:
+                # A dead kernel does not fail its iopub channel; the channel only
+                # goes quiet. Every empty poll therefore checks the process, which
+                # is why KernelRuntime.is_alive must stay a plain process poll.
                 if not self.is_alive():
                     self._notify_kernel_exit()
                     return

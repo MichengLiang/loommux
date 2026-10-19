@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import shutil
 import sys
 import time
@@ -303,6 +304,33 @@ def test_kernel_exit_finishes_the_running_execution(tmp_path: Path) -> None:
         assert not old_runtime_root.exists()
     finally:
         session.close()
+
+
+def test_kernel_liveness_polls_the_process_without_blocking_an_event_loop(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    runtime = KernelRuntime(workspace, Path(sys.executable).absolute())
+    runtime.start(10)
+    manager = runtime.manager
+    assert manager is not None
+    process = manager.provisioner.process
+
+    def blocking_is_alive() -> bool:
+        raise AssertionError("KernelManager.is_alive waits on a helper thread from inside an event loop")
+
+    async def observe() -> bool:
+        return runtime.is_alive()
+
+    try:
+        with monkeypatch.context() as patched:
+            patched.setattr(manager, "is_alive", blocking_is_alive)
+            assert asyncio.run(observe()) is True
+            process.kill()
+            process.wait(timeout=5)
+            assert asyncio.run(observe()) is False
+            assert runtime.returncode is not None
+    finally:
+        runtime.shutdown()
 
 
 def _assert_kernel_policy(session: IPythonSession, launch: KernelLaunch) -> None:

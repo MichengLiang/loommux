@@ -39,6 +39,11 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- Check kernel liveness by polling the kernel process instead of calling
+  Jupyter's `KernelManager.is_alive`. That call waited on a helper thread
+  without a timeout whenever the server's event loop asked (every tool call,
+  sweep, and console refresh), and every idle kernel's iopub collector asked
+  ten times a second.
 - Raise the console's muted text and green badge colors to WCAG AA contrast
   (4.35:1 and 4.43:1 before), and its policy labels from 11 px to 14 px.
 - Stop demoting the console's small text twice: metric labels go from 10 px

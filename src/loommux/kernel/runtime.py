@@ -110,8 +110,7 @@ class KernelRuntime:
 
     @property
     def returncode(self) -> int | None:
-        manager = self.manager
-        process = getattr(manager.provisioner, "process", None) if manager is not None else None
+        process = self._process()
         return process.poll() if process is not None else None
 
     def start(self, timeout_seconds: float) -> BlockingKernelClient:
@@ -148,13 +147,24 @@ class KernelRuntime:
 
     def interrupt(self) -> None:
         manager = self.manager
-        if manager is None or not manager.is_alive():
+        if manager is None or not self.is_alive():
             return
         manager.interrupt_kernel()
 
     def is_alive(self) -> bool:
+        # KernelManager.is_alive is a jupyter_core run_sync wrapper. On a thread
+        # with a running event loop it hands the check to a helper thread and
+        # blocks on the result without a timeout; on any other thread it creates
+        # an event loop per call that only garbage collection closes. Liveness is
+        # read on the server's event loop by every tool call, sweep, and console
+        # refresh, and ten times a second by every idle iopub collector, so ask
+        # the process directly: the local provisioner's poll() is this same call.
+        process = self._process()
+        return process is not None and process.poll() is None
+
+    def _process(self) -> subprocess.Popen[bytes] | None:
         manager = self.manager
-        return manager is not None and manager.is_alive()
+        return getattr(manager.provisioner, "process", None) if manager is not None else None
 
     def shutdown(self) -> None:
         manager, self.manager = self.manager, None
