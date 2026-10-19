@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import gc
+import json
 import shutil
 import sys
 import time
@@ -361,6 +362,26 @@ def test_kernel_lifecycles_close_the_event_loops_their_blocking_calls_create(tmp
         gc.enable()
 
     assert after == before
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="ZMQ IPC transport is POSIX-only")
+def test_posix_kernels_use_private_ipc_sockets(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session = IPythonSession()
+    assert session.start_workspace(workspace, "launch_cwd")["ok"] is True
+    kernel = session.kernel
+    assert kernel is not None and kernel.launch is not None
+    runtime_root = kernel.launch.runtime_root
+    try:
+        connection = json.loads(kernel.launch.connection_file.read_text())
+        assert connection["transport"] == "ipc"
+        assert Path(connection["ip"]).parent == runtime_root
+        assert all(Path(f"{connection['ip']}-{connection[name]}").exists() for name in ("shell_port", "iopub_port", "stdin_port", "control_port", "hb_port"))
+        assert session.run_cell("6 * 7")["result_text"] == "42"
+    finally:
+        session.close()
+    assert not runtime_root.exists()
 
 
 def _assert_kernel_policy(session: IPythonSession, launch: KernelLaunch) -> None:

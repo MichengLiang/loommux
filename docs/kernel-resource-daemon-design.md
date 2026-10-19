@@ -131,6 +131,13 @@ their process group during termination. Windows uses the loommux Job Object
 containment. Tests require restart to terminate descendants on both supported
 platform families.
 
+POSIX kernels talk to the server over ZMQ IPC sockets inside the kernel's
+private runtime root; Windows kernels use loopback TCP. Over TCP, Jupyter
+chooses free ports before the kernel binds them, so another process can take
+one first; IPC socket names belong to the private root and cannot be claimed.
+Every kernel start, including restart and the Windows interrupt replacement,
+retries once with a fresh process before it reports failure.
+
 ## 5. Lease policy
 
 A lease retains one immutable policy generation:

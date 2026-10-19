@@ -129,7 +129,12 @@ class KernelRuntime:
 
     def _start(self, timeout_seconds: float) -> BlockingKernelClient:
         launch = KernelLaunch.create(self.python_path, self.workspace)
-        manager = _LoommuxKernelManager(_kernel_spec(launch), connection_file=str(launch.connection_file), kernel_name="")
+        manager = _LoommuxKernelManager(
+            _kernel_spec(launch),
+            connection_file=str(launch.connection_file),
+            kernel_name="",
+            **_connection_settings(launch),
+        )
         containment: _KernelContainment | None = None
         client: BlockingKernelClient | None = None
         try:
@@ -224,6 +229,23 @@ def _kernel_spec(launch: KernelLaunch) -> KernelSpec:
         interrupt_mode="signal",
         resource_dir=str(launch.runtime_root),
     )
+
+
+def _connection_settings(launch: KernelLaunch) -> dict[str, str]:
+    """Choose the ZMQ transport for one kernel's channels.
+
+    Over TCP, Jupyter picks free ports and writes them to the connection file
+    before the kernel binds them, and any process can take one in between: the
+    bind then fails in the kernel (on the heartbeat thread silently), and every
+    kernel logs that its traffic is unencrypted. POSIX kernels therefore use
+    IPC sockets, named ``<prefix>-<n>`` inside the private runtime root, which
+    nothing else can claim and which leave with that root. The root lives in
+    the system temporary directory, so the socket paths stay well inside the
+    104-byte Unix socket path limit. Windows has no ZMQ IPC and keeps TCP.
+    """
+    if sys.platform == "win32":
+        return {}
+    return {"transport": "ipc", "ip": str(launch.runtime_root / "ipc")}
 
 
 def _kernel_pid(manager: KernelManager) -> int:

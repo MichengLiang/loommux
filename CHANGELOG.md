@@ -36,6 +36,10 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Changed
 
+- Kernels on Linux and macOS use ZMQ IPC sockets in their private runtime
+  directory instead of loopback TCP ports, so no other process can take a
+  kernel's port during startup, and kernels no longer log a "running over TCP
+  without encryption" warning each. Windows kernels keep TCP.
 - `LeasePolicy` requires `connection_grace_seconds`, and `LeaseAwareClient`
   requires a server whose `/api/lease-policy` publishes it; pair client and
   server from the same release.
