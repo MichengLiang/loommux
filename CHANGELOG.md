@@ -34,6 +34,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 - Raise the console's muted text and green badge colors to WCAG AA contrast
   (4.35:1 and 4.43:1 before), and its policy labels from 11 px to 14 px.
+- Stop demoting the console's small text twice: metric labels go from 10 px
+  gray to 12 px in the ink color, and resource IDs from 11 px to 12 px.
 - Document that a standard MCP `ping` renews a lease under every mode, not
   only in heartbeat mode.
 

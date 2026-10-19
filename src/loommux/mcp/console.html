@@ -16,9 +16,10 @@
     label{display:grid;gap:5px;color:var(--muted);font-size:14px}input,select{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px;background:#fafcfd;color:var(--navy)}
     button{border:1px solid var(--line);border-radius:9px;padding:8px 11px;background:#fff;color:var(--navy);font-weight:700;cursor:pointer}
     button.danger{color:var(--red)}button:hover{background:#f7fafc}.resources{display:grid;gap:12px}
-    .resource{padding:17px}.name{font-size:16px;font-weight:800;color:var(--navy)}.mono{font:11px ui-monospace,monospace;color:var(--muted)}
+    /* Small text is demoted one step only: hex IDs are 12px metadata and stay muted; metric labels are 12px in the ink color. */
+    .resource{padding:17px}.name{font-size:16px;font-weight:800;color:var(--navy)}.mono{font:12px ui-monospace,monospace;color:var(--muted)}
     .metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin:14px 0}.metric{background:#f8fafb;border-radius:10px;padding:10px}
-    .metric span{display:block;color:var(--muted);font-size:10px}.metric strong{color:var(--navy)}
+    .metric span{display:block;color:var(--ink);font-size:12px}.metric strong{color:var(--navy)}
     .leases{display:grid;gap:6px}.lease{display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:9px;border-top:1px solid var(--line);padding-top:8px}
     .badge{display:inline-block;border-radius:99px;padding:2px 8px;margin-right:4px;background:var(--tint);color:var(--navy);font-size:12px;font-weight:800}
     .badge.ok{background:var(--ok-tint);color:var(--green)}.badge.alert{background:var(--alert-tint);color:var(--red)}
