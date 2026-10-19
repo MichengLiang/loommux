@@ -121,6 +121,11 @@ detail 值。
 2. 每个可交付图像元素形成 `ImageContent`。
 3. 后续元素继续追加，不得跨越前面的文本或图像元素。
 
+connection 租约处于警报状态时，`ToolResult.content` 在展示序列全部元素之后再追加
+一个说明租约警报的 `TextContent`。它不属于 execution 的输出，不进入任何文本流，
+也不改变展示序列内部的顺序；其条件与措辞由 `kernel-resource-daemon-design.md`
+第 5 节定义。
+
 `combined` log 是同一文本 element 的独立文本投影。它用于日志读取和搜索，不决定
 `ToolResult.content` 中 text 与 image 的排列。
 

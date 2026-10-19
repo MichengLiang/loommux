@@ -149,8 +149,9 @@ long operation after the client left proves nothing about the client.
 
 ### Activity mode
 
-Tool entry and completion refresh the lease deadline. Private and named
-resources use their corresponding fixed activity timeout.
+Tool entry and completion renew the lease; it expires one activity window
+after its latest renewal. Private and named resources use their
+corresponding fixed activity timeout.
 
 ### Heartbeat mode
 
@@ -316,6 +317,10 @@ async with LeaseAwareClient(
 
 The heartbeat task starts only for a heartbeat policy and is cancelled before
 the MCP client context closes.
+
+A connection policy needs nothing from this client: the FastMCP Streamable
+HTTP transport it wraps keeps the session's standalone `GET` stream open for
+the whole context, and that open stream holds the lease.
 
 ## 9. Server settings
 

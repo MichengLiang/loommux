@@ -49,7 +49,10 @@ class LeaseVerdict:
 
     ``expires_at`` is ``None`` while an open stream holds the lease or while
     the grace period is still deciding; ``grace_ends_at`` marks that
-    decision. ``window_seconds`` is the duration behind ``expires_at``.
+    decision. ``window_seconds`` is the duration that governs the current
+    standing: the renewal window for renewable and alerting leases, the
+    grace while awaiting, reconnecting, or after a stream has departed, and
+    ``None`` while connected.
     """
 
     standing: LeaseStanding
