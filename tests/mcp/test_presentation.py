@@ -137,6 +137,37 @@ def test_rich_execution_content_preserves_text_image_text_order_and_detail() -> 
     assert "_presentation" not in result.structured_content
 
 
+def test_lease_alert_closes_plain_and_rich_results() -> None:
+    alert = {"standing": "unbound", "fallback_window_seconds": 4800.0}
+    plain = make_tool_result("status", {"ok": True, "kernel_started": True, "lease_alert": alert}, "structured")
+    rich = make_tool_result(
+        "run_cell",
+        {"ok": True, "execution": 3, "status": "completed", "_presentation": (PresentationText("done\n"),), "lease_alert": alert},
+        "content",
+    )
+
+    assert [block.type for block in plain.content] == ["text", "text"]
+    assert isinstance(plain.content[0], TextContent)
+    assert plain.content[0].text.startswith("kernel: idle")
+    assert plain.structured_content is not None
+    assert plain.structured_content["lease_alert"] == alert
+    assert [block.text for block in rich.content if isinstance(block, TextContent)][:2] == ["In [3]:\n", "done\n"]
+    for result in (plain, rich):
+        last = result.content[-1]
+        assert isinstance(last, TextContent)
+        assert last.text.startswith("Lease alert (unbound): this MCP session never opened the standalone GET stream")
+        assert "4,800 idle seconds" in last.text
+
+
+def test_lease_alert_names_a_lost_stream() -> None:
+    result = make_tool_result("status", {"ok": True, "lease_alert": {"standing": "stream_lost", "fallback_window_seconds": 86400}}, "content")
+
+    last = result.content[-1]
+    assert isinstance(last, TextContent)
+    assert "closed and was not reopened" in last.text
+    assert "86,400 idle seconds" in last.text
+
+
 def test_rich_execution_content_keeps_neighbors_when_an_image_is_rejected() -> None:
     result = make_tool_result(
         "wait",

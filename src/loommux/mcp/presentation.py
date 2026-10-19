@@ -72,6 +72,24 @@ def format_output_token_limit_notice(status: Mapping[str, Any]) -> str:
     )
 
 
+_LEASE_ALERT_CAUSES = {
+    "unbound": "this MCP session never opened the standalone GET stream that a connection lease relies on",
+    "stream_lost": "this MCP session's standalone GET stream closed and was not reopened, yet the client keeps sending requests",
+}
+
+
+def format_lease_alert(alert: Mapping[str, Any]) -> str:
+    """Tell the reader that a connection lease lost the signal it relies on."""
+    standing = str(alert.get("standing", "unknown"))
+    cause = _LEASE_ALERT_CAUSES.get(standing, "the connection lease lost its stream signal")
+    window = _number(alert.get("fallback_window_seconds"))
+    return (
+        f"Lease alert ({standing}): {cause}, so loommux cannot tell when the client leaves. "
+        f"This workbench now expires after {window:,} idle seconds like an activity lease. "
+        "The MCP client's transport behavior has likely changed; tell the person running loommux and check its resource console."
+    )
+
+
 def _format_binary_size(byte_count: int) -> str:
     units = ("B", "KiB", "MiB", "GiB", "TiB")
     value = float(byte_count)

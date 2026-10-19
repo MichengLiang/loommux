@@ -24,7 +24,7 @@ def reserve_port() -> int:
 
 
 @contextmanager
-def running_server(port: int, workspace: Path) -> Iterator[str]:
+def running_server(port: int, workspace: Path, **lease_environment: str) -> Iterator[str]:
     origin = f"http://127.0.0.1:{port}"
     environment = {
         **os.environ,
@@ -35,6 +35,7 @@ def running_server(port: int, workspace: Path) -> Iterator[str]:
         "LOOMMUX_HEARTBEAT_TIMEOUT_SECONDS": "0.16",
         "LOOMMUX_SWEEP_INTERVAL_SECONDS": "0.02",
         "LOOMMUX_ORPHAN_GRACE_SECONDS": "0.05",
+        **lease_environment,
     }
     process = subprocess.Popen(
         [
@@ -178,4 +179,42 @@ def test_http_resources_are_private_shareable_and_lease_reclaimed(
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     with running_server(reserve_port(), workspace) as origin:
+        asyncio.run(scenario(origin))
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="external Streamable HTTP subprocess harness is Linux-only",
+)
+@pytest.mark.timeout(60)
+def test_open_standalone_stream_holds_a_connection_lease_past_every_window(
+    tmp_path: Path,
+) -> None:
+    async def scenario(origin: str) -> None:
+        async with LeaseAwareClient(f"{origin}/mcp", "connected") as client:
+            await client.call_tool("run_cell", {"freeform": "kept = 5"})
+            # Idle well past both the 0.2 s activity window and the 0.3 s
+            # grace; only the open GET stream can keep this lease.
+            await asyncio.sleep(0.6)
+            async with httpx.AsyncClient(timeout=1) as http:
+                [resource] = (await http.get(f"{origin}/api/resources")).json()["resources"]
+            kept = await client.call_tool("run_cell", {"freeform": "print(kept)"})
+            assert client.heartbeat_count == 0
+
+        [lease] = resource["leases"]
+        assert lease["mode"] == "connection"
+        assert lease["standing"] == "connected"
+        assert lease["alert"] is False
+        assert [block.type for block in kept.content] == ["text"]
+        assert kept.content[0].text == "In [2]:\n5\n"
+        await wait_for_resource_count(origin, 0, timeout=5)
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    with running_server(
+        reserve_port(),
+        workspace,
+        LOOMMUX_LEASE_MODE="connection",
+        LOOMMUX_CONNECTION_GRACE_SECONDS="0.3",
+    ) as origin:
         asyncio.run(scenario(origin))

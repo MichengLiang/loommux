@@ -4,17 +4,20 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
 
 from fastmcp import Context, FastMCP
+from fastmcp.server.http import StarletteWithLifespan
 from fastmcp.tools import ToolResult
 
 from loommux.host_workspace_config import WorkspaceConfigError
 from loommux.mcp.control import install_control_routes
 from loommux.mcp.lease_ping import install_lease_aware_ping_handler
 from loommux.mcp.result import ResultMode, make_tool_result
+from loommux.mcp.stream_presence import StandaloneStreamPresence
 from loommux.resource import (
+    ConnectionRegistry,
     KernelResourceManager,
     LeasePolicy,
     LeasePolicyManager,
@@ -34,10 +37,37 @@ from loommux.workspace_resolver import resolve_workspace_launch
 _FULL_BODY_TOOL_META = {"anthropic/maxResultSizeChars": 200_000}
 
 
+class _LoommuxMCP(FastMCP):
+    """A FastMCP server whose HTTP application reports stream presence.
+
+    ``run_http_async`` builds its application through ``http_app`` as well,
+    so tests and the installed command observe streams the same way.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        *,
+        lifespan: Callable[[FastMCP], AbstractAsyncContextManager[dict[str, Any]]],
+        connections: ConnectionRegistry,
+    ) -> None:
+        super().__init__(name, lifespan=lifespan)
+        self._connections = connections
+
+    # The arguments pass through untouched: run_http_async calls this with
+    # keywords, and a FastMCP minor release that adds an http_app option must
+    # keep working, so a pass-through is the one place Any is the honest type.
+    def http_app(self, *args: Any, **kwargs: Any) -> StarletteWithLifespan:  # noqa: ANN401
+        app = super().http_app(*args, **kwargs)
+        app.add_middleware(StandaloneStreamPresence, connections=self._connections)
+        return app
+
+
 def create_mcp(result_mode: ResultMode) -> FastMCP:
     """Build one MCP server whose tools consume selected kernel resources."""
 
     manager: KernelResourceManager | None = None
+    connections = ConnectionRegistry()
 
     async def call(
         tool_name: str,
@@ -55,6 +85,11 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         try:
             address = resolve_address(ctx)
             client = resolve_client(ctx)
+            request_context = ctx.request_context
+            if request_context is not None and request_context.request is None:
+                # No HTTP request means stdio or an in-process client: the
+                # session lives exactly as long as this server process.
+                connections.bind_to_process(client.client_id)
             generation = resolve_policy_generation()
             policy: LeasePolicy | None
             if generation is None:
@@ -67,6 +102,15 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
                 )
             async with selected_manager.operation(address, client, policy) as resource:
                 status = await asyncio.to_thread(operation, resource.session)
+            verdict = await selected_manager.client_verdict(address.key, client.client_id)
+            if verdict is not None and verdict.standing.alert:
+                status = {
+                    **status,
+                    "lease_alert": {
+                        "standing": verdict.standing.value,
+                        "fallback_window_seconds": verdict.window_seconds,
+                    },
+                }
         except (ResourceManagerError, ResourceRoutingError) as exc:
             status = {
                 "ok": False,
@@ -95,6 +139,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             resolution.workspace,
             resolution.workspace_resolution,
             policy_manager=policy_manager,
+            connections=connections,
             sweep_interval_seconds=settings.sweep_interval_seconds,
             orphan_grace_seconds=settings.orphan_grace_seconds,
         )
@@ -105,7 +150,11 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             await manager.stop()
             manager = None
 
-    mcp = FastMCP("loommux persistent IPython session", lifespan=lifespan)
+    mcp = _LoommuxMCP(
+        "loommux persistent IPython session",
+        lifespan=lifespan,
+        connections=connections,
+    )
     install_lease_aware_ping_handler(mcp, lambda: manager)
     install_control_routes(mcp, lambda: manager)
 

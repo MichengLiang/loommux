@@ -9,6 +9,17 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- Add the `connection` lease mode. A lease is held for as long as its MCP
+  session keeps the standalone Streamable HTTP `GET` stream open, so a client
+  such as Claude Code keeps its kernel while it runs, however long it idles,
+  and releases it about a minute after it exits, without pinging. Select it
+  with `LOOMMUX_LEASE_MODE=connection`. Stdio and in-process sessions are
+  connected for the life of the server process.
+- Append a `Lease alert` block to every tool result of a connection-mode
+  session whose client never opens a stream (`unbound`) or keeps calling
+  after its stream is gone (`stream_lost`), and add `lease_alert` to the
+  structured status. Such a lease falls back to the activity window instead
+  of being released.
 - Report each lease's `standing`, `alert`, and `grace_remaining_seconds` in
   `/api/resources`; `remaining_seconds` and `timeout_seconds` are `null` while
   an open stream holds a connection lease.

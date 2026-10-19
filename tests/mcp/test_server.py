@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -411,3 +412,18 @@ def test_mcp_result_mode_only_changes_structured_content() -> None:
     raw = {"ok": True, "execution": 4, "status": "completed", "result_text": "1", "output_text": "Out[4]: 1\n", "output_omitted": False}
     assert make_tool_result("run_cell", raw, "structured").structured_content == raw
     assert make_tool_result("run_cell", raw, "content").structured_content is None
+
+
+async def test_in_process_session_is_connected_for_the_process_lifetime(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without an HTTP request the session is stdio or in-process and never loses its stream."""
+    monkeypatch.chdir(workspace)
+    monkeypatch.setenv("LOOMMUX_LEASE_MODE", "connection")
+    monkeypatch.setenv("LOOMMUX_CONNECTION_GRACE_SECONDS", "0.01")
+
+    async with Client(create_default_mcp()) as client:
+        await client.call_tool("status", {})
+        await asyncio.sleep(0.05)
+        status = await client.call_tool("status", {})
+
+    assert [block.type for block in status.content] == ["text"]
+    assert "Lease alert" not in status.content[0].text

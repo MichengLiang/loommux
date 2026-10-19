@@ -200,6 +200,31 @@ The registry forgets a session once it is disconnected and no lease refers
 to it. A forgotten session that later calls a tool is judged as never having
 opened a stream, which still alerts if no stream follows.
 
+#### Transport observation
+
+`mcp/stream_presence.py` installs an ASGI middleware on every HTTP
+application the server builds; `run_http_async` builds its application
+through the same `http_app`, so tests and the installed command observe
+streams identically. A request counts as a standalone stream when it is a
+`GET` carrying `Mcp-Session-Id` whose response starts with `200` and
+`text/event-stream`; it stays open until that response ends. A rejected
+`GET` (unknown session, a second concurrent stream) never reaches `200` and
+is not counted. The observation relies only on ASGI and on what the MCP
+Streamable HTTP specification defines, unlike the ping hook below.
+
+A tool call whose MCP request context carries no HTTP request comes from
+stdio or from an in-process client. Such a session lives exactly as long as
+the server process, so it is bound to the process and stays `connected`.
+
+#### Alerts in tool results
+
+After each tool call the server judges the caller's lease. When its standing
+is an alert, the tool result gains a final text block naming the standing,
+its cause, and the activity window now in force, and the structured status
+gains `lease_alert`. The person running loommux may never open the console,
+but the model reading the tool result will relay the alert to them; only
+the affected session sees it.
+
 ### Ping renewal
 
 A successful standard MCP `ping` renews an existing lease under every mode
@@ -315,6 +340,7 @@ src/loommux/resource/
 src/loommux/mcp/
     factory.py     eight-tool routing into selected resources
     lease_ping.py  standard MCP ping renewal adapter
+    stream_presence.py  standalone GET stream observation for connection leases
     control.py     HTTP operational routes
     console.html   dependency-free management interface
 
