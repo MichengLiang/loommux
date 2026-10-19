@@ -90,10 +90,10 @@ def test_shared_resource_tracks_client_leases_independently(
         policy = make_policy()
         async with manager.operation(address, make_client("first"), policy) as resource:
             pass
-        # Drive the first lease past its deadline directly. Sleeping for a
+        # Drive the first lease past its window directly. Sleeping for a
         # 30-ms lease makes this state-machine test scheduler-sensitive on
         # hosted Windows runners.
-        resource.client_leases["first"].deadline = 0
+        resource.client_leases["first"].renewed_at -= 3600
         async with manager.operation(address, make_client("second"), policy):
             pass
 
@@ -134,14 +134,14 @@ def test_protocol_renewal_preserves_a_crashed_resource_lease(
         async with manager.operation(address, client, make_policy()) as resource:
             pass
         resource.lifecycle = ResourceLifecycle.CRASHED
-        previous_deadline = resource.client_leases[client.client_id].deadline
+        previous_renewal = resource.client_leases[client.client_id].renewed_at
 
         await asyncio.sleep(0.01)
 
         assert await manager.renew_client_lease(address.key, client.client_id)
         assert (
-            resource.client_leases[client.client_id].deadline
-            > previous_deadline
+            resource.client_leases[client.client_id].renewed_at
+            > previous_renewal
         )
         await manager.stop()
 
@@ -161,12 +161,12 @@ def test_health_observation_does_not_renew_the_client_lease(
         client = make_client("observed")
         async with manager.operation(address, client, make_policy()) as resource:
             pass
-        deadline = resource.client_leases[client.client_id].deadline
+        renewal = resource.client_leases[client.client_id].renewed_at
 
         health = await manager.health(resource.resource_id)
 
         assert health["ok"] is True
-        assert resource.client_leases[client.client_id].deadline == deadline
+        assert resource.client_leases[client.client_id].renewed_at == renewal
         await manager.stop()
 
     asyncio.run(scenario())

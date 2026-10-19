@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
+from time import monotonic
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -44,14 +45,18 @@ class LeaseClient:
 
 @dataclass
 class ClientLease:
-    """One client's immutable policy snapshot and mutable liveness facts."""
+    """One client's immutable policy snapshot and mutable liveness facts.
+
+    ``renewed_at`` is a monotonic timestamp; ``last_seen_at`` is the same
+    renewal on the wall clock, kept only for operators reading snapshots.
+    """
 
     lease_id: str
     client: LeaseClient
     policy: LeasePolicy
     created_at: datetime
     last_seen_at: datetime
-    deadline: float
+    renewed_at: float
     active_operations: int = 0
 
     @classmethod
@@ -69,7 +74,7 @@ class ClientLease:
             policy=policy,
             created_at=timestamp,
             last_seen_at=timestamp,
-            deadline=0,
+            renewed_at=monotonic(),
         )
 
 

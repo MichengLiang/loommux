@@ -12,6 +12,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Any
 
+from loommux.resource.liveness import assess_lease
 from loommux.resource.model import (
     ClientLease,
     KernelResource,
@@ -140,7 +141,7 @@ class KernelResourceManager:
                     resource.client_leases[client.client_id] = lease
                 resource.active_operations += 1
                 lease.active_operations += 1
-                self._touch_lease_locked(resource, lease)
+                self._renew_lease_locked(lease)
                 break
         try:
             yield resource
@@ -157,7 +158,7 @@ class KernelResourceManager:
                         lease.active_operations - 1,
                     )
                     if resource.lifecycle is ResourceLifecycle.RUNNING:
-                        self._touch_lease_locked(resource, lease)
+                        self._renew_lease_locked(lease)
 
     async def renew_client_lease(
         self,
@@ -174,7 +175,7 @@ class KernelResourceManager:
             lease = resource.client_leases.get(client_id)
             if lease is None:
                 return False
-            self._touch_lease_locked(resource, lease)
+            self._renew_lease_locked(lease)
             return True
 
     async def list_resources(self) -> list[KernelResource]:
@@ -329,7 +330,8 @@ class KernelResourceManager:
                 expired_clients = [
                     client_id
                     for client_id, lease in resource.client_leases.items()
-                    if lease.active_operations == 0 and lease.deadline <= now
+                    if lease.active_operations == 0
+                    and assess_lease(lease, shared=resource.address.shared).expires_at <= now
                 ]
                 for client_id in expired_clients:
                     resource.client_leases.pop(client_id)
@@ -441,14 +443,9 @@ class KernelResourceManager:
             self._resources_by_key.pop(resource.address.key, None)
 
     @staticmethod
-    def _touch_lease_locked(
-        resource: KernelResource,
-        lease: ClientLease,
-    ) -> None:
+    def _renew_lease_locked(lease: ClientLease) -> None:
         lease.last_seen_at = datetime.now(UTC)
-        lease.deadline = monotonic() + lease.policy.timeout_for(
-            shared=resource.address.shared,
-        )
+        lease.renewed_at = monotonic()
 
     async def _sweeper_loop(self) -> None:
         while not self._stop_event.is_set():
@@ -474,26 +471,26 @@ class KernelResourceManager:
         ):
             resource.lifecycle = ResourceLifecycle.CRASHED
         now = monotonic()
-        leases = [
-            {
-                "lease_id": lease.lease_id,
-                "client_id": lease.client.client_id,
-                "client_name": lease.client.display_name,
-                "mode": lease.policy.mode.value,
-                "policy_generation": lease.policy.generation,
-                "created_at": lease.created_at.isoformat(),
-                "last_seen_at": lease.last_seen_at.isoformat(),
-                "active_operations": lease.active_operations,
-                "timeout_seconds": lease.policy.timeout_for(
-                    shared=resource.address.shared,
-                ),
-                "remaining_seconds": max(0, round(lease.deadline - now, 1)),
-            }
-            for lease in sorted(
-                resource.client_leases.values(),
-                key=lambda item: item.created_at,
+        leases = []
+        for lease in sorted(
+            resource.client_leases.values(),
+            key=lambda item: item.created_at,
+        ):
+            verdict = assess_lease(lease, shared=resource.address.shared)
+            leases.append(
+                {
+                    "lease_id": lease.lease_id,
+                    "client_id": lease.client.client_id,
+                    "client_name": lease.client.display_name,
+                    "mode": lease.policy.mode.value,
+                    "policy_generation": lease.policy.generation,
+                    "created_at": lease.created_at.isoformat(),
+                    "last_seen_at": lease.last_seen_at.isoformat(),
+                    "active_operations": lease.active_operations,
+                    "timeout_seconds": verdict.window_seconds,
+                    "remaining_seconds": verdict.remaining_seconds(now),
+                }
             )
-        ]
         return {
             "resource_id": resource.resource_id,
             "key": resource.address.key,
