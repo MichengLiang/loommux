@@ -168,6 +168,14 @@ def test_lease_alert_names_a_lost_stream() -> None:
     assert "86,400 idle seconds" in last.text
 
 
+def test_lease_alert_keeps_a_fractional_window() -> None:
+    result = make_tool_result("status", {"ok": True, "lease_alert": {"standing": "unbound", "fallback_window_seconds": 90.5}}, "content")
+
+    last = result.content[-1]
+    assert isinstance(last, TextContent)
+    assert "expires after 90.5 idle seconds" in last.text
+
+
 def test_rich_execution_content_keeps_neighbors_when_an_image_is_rejected() -> None:
     result = make_tool_result(
         "wait",

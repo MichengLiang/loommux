@@ -82,10 +82,10 @@ def format_lease_alert(alert: Mapping[str, Any]) -> str:
     """Tell the reader that a connection lease lost the signal it relies on."""
     standing = str(alert.get("standing", "unknown"))
     cause = _LEASE_ALERT_CAUSES.get(standing, "the connection lease lost its stream signal")
-    window = _number(alert.get("fallback_window_seconds"))
+    window = float(alert.get("fallback_window_seconds") or 0)
     return (
         f"Lease alert ({standing}): {cause}, so loommux cannot tell when the client leaves. "
-        f"This workbench now expires after {window:,} idle seconds like an activity lease. "
+        f"This workbench now expires after {window:,g} idle seconds like an activity lease. "
         "The MCP client's transport behavior has likely changed; tell the person running loommux and check its resource console."
     )
 

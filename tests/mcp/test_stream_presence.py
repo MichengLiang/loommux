@@ -56,10 +56,21 @@ def test_rejected_streams_and_other_requests_are_not_counted() -> None:
     asyncio.run(call(json_reply, http_scope("GET", [(b"mcp-session-id", b"session")])))
     asyncio.run(call(json_reply, http_scope("POST", [(b"mcp-session-id", b"session")])))
     asyncio.run(call(json_reply, http_scope("GET", [])))
-    asyncio.run(call(json_reply, {"type": "lifespan"}))
 
-    assert observed == [False, False, False, False, False]
+    assert observed == [False, False, False, False]
     assert "session" not in registry
+
+
+def test_non_http_scopes_pass_through_untouched() -> None:
+    registry = ConnectionRegistry()
+    seen: list[str] = []
+
+    async def lifespan_app(scope, receive, send) -> None:
+        seen.append(scope["type"])
+
+    asyncio.run(call(StandaloneStreamPresence(lifespan_app, registry), {"type": "lifespan"}))
+
+    assert seen == ["lifespan"]
 
 
 def test_the_http_application_observes_standalone_streams() -> None:

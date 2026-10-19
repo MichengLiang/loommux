@@ -218,3 +218,54 @@ def test_open_standalone_stream_holds_a_connection_lease_past_every_window(
         LOOMMUX_CONNECTION_GRACE_SECONDS="0.3",
     ) as origin:
         asyncio.run(scenario(origin))
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="external Streamable HTTP subprocess harness is Linux-only",
+)
+@pytest.mark.timeout(60)
+def test_a_session_without_a_standalone_stream_ends_its_results_with_an_alert(
+    tmp_path: Path,
+) -> None:
+    """A hand-written client that never opens GET stands in for a host whose transport changed."""
+    headers = {"Accept": "application/json, text/event-stream"}
+
+    def rpc(http: httpx.Client, session: str | None, method: str, params: dict | None = None, request_id: int | None = None) -> httpx.Response:
+        message = {"jsonrpc": "2.0", "method": method}
+        if params is not None:
+            message["params"] = params
+        if request_id is not None:
+            message["id"] = request_id
+        session_header = {"mcp-session-id": session} if session else {}
+        return http.post("/mcp", json=message, headers={**headers, **session_header})
+
+    def scenario(origin: str) -> None:
+        with httpx.Client(base_url=origin, timeout=5) as http:
+            initialized = rpc(http, None, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "streamless", "version": "0"}}, 1)
+            session = initialized.headers["mcp-session-id"]
+            rpc(http, session, "notifications/initialized")
+            awaiting = rpc(http, session, "tools/call", {"name": "status", "arguments": {}}, 2).text
+            time.sleep(0.5)
+            alerted = rpc(http, session, "tools/call", {"name": "status", "arguments": {}}, 3).text
+            [resource] = http.get("/api/resources").json()["resources"]
+
+        assert "Lease alert" not in awaiting
+        assert "Lease alert (unbound): this MCP session never opened the standalone GET stream" in alerted
+        assert "expires after 30 idle seconds like an activity lease" in alerted
+        [lease] = resource["leases"]
+        assert lease["standing"] == "unbound"
+        assert lease["alert"] is True
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    with running_server(
+        reserve_port(),
+        workspace,
+        LOOMMUX_LEASE_MODE="connection",
+        LOOMMUX_CONNECTION_GRACE_SECONDS="0.3",
+        # The degraded lease must outlive the observation; with the default
+        # 0.2 s activity window it would be reclaimed before the second call.
+        LOOMMUX_PRIVATE_TTL_SECONDS="30",
+    ) as origin:
+        scenario(origin)
