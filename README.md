@@ -23,7 +23,9 @@ search retained output, interrupt the active cell, or restart the kernel.
   resources when clients need one collaborative namespace.
 - One persistent IPython session, execution sequence, and retained history per
   logical resource.
-- Activity or standard MCP-ping leases with automatic orphan reclamation.
+- Activity, standard MCP-ping, or connection-bound leases with automatic
+  orphan reclamation; a connection lease follows the client's open stream
+  and alerts when the client stops behaving that way.
 - A strictly increasing positive integer `execution` coordinate for every
   accepted cell during its logical resource's lifetime.
 - In-memory output retained separately as `combined`, `stdout`, `stderr`,
@@ -179,10 +181,31 @@ surface. Without an additional header, its MCP Session ID addresses a private
 workbench. `X-Loommux-Resource` selects a named shared workbench; every
 participating MCP session still holds an independent lease.
 
+The server chooses how a lease proves that its client is still there with
+`LOOMMUX_LEASE_MODE`:
+
+| Mode | The lease holds while | Fits |
+| --- | --- | --- |
+| `activity` (default) | tool calls keep arriving within 80 minutes (24 hours for named resources) | any client |
+| `heartbeat` | the client pings within 60 seconds | clients that ping on their own, such as `LeaseAwareClient` |
+| `connection` | the session keeps its standalone Streamable HTTP `GET` stream open; stdio sessions for the life of the process | clients that hold that stream while they run, such as Claude Code |
+
+A connection lease survives any amount of idleness and is released about a
+minute after the client exits (`LOOMMUX_CONNECTION_GRACE_SECONDS`, default
+60). If a session calls tools without that stream, or keeps calling after it
+closed, the lease falls back to the activity window and raises an alert:
+every tool result of that session ends with a `Lease alert` block, and the
+console at `/` turns its lease-signal row red. For Claude Code over HTTP:
+
+```bash
+LOOMMUX_LEASE_MODE=connection loommux --server --host 127.0.0.1 --port 8801 --path /mcp
+```
+
 The server publishes the current lease policy at `/api/lease-policy`. The
 included `loommux.client.LeaseAwareClient` discovers and pins that policy
 generation before initialization and sends standard MCP `ping` while a
-heartbeat lease is active:
+heartbeat lease is active; under a connection policy its transport's own
+standalone stream holds the lease:
 
 ```python
 from loommux.client import LeaseAwareClient

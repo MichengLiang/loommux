@@ -88,6 +88,18 @@ loommux --server --result-mode structured --host 127.0.0.1 --port 8802 --path /m
 Its endpoint is `http://127.0.0.1:8802/mcp`. `--path /tools` would instead
 produce `http://127.0.0.1:8802/tools`.
 
+A host such as Claude Code keeps the session's standalone `GET` stream open
+for as long as it runs and never pings. Start the server with
+`LOOMMUX_LEASE_MODE=connection` so its workbench lives exactly as long as
+the host session instead of expiring after 80 idle minutes:
+
+```bash
+LOOMMUX_LEASE_MODE=connection loommux --server --host 127.0.0.1 --port 8801 --path /mcp
+```
+
+The lease modes and their alerts are described in
+[Kernel Resource Daemon Design](kernel-resource-daemon-design.md#5-lease-policy).
+
 The same HTTP application serves its operational console at `/` and JSON
 control routes under `/api`. These routes do not appear in MCP `tools/list`.
 For that reason the MCP path cannot be `/`, `/api`, or a child of `/api`.

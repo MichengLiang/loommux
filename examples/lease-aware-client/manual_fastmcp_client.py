@@ -52,7 +52,10 @@ async def fetch_policy(server_url: str) -> Policy:
         ),
         heartbeat_timeout_seconds=float(payload["heartbeat_timeout_seconds"]),
     )
-    if policy.mode not in {"activity", "heartbeat"}:
+    # A connection lease is held by the standalone GET stream that the
+    # FastMCP client keeps open for its whole context; only heartbeat needs a
+    # ping loop from this example.
+    if policy.mode not in {"activity", "heartbeat", "connection"}:
         raise ValueError(f"unknown lease mode: {policy.mode}")
     if (
         not isfinite(policy.heartbeat_interval_seconds)

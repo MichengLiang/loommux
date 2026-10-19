@@ -30,6 +30,12 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   lease's standing and grace countdown, and keeps a lease-signal row that
   turns red while any lease is in an alert standing.
 
+### Changed
+
+- `LeasePolicy` requires `connection_grace_seconds`, and `LeaseAwareClient`
+  requires a server whose `/api/lease-policy` publishes it; pair client and
+  server from the same release.
+
 ### Fixed
 
 - Raise the console's muted text and green badge colors to WCAG AA contrast
@@ -38,6 +44,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   gray to 12 px in the ink color, and resource IDs from 11 px to 12 px.
 - Document that a standard MCP `ping` renews a lease under every mode, not
   only in heartbeat mode.
+- The manual FastMCP lease example accepts a `connection` policy instead of
+  rejecting it as an unknown mode.
 
 ## [0.1.15] - 2026-09-10
 

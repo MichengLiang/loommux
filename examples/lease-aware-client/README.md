@@ -128,6 +128,24 @@ LOOMMUX_LEASE_MODE=activity
 本目录的客户端仍然会读取策略。这样客户端不会把服务器策略写死，也能
 正确处理服务器运行时切换策略的情况。
 
+## connection 模式对比
+
+如果服务器采用：
+
+```bash
+LOOMMUX_LEASE_MODE=connection
+```
+
+租约跟着 MCP Session 的独立 `GET` 流走：流开着，资源就一直保留，闲置多久
+都不过期；流断开后等待 `LOOMMUX_CONNECTION_GRACE_SECONDS`（默认 60 秒），
+期间重连回来就当没断过，否则回收。`LeaseAwareClient` 与普通 FastMCP
+`Client` 在整个上下文期间都挂着这条流，所以两个示例都不需要心跳；
+`demo.py` 在这种模式下不会启动 ping 任务。
+
+如果某个客户端调用工具却从不打开这条流，或者流断开后仍在调用，租约会
+退回 activity 窗口，并在该会话每次工具结果末尾附上 `Lease alert`，控制台
+顶部的租约信号行也会变红。
+
 ## 策略代为什么要固定
 
 客户端读取策略和第一次业务调用之间可能发生服务器策略切换：
