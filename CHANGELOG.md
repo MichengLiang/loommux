@@ -26,9 +26,14 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - `/api/lease-policy`, its `PUT`, `LeaseAwareClient`, and
   `LOOMMUX_CONNECTION_GRACE_SECONDS` (default 60) carry the connection grace
   period of the `connection` lease mode.
+- The resource console offers the `connection` mode and its grace, shows each
+  lease's standing and grace countdown, and keeps a lease-signal row that
+  turns red while any lease is in an alert standing.
 
 ### Fixed
 
+- Raise the console's muted text and green badge colors to WCAG AA contrast
+  (4.35:1 and 4.43:1 before), and its policy labels from 11 px to 14 px.
 - Document that a standard MCP `ping` renews a lease under every mode, not
   only in heartbeat mode.
 

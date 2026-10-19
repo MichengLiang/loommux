@@ -280,6 +280,13 @@ The control plane is operational infrastructure. It is not added to MCP
 `tools/list`. It does not provide its own authentication layer; deployment
 must keep it inside the same trusted boundary as arbitrary Python execution.
 
+The console renders a lease-signal row above the policy panel on every
+refresh. It names every lease in an alert standing and turns red, and is
+otherwise a quiet line; because the row always exists, an alert recolors it
+in place instead of pushing the resource cards down between two polls. Each
+lease shows its standing next to its mode, and its remaining time as a
+renewal countdown, a grace countdown, or "held by connection".
+
 ## 8. Client lifecycle
 
 `loommux.client.LeaseAwareClient` owns policy discovery, header pinning, MCP

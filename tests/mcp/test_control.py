@@ -55,6 +55,16 @@ def test_http_control_plane_switches_to_the_connection_mode(
     assert updated["policy"]["heartbeat_timeout_seconds"] == initial["heartbeat_timeout_seconds"]
 
 
+def test_console_reads_the_connection_lease_contract() -> None:
+    """The console is plain HTML; this pins the field names it shares with the API."""
+    console = (Path(__file__).parents[2] / "src/loommux/mcp/console.html").read_text(encoding="utf-8")
+
+    assert '<option value="connection">connection</option>' in console
+    assert 'id="grace"' in console
+    for field in ("connection_grace_seconds", "l.standing", "l.alert", "l.grace_remaining_seconds", 'id="signal"'):
+        assert field in console
+
+
 def test_http_control_plane_rejects_invalid_policy(
     tmp_path: Path,
     monkeypatch,
