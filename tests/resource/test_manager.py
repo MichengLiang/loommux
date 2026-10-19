@@ -15,6 +15,7 @@ from loommux.resource import (
     ResourceLifecycle,
     ResourceNotFoundError,
 )
+from loommux.resource.model import KernelResource
 
 
 class FakeKernel:
@@ -444,3 +445,37 @@ def test_a_kernel_replacing_operation_holds_off_recovery(tmp_path: Path) -> None
         await manager.stop()
 
     asyncio.run(scenario())
+
+
+def test_a_resource_retired_during_recovery_is_replaced_by_its_successor(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        manager = KernelResourceManager(
+            tmp_path,
+            "launch_cwd",
+            session_factory=FakeSession,
+        )
+        retired = await manager.get_or_create(address("retired"))
+        retired.session.kernel = None
+        await retired.lifecycle_lock.acquire()
+        call = asyncio.create_task(_enter(manager, "retired"))
+        await asyncio.sleep(0.01)
+        assert not call.done()
+
+        async with manager._registry_lock:
+            manager._detach_locked(retired)
+            retired.lifecycle = ResourceLifecycle.CLOSING
+        retired.lifecycle_lock.release()
+
+        successor = await call
+        assert successor is not retired
+        assert successor.lifecycle is ResourceLifecycle.RUNNING
+        await manager.stop()
+
+    asyncio.run(scenario())
+
+
+async def _enter(manager: KernelResourceManager, key: str) -> KernelResource:
+    async with manager.operation(address(key), LeaseClient("client", "client"), policy()) as resource:
+        return resource

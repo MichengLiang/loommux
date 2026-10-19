@@ -392,7 +392,9 @@ class KernelResourceManager:
                 return
             async with self._registry_lock:
                 if self._resources_by_id.get(resource.resource_id) is not resource:
-                    raise ResourceNotFoundError("resource was retired during recovery")
+                    # Retired while this call waited for the lock; operation()
+                    # sees it unregistered and retries with the successor.
+                    return
             result = await asyncio.to_thread(resource.session.restart)
             if not result.get("ok"):
                 async with self._registry_lock:

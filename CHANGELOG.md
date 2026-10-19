@@ -60,6 +60,10 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   call that arrived during a restart and found no kernel started a second
   kernel, and whichever of the two was installed first was overwritten and
   never shut down.
+- A tool call that was waiting to recover a dead kernel while its resource
+  was recycled continues on the address's new resource instead of failing
+  with "resource was retired during recovery", as it already did when the
+  recycle landed a moment later.
 - Check kernel liveness by polling the kernel process instead of calling
   Jupyter's `KernelManager.is_alive`. That call waited on a helper thread
   without a timeout whenever the server's event loop asked (every tool call,
