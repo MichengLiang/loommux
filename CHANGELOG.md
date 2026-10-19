@@ -68,6 +68,12 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   was recycled continues on the address's new resource instead of failing
   with "resource was retired during recovery", as it already did when the
   recycle landed a moment later.
+- Require `mcp>=1.30.0`. Older SDKs kept every MCP session the HTTP server
+  ever opened: a session closed with `DELETE` was never deregistered and one
+  whose client left without it was never reaped, so a long-running server
+  grew with every client it had served (809 sessions retained after a
+  two-minute load). 1.30.0 deregisters on `DELETE` and reaps sessions idle
+  for 30 minutes, an open `GET` stream not counting as idle.
 - Check kernel liveness by polling the kernel process instead of calling
   Jupyter's `KernelManager.is_alive`. That call waited on a helper thread
   without a timeout whenever the server's event loop asked (every tool call,

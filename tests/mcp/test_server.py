@@ -8,8 +8,10 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from fastmcp import Client
+from fastmcp.client.transports import StreamableHttpTransport
 
 from loommux.kernel.session import KernelSession
 from loommux.mcp.factory import create_mcp as create_policy_mcp
@@ -464,3 +466,31 @@ async def test_a_call_during_the_restart_tool_gap_waits_instead_of_restarting_ag
     assert restarts == 1
     assert status.data["kernel_started"] is True
     assert status.data["kernel_pid"] == restarted.data["kernel_pid"]
+
+
+async def test_http_sessions_are_released_when_closed_and_reaped_when_idle(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Guard the MCP SDK session lifetime loommux depends on (mcp>=1.30.0).
+
+    Older SDKs kept every Streamable HTTP session for the life of the server:
+    a session closed with DELETE was never deregistered, and one whose client
+    vanished without DELETE had no idle timeout.
+    """
+    monkeypatch.chdir(workspace)
+    app = create_default_mcp().http_app()
+    async with app.router.lifespan_context(app):
+        manager = next(
+            route.app.session_manager
+            for route in app.routes
+            if getattr(getattr(route, "app", None), "session_manager", None) is not None
+        )
+        transport = StreamableHttpTransport(
+            "http://loommux.test/mcp",
+            httpx_client_factory=lambda **options: httpx.AsyncClient(transport=httpx.ASGITransport(app=app), **options),
+        )
+        async with Client(transport) as client:
+            await client.list_tools()
+            assert len(manager._server_instances) == 1
+        await asyncio.sleep(0.1)
+
+        assert manager._server_instances == {}
+        assert manager.session_idle_timeout is not None

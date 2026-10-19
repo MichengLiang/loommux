@@ -28,7 +28,13 @@ dependencies = [
     # on the SDK's low-level ping request registry, so the SDK major is part of
     # loommux's contract. Leaving it to fastmcp's own extra let mcp 2.x reach an
     # environment where that registry had already been renamed.
-    "mcp>=1.29.1,<2",
+    # The floor is a lifetime fix: before 1.30.0 the Streamable HTTP session
+    # manager kept every session it ever opened, since a session closed with
+    # DELETE was never deregistered and one whose client just went away (Claude
+    # Code sends no DELETE) had no idle timeout. 1.30.0 deregisters on DELETE
+    # and reaps a session after 30 minutes with no request in flight, where an
+    # open GET stream counts as in flight, so a connected client is never reaped.
+    "mcp>=1.30.0,<2",
     "pywin32>=312; sys_platform == 'win32'",
     "tiktoken>=0.14.0",
 ]

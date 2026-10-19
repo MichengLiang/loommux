@@ -248,6 +248,15 @@ A tool call whose MCP request context carries no HTTP request comes from
 stdio or from an in-process client. Such a session lives exactly as long as
 the server process, so it is bound to the process and stays `connected`.
 
+The MCP session object behind a lease has its own lifetime in the SDK's
+Streamable HTTP session manager, which loommux requires at `mcp>=1.30.0`: a
+session closed with `DELETE` is deregistered at once, and any other session
+is reaped after 30 minutes with no request in flight, where an open `GET`
+stream counts as in flight. A connected client therefore keeps its session
+however long it idles, and one that left without `DELETE` (Claude Code
+sends none) is released half an hour after its stream closed. Earlier SDKs
+kept every session for the life of the server.
+
 #### Alerts
 
 An alert standing surfaces in three places, each for a different reader:
