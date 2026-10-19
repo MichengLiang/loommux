@@ -33,6 +33,10 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - On Linux and macOS, `kill -USR1 <pid>` prints every thread's Python stack to
   a loommux server's stderr without stopping it, including while its event
   loop is frozen.
+- `scripts/stress.py` loads a private server with random, cancelled, and
+  disconnected tool calls, then requires every kernel process and file
+  descriptor to be released; CONTRIBUTING requires it for lifecycle,
+  concurrency, and output changes and for releases.
 
 ### Changed
 

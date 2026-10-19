@@ -554,7 +554,7 @@ Run the Python checks from the repository root:
 
 ```bash
 uv run pytest
-uv run ruff check src tests examples
+uv run ruff check src tests examples scripts
 uv run basedpyright src
 uv build --out-dir dist
 uv run twine check dist/*

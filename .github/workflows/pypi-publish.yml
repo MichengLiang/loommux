@@ -50,7 +50,7 @@ jobs:
           fi
       - run: uv sync --locked --group dev
       - run: uv run pytest
-      - run: uv run ruff check src tests examples
+      - run: uv run ruff check src tests examples scripts
       - run: uv run basedpyright src
       - run: uv build
       - run: uv run twine check dist/*

@@ -20,11 +20,23 @@ Run the complete local gate:
 
 ```bash
 uv run pytest
-uv run ruff check src tests examples
+uv run ruff check src tests examples scripts
 uv run basedpyright src
 uv build
 uv run twine check dist/*
 ```
+
+Changes to resource or kernel lifecycle, concurrency, or output recording
+also need the load check on Linux:
+
+```bash
+uv run python scripts/stress.py --seconds 180
+```
+
+It loads a private server with random, cancelled, and disconnected tool calls,
+fails if the console stops answering, and then requires every kernel and file
+descriptor to be released. Unit tests cannot show either failure: both
+appeared only after minutes of mixed load.
 
 Use clear commit messages and describe the behavioral reason for non-obvious
 code or protocol choices. Do not add access tokens, kernel output containing
@@ -40,7 +52,8 @@ execution lifecycle rule, or output-reading coordinate.
 ## Releases
 
 The package version is declared in [`pyproject.toml`](pyproject.toml). A release
-must update [CHANGELOG.md](CHANGELOG.md), pass the complete local gate, and use
+must update [CHANGELOG.md](CHANGELOG.md), pass the complete local gate and the
+load check, and use
 an annotated `v<version>` tag that exactly matches the package version. Pushing
 that tag starts the release workflow: it independently verifies the match,
 reruns the quality gate, checks the built distribution, uploads to PyPI, and

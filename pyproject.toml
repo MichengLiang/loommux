@@ -75,6 +75,7 @@ include = [
     "/CODE_OF_CONDUCT.md",
     "/SECURITY.md",
     "/examples",
+    "/scripts",
     "/mcp_ipython_client.py",
 ]
 
