@@ -16,7 +16,7 @@ from jupyter_client.blocking.client import BlockingKernelClient
 
 from loommux.execution import Execution
 from loommux.kernel.launch import KernelLaunch
-from loommux.kernel.runtime import KernelRuntime
+from loommux.kernel.runtime import KernelRuntime, close_jupyter_event_loop
 
 
 class KernelSession:
@@ -101,6 +101,15 @@ class KernelSession:
         }
 
     def _collect_iopub(self) -> None:
+        # get_iopub_msg caches a jupyter_core event loop in this thread's own
+        # context; close it when the collector ends rather than leaving it to a
+        # full garbage collection.
+        try:
+            self._collect_iopub_messages()
+        finally:
+            close_jupyter_event_loop()
+
+    def _collect_iopub_messages(self) -> None:
         while not self._stop_collector.is_set():
             client = self.client
             if client is None:

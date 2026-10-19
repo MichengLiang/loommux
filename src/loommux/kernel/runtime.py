@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
+import contextvars
 import shutil
 import subprocess
 import sys
@@ -13,6 +15,7 @@ from typing import Any
 from jupyter_client.blocking.client import BlockingKernelClient
 from jupyter_client.kernelspec import KernelSpec
 from jupyter_client.manager import KernelManager
+from jupyter_core.utils import ensure_event_loop
 
 from loommux.kernel.launch import KernelLaunch
 
@@ -103,6 +106,14 @@ class KernelRuntime:
         self.client: BlockingKernelClient | None = None
         self._containment: _KernelContainment | None = None
         self._pid: int | None = None
+        # jupyter_client's blocking calls go through jupyter_core.run_sync,
+        # which caches its event loop in a ContextVar. asyncio.to_thread runs
+        # every call in a fresh copy of the caller's context, so each call would
+        # create a loop that nothing closes; the loops sit in reference cycles
+        # that only a full collection frees, which an idle server never runs
+        # (nine file descriptors per kernel lifecycle). Every call made in this
+        # one context shares a single loop, and shutdown closes it.
+        self._jupyter_context = contextvars.Context()
 
     @property
     def pid(self) -> int | None:
@@ -114,6 +125,9 @@ class KernelRuntime:
         return process.poll() if process is not None else None
 
     def start(self, timeout_seconds: float) -> BlockingKernelClient:
+        return self._jupyter_context.run(self._start, timeout_seconds)
+
+    def _start(self, timeout_seconds: float) -> BlockingKernelClient:
         launch = KernelLaunch.create(self.python_path, self.workspace)
         manager = _LoommuxKernelManager(_kernel_spec(launch), connection_file=str(launch.connection_file), kernel_name="")
         containment: _KernelContainment | None = None
@@ -149,7 +163,7 @@ class KernelRuntime:
         manager = self.manager
         if manager is None or not self.is_alive():
             return
-        manager.interrupt_kernel()
+        self._jupyter_context.run(manager.interrupt_kernel)
 
     def is_alive(self) -> bool:
         # KernelManager.is_alive is a jupyter_core run_sync wrapper. On a thread
@@ -167,6 +181,9 @@ class KernelRuntime:
         return getattr(manager.provisioner, "process", None) if manager is not None else None
 
     def shutdown(self) -> None:
+        self._jupyter_context.run(self._shutdown)
+
+    def _shutdown(self) -> None:
         manager, self.manager = self.manager, None
         client, self.client = self.client, None
         containment, self._containment = self._containment, None
@@ -185,6 +202,18 @@ class KernelRuntime:
                     client.stop_channels()
             if launch is not None:
                 _remove_launch_root(launch)
+            close_jupyter_event_loop()
+
+
+def close_jupyter_event_loop() -> None:
+    """Close the event loop jupyter_core.run_sync cached in the current context.
+
+    ``ensure_event_loop`` returns that cached loop (creating one only if no
+    blocking call ran here) and also installs it as the thread's current loop,
+    which is cleared so later code on this thread does not find a closed loop.
+    """
+    ensure_event_loop().close()
+    asyncio.set_event_loop(None)
 
 
 def _kernel_spec(launch: KernelLaunch) -> KernelSpec:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import shutil
 import sys
 import time
@@ -331,6 +332,35 @@ def test_kernel_liveness_polls_the_process_without_blocking_an_event_loop(tmp_pa
             assert runtime.returncode is not None
     finally:
         runtime.shutdown()
+
+
+def test_kernel_lifecycles_close_the_event_loops_their_blocking_calls_create(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    def open_loops() -> int:
+        return sum(isinstance(item, asyncio.AbstractEventLoop) and not item.is_closed() for item in gc.get_objects())
+
+    async def lifecycle() -> None:
+        # The server drives sessions from worker threads the same way.
+        session = IPythonSession()
+        assert (await asyncio.to_thread(session.start_workspace, workspace, "launch_cwd"))["ok"] is True
+        await asyncio.to_thread(session.run_cell, "1 + 1")
+        await asyncio.to_thread(session.restart)
+        await asyncio.to_thread(session.close)
+
+    gc.collect()
+    before = open_loops()
+    # A full collection would free the loops anyway; an idle server never runs one.
+    gc.disable()
+    try:
+        for _ in range(2):
+            asyncio.run(lifecycle())
+        after = open_loops()
+    finally:
+        gc.enable()
+
+    assert after == before
 
 
 def _assert_kernel_policy(session: IPythonSession, launch: KernelLaunch) -> None:
