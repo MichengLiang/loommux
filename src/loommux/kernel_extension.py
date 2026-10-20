@@ -31,30 +31,35 @@ INTERRUPT_RELAY_SECONDS = 10.0
 
 
 def remove_own_header(lines: list[str], own_names: Collection[str] = ()) -> list[str]:
-    """Dissolve the leading headers that name this kernel or no kernel.
+    """Dissolve a first-line header that names this kernel or no kernel.
 
     IPython may transform one cell more than once, for example to check that
     it is complete, so this stays a pure function of its arguments. An invalid
     header is left in place for the cell magic, which reports it.
 
-    Each header becomes an empty line, so traceback line numbers count lines of
+    A cell has one header. One followed by another ``%%loommux`` line is left
+    in place too, and the cell magic reports it: the daemon reads only the
+    first line, so a second header's options would have no reader.
+
+    The header becomes an empty line, so traceback line numbers count lines of
     the cell as it was written. A body that is itself a cell magic, such as
-    ``%%bash`` or a header naming another kernel, must start the cell for
-    IPython to recognize it; its line numbers belong to its own interpreter.
+    ``%%bash``, must start the cell for IPython to recognize it; its line
+    numbers belong to its own interpreter.
     """
-    count = 0
-    while count < len(lines) and (arguments := header_arguments(lines[count])) is not None:
-        try:
-            header = parse_header_arguments(arguments)
-        except CellHeaderError:
-            break
-        if header.kernel is not None and header.kernel not in own_names:
-            break
-        count += 1
-    body = lines[count:]
-    if count == 0 or (body and body[0].startswith("%%")):
+    if not lines or (arguments := header_arguments(lines[0])) is None:
+        return lines
+    try:
+        header = parse_header_arguments(arguments)
+    except CellHeaderError:
+        return lines
+    if header.kernel is not None and header.kernel not in own_names:
+        return lines
+    body = lines[1:]
+    if body and header_arguments(body[0]) is not None:
+        return lines
+    if body and body[0].startswith("%%"):
         return body
-    return ["\n"] * count + body
+    return ["\n", *body]
 
 
 class ForwardedCellError(Exception):
@@ -144,9 +149,13 @@ def _header_magic(line: str, cell: str, *, daemon: Daemon, own_names: Collection
     except CellHeaderError as exc:
         raise UsageError(f"invalid %%{HEADER_MAGIC} header: {exc}") from None
     if header.kernel is None or header.kernel in own_names:
+        # Reached by a header followed by another one, which the transformer
+        # leaves in place, or by a direct run_cell_magic call. Either way the
+        # body cannot run here: a cell magic could only run it through a
+        # nested run_cell, which cannot run top-level await.
         raise UsageError(
-            f"this %%{HEADER_MAGIC} header names this kernel, which interprets it while transforming a cell; "
-            "run_cell_magic cannot run that body because it cannot run top-level await. Submit the body as a cell."
+            f"a %%{HEADER_MAGIC} header naming this kernel must be the cell's only header, on its first line; "
+            f"write every option there, as in %%{HEADER_MAGIC} --kernel build --wait 60"
         )
     forward(daemon, header, cell, sys.stdout.write)
 

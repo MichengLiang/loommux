@@ -423,10 +423,12 @@ def test_header_never_reaches_the_body_of_a_following_cell_magic(session: IPytho
     assert response["output_text"] == "body language text\n\n"
 
 
-def test_repeated_headers_naming_this_kernel_all_dissolve(session: IPythonSession) -> None:
+def test_a_second_header_is_reported_rather_than_half_read(session: IPythonSession) -> None:
+    # The daemon reads only the first line, so --full-output here had no reader.
     response = session.run_cell("%%loommux --wait 4\n%%loommux --full-output\n6 * 7")
 
-    assert response["output_text"] == "Out[1]: 42\n"
+    assert "UsageError: a %%loommux header naming this kernel must be the cell's only header" in response["output_text"]
+    assert "Out[" not in response["output_text"]
 
 
 def test_misplaced_or_single_percent_header_names_the_mistake(session: IPythonSession) -> None:
@@ -437,14 +439,13 @@ def test_misplaced_or_single_percent_header_names_the_mistake(session: IPythonSe
     assert "with two percent signs" in single["output_text"]
 
 
-def test_header_magic_called_directly_explains_why_it_cannot_run_the_body(session: IPythonSession) -> None:
+def test_header_magic_called_directly_reports_the_header(session: IPythonSession) -> None:
     invalid = session.run_cell("get_ipython().run_cell_magic('loommux', '--wait 0', 'pass')")
     own = session.run_cell("get_ipython().run_cell_magic('loommux', '--wait 1', 'pass')")
 
     # IPython reports a UsageError as text rather than as an execution error.
     assert "UsageError: invalid %%loommux header" in invalid["output_text"]
-    assert "UsageError: this %%loommux header names this kernel" in own["output_text"]
-    assert "top-level await" in own["output_text"]
+    assert "UsageError: a %%loommux header naming this kernel must be the cell's only header" in own["output_text"]
 
 
 def test_public_execution_responses_exclude_header_policy(session: IPythonSession) -> None:

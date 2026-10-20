@@ -99,11 +99,18 @@ start through `--InteractiveShellApp.extensions`.
 ### 5.1 A header naming this kernel is an input transformation
 
 The extension appends a pure function to `input_transformers_cleanup`. When
-the first line is a header naming this kernel, it removes that line; it repeats
-while the new first line is again such a header. IPython then transforms and
-runs the body as the cell itself: a following `%%bash` becomes the cell magic,
-top-level `await` runs on the kernel's own loop, and the last expression is
-displayed as `Out[n]`.
+the first line is a header naming this kernel, it removes that line. IPython
+then transforms and runs the body as the cell itself: a following `%%bash`
+becomes the cell magic, top-level `await` runs on the kernel's own loop, and
+the last expression is displayed as `Out[n]`.
+
+A cell has one header. When the next line is another `%%loommux` header, the
+transformer leaves both in place, and the `%%loommux` magic reports that the
+options belong on the first line. Dissolving both would split the readers:
+the daemon reads only the first line, so in `%%loommux` followed by
+`%%loommux --wait 120` the wait would silently have no reader. A header
+naming another kernel is not dissolved, so a header on its next line belongs
+to the forwarded body and is read by the target.
 
 This cannot be a cell magic. A cell magic is a synchronous function, so the
 only way for it to run a body is a nested `run_cell`, and a nested `run_cell`
