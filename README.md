@@ -447,7 +447,7 @@ Each execution retains five append-only text projections:
 | Stream | Contents |
 | --- | --- |
 | `combined` | stdout, stderr, display results, and tracebacks in IOPub arrival order. |
-| `stdout` | Python stdout stream events. |
+| `stdout` | Python stdout stream events, and help IPython sends to a frontend's pager (`obj?`, `obj??`, `%%loommux?`), placed after the cell's other output. |
 | `stderr` | Python stderr stream events. |
 | `result` | `text/plain` from IPython execute-result and display-data events. |
 | `traceback` | Traceback text from Python error events. |

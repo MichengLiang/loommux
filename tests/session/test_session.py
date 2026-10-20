@@ -472,6 +472,14 @@ def test_output_since_follows_a_cell_by_character_offset(session: IPythonSession
     assert session.output_since(1, -1)["status"] == "invalid_offset"
 
 
+def test_help_that_ipython_sends_to_a_pager_is_part_of_the_output(session: IPythonSession) -> None:
+    builtin = session.run_cell("print('before')\nlen?")
+    header = session.run_cell("%%loommux?")
+
+    assert builtin["output_text"].startswith("before\nSignature: len(obj, /)\n")
+    assert "%%loommux [KERNEL] [--wait SECONDS] [--full-output]" in header["output_text"]
+
+
 def test_stream_read_search_and_invalid_inputs(session: IPythonSession) -> None:
     result = session.run_cell("import sys\nprint('alpha')\nprint('warning', file=sys.stderr)\n'omega'")
     execution = result["execution"]

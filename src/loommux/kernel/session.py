@@ -8,6 +8,7 @@ selection and numbering remain in ``loommux.session``.
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,10 @@ from loommux.execution import Execution
 from loommux.identity import KernelIdentity
 from loommux.kernel.launch import KernelLaunch
 from loommux.kernel.runtime import KernelRuntime, close_jupyter_event_loop
+
+# ipykernel sends execute_reply before it publishes idle, so at idle the reply
+# is already on its way; this only bounds a kernel that never sends one.
+REPLY_WAIT_SECONDS = 2.0
 
 
 class KernelSession:
@@ -141,6 +146,7 @@ class KernelSession:
         msg_type = message.get("msg_type")
         content = message.get("content", {})
         parent_msg_id = message.get("parent_header", {}).get("msg_id")
+        finished: Execution | None = None
         with self._lock:
             execution = self.current_execution
             if execution is None or parent_msg_id != execution.msg_id:
@@ -172,6 +178,42 @@ class KernelSession:
                     }
                 )
             elif msg_type == "status" and content.get("execution_state") == "idle":
-                execution.finish()
-                self.current_execution = None
-                self._on_idle(execution)
+                finished = execution
+        if finished is None:
+            return
+        # Outside the lock: reading the reply may wait, and shutdown needs it.
+        page = self._reply_pages(finished)
+        with self._lock:
+            if self.current_execution is not finished:
+                # A shutdown during the reply wait already killed and released it.
+                return
+            if page:
+                finished.append_stdout(page)
+            finished.finish()
+            self.current_execution = None
+        self._on_idle(finished)
+
+    def _reply_pages(self, execution: Execution) -> str:
+        """Text that the execute_reply asks a frontend to show in its pager.
+
+        IPython answers ``obj?``, ``obj??``, and ``%%magic?`` this way rather
+        than on iopub, so without it every help request printed nothing.
+        Reading each reply also keeps replies from piling up unread in the
+        shell channel.
+        """
+        client = self.client
+        deadline = time.monotonic() + REPLY_WAIT_SECONDS
+        while client is not None and (remaining := deadline - time.monotonic()) > 0:
+            try:
+                reply = client.get_shell_msg(timeout=remaining)
+            except Exception:
+                return ""
+            if reply.get("parent_header", {}).get("msg_id") != execution.msg_id:
+                continue
+            pages = [
+                str(payload.get("data", {}).get("text/plain", ""))
+                for payload in reply.get("content", {}).get("payload", [])
+                if payload.get("source") == "page"
+            ]
+            return "".join(page if page.endswith("\n") else f"{page}\n" for page in pages if page)
+        return ""

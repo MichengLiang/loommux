@@ -10,9 +10,11 @@ from pathlib import Path
 
 import pytest
 
+from loommux.execution import Execution
 from loommux.identity import CONTROL_URL_ENV, KERNEL_ID_ENV, KERNEL_NAME_ENV, KernelIdentity
 from loommux.kernel.launch import _IPYTHON_PROMPT_STRIPPING_REMOVAL, KernelLaunch
 from loommux.kernel.runtime import KernelRuntime, _kernel_spec, _KernelContainment
+from loommux.kernel.session import KernelSession
 from loommux.session import IPythonSession
 
 
@@ -497,5 +499,44 @@ def test_kernel_launch_replaces_an_inherited_identity_with_its_own(tmp_path: Pat
     finally:
         shutil.rmtree(anonymous.runtime_root, ignore_errors=True)
         shutil.rmtree(named.runtime_root, ignore_errors=True)
+
+
+class _ShellReplies:
+    def __init__(self, replies: list[object]) -> None:
+        self.replies = replies
+
+    def get_shell_msg(self, timeout: float) -> dict:
+        reply = self.replies.pop(0)
+        if isinstance(reply, BaseException):
+            raise reply
+        return reply
+
+
+def _reply(msg_id: str, *payloads: dict) -> dict:
+    return {"parent_header": {"msg_id": msg_id}, "content": {"status": "ok", "payload": list(payloads)}}
+
+
+def test_reply_pages_take_page_payloads_of_this_execution_only(tmp_path: Path) -> None:
+    kernel = KernelSession(tmp_path, Path(sys.executable), lambda _execution: None, lambda _execution, _code: None)
+    execution = Execution(execution=1, kernel_pid=1, msg_id="mine")
+    kernel.client = _ShellReplies(
+        [
+            _reply("someone-else", {"source": "page", "data": {"text/plain": "not mine"}}),
+            _reply("mine", {"source": "page", "data": {"text/plain": "Signature: f()"}}, {"source": "set_next_input", "text": "x"}, {"source": "page", "data": {"text/plain": "more\n"}}),
+        ]
+    )
+
+    assert kernel._reply_pages(execution) == "Signature: f()\nmore\n"
+
+
+def test_reply_pages_give_up_quietly_when_the_channel_fails_or_stays_silent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    kernel = KernelSession(tmp_path, Path(sys.executable), lambda _execution: None, lambda _execution, _code: None)
+    execution = Execution(execution=1, kernel_pid=1, msg_id="mine")
+    kernel.client = _ShellReplies([TimeoutError()])
+    assert kernel._reply_pages(execution) == ""
+
+    monkeypatch.setattr("loommux.kernel.session.REPLY_WAIT_SECONDS", 0.0)
+    kernel.client = _ShellReplies([])
+    assert kernel._reply_pages(execution) == ""
 
 
