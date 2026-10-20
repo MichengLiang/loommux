@@ -51,7 +51,7 @@ def test_token_limited_notice_reports_size_and_recovery_paths() -> None:
     assert "1,023 B;" in notice
     assert "read_output()" in notice
     assert "search_output()" in notice
-    assert "# loommux: --full-output" in notice
+    assert "%%loommux --full-output" in notice
 
     status["output_total_utf8_bytes"] = 1_024
     assert "1 KiB;" in format_output_token_limit_notice(status)

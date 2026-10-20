@@ -174,41 +174,24 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         输入
         ----
 
-        接受一段 loommux IPython cell 源码。普通 Python 文本使用默认策略；若作者
-        需要声明本次 cell 的观察策略，使用位于物理行首的 ``# loommux:`` 控制
-        注释。Loommux 在提交前验证并完全消费有效控制注释，因此它们不会进入
-        IPython history 或下游 cell-magic body。变量、导入和其他 namespace 状态会
-        与当前持久 IPython 会话中的后续 cell 共享。
+        接受一段 IPython cell 源码，直接写代码即可。变量、导入和其他 namespace
+        状态与当前持久 IPython 会话中的后续 cell 共享。
 
-        等待上限
-        --------
+        cell 头
+        -------
 
-        本次调用默认最多等待 10 秒。``# loommux:`` 的 ``--wait`` 正有限十进制
-        值只覆盖本次调用的等待上限::
+        需要控制这一个 cell 时，在第一行写 ``%%loommux`` 头，它是普通的
+        IPython cell magic 语法::
 
-            # loommux: --wait 120
+            %%loommux --wait 120 --full-output
             build_report()
 
-        ``# loommux: --wait 120`` 与 ``# loommux: --full-output`` 可写在同一条
-        或不同的控制注释中。重复选项、未知选项、缺少值或非正值会返回
-        ``invalid_loommux_directive``，不会分配 execution 或提交 kernel。等待
-        到期不会中断仍在运行的 cell；directive 不改变 Python runtime 或后续
-        调用的等待上限。
-
-        完整输出
-        --------
-
-        若任一有效 ``# loommux:`` 控制注释包含 ``--full-output``，该 execution
-        在终态时直接交付完整 combined 正文，不受默认 5,000-token 交付阈值限制::
-
-            # loommux: --full-output
-            print("\\n".join(generate_manifest()))
-
-        ``--wait`` 与 ``--full-output`` 可以组合为
-        ``# loommux: --wait 120 --full-output``。这些选项只作用于本次
-        execution。有效控制注释在提交前被 Loommux 完全消费，不会进入 IPython
-        history、cell magic body 或 execution 响应。在明确需要完整阅读某些信息，
-        例如阅读某些文件、资料时，使用该选项避免无意义的反复阅读开销。
+        ``--wait SECONDS`` 把本次调用的等待上限从默认 10 秒改为正有限秒数；
+        等待到期不会中断仍在运行的 cell。``--full-output`` 让这次 execution 在
+        终态时直接交付完整 combined 正文，不受默认 5,000-token 交付阈值限制；
+        在明确需要完整阅读某些文件、资料时使用，避免反复阅读的开销。选项只作用
+        于这一个 cell。头的下一行可以接另一个 cell magic，例如 ``%%bash``。
+        无效的头返回 ``invalid_cell_header``，不分配 execution，也不提交 kernel。
 
         图像展示
         --------
@@ -380,10 +363,9 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
         完整输出交付
         ------------
 
-        当所选 execution 的原始 ``run_cell`` 请求含有效 ``--full-output`` 且已达到
-        终态时，本工具直接返回完整 combined 正文，不应用默认 5,000-token
-        省略。该策略仅保留为 private runtime state；仍在运行的 execution 继续
-        返回 running，而非不完整正文。
+        当所选 execution 的 cell 头含 ``--full-output`` 且已达到终态时，本工具
+        直接返回完整 combined 正文，不应用默认 5,000-token 省略；仍在运行的
+        execution 继续返回 running，而非不完整正文。
 
         Args:
             execution: 要等待的正整数执行编号。省略时使用当前记录，随后

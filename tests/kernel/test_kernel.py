@@ -41,6 +41,7 @@ def test_kernel_launch_builds_the_required_command_and_controlled_environment(tm
             "--InteractiveShell.cache_size=0",
             "--HistoryManager.enabled=False",
             "--InteractiveShellApp.exec_PYTHONSTARTUP=False",
+            "--InteractiveShellApp.extensions=loommux.kernel_extension",
             (
                 "--InteractiveShellApp.exec_lines="
                 "import os; os.environ.pop('CLICOLOR', None); "
@@ -228,7 +229,7 @@ def test_reset_kills_windows_kernel_descendants(tmp_path: Path) -> None:
     assert session.start_workspace(workspace, "launch_cwd")["ok"] is True
     try:
         running = session.run_cell(
-            "# loommux: --wait 0.1\n"
+            "%%loommux --wait 0.1\n"
             "import subprocess\n"
             "import sys\n"
             "import time\n"
@@ -260,7 +261,7 @@ def test_reset_kills_unix_kernel_descendants(tmp_path: Path) -> None:
     assert session.start_workspace(workspace, "launch_cwd")["ok"] is True
     try:
         running = session.run_cell(
-            "# loommux: --wait 0.1\n"
+            "%%loommux --wait 0.1\n"
             "import subprocess\n"
             "import sys\n"
             "import time\n"
@@ -287,7 +288,7 @@ def test_kernel_exit_finishes_the_running_execution(tmp_path: Path) -> None:
     old_runtime_root = old_kernel.launch.runtime_root
     try:
         running = session.run_cell(
-            "# loommux: --wait 0.1\n"
+            "%%loommux --wait 0.1\n"
             "import os\n"
             "print('before-exit', flush=True)\n"
             "os._exit(17)"

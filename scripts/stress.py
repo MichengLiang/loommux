@@ -50,7 +50,7 @@ CELLS = (
     "print('x' * 10)",
     "print('y' * 200_000)",
     "for i in range(2000): print(i)",
-    "# loommux: --wait 0.3\nimport time; time.sleep(1.5); print('slept')",
+    "%%loommux --wait 0.3\nimport time; time.sleep(1.5); print('slept')",
     "1 + 1",
     "raise ValueError('boom')",
 )

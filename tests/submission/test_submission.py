@@ -3,111 +3,101 @@ from __future__ import annotations
 import pytest
 
 from loommux.session import IPythonSession
-from loommux.submission import prepare_run_cell
-from loommux.submission.directives import LoommuxDirectiveError, remove_active_directive_lines, scan_active_loommux_directives
+from loommux.submission import CellHeader, CellHeaderError, prepare_run_cell, read_cell_header
+from loommux.submission.header import header_arguments
 
 
 @pytest.mark.parametrize(
-    ("source", "wait_seconds", "full_output", "clean_source"),
+    ("source", "header"),
     [
-        ("print('ordinary')", 10.0, False, "print('ordinary')"),
-        ("# loommux: --wait 120\nprint('wait')", 120.0, False, "print('wait')"),
-        ("# loommux: --full-output\nprint('full')", 10.0, True, "print('full')"),
-        ("# loommux: --wait 2 --full-output\nprint('both')", 2.0, True, "print('both')"),
-        ("# loommux: --wait 2\n# loommux: --full-output\nprint('split')", 2.0, True, "print('split')"),
-        ("# loommux: --wait 0.5\n%%bash\necho shell", 0.5, False, "%%bash\necho shell"),
-        ("%%bash\n# loommux: --wait 0.5\necho shell", 0.5, False, "%%bash\necho shell"),
+        ("print('ordinary')", CellHeader()),
+        ("", CellHeader()),
+        ("%%loommux\nprint('bare')", CellHeader()),
+        ("%%loommux --wait 120\nprint('wait')", CellHeader(wait_seconds=120.0)),
+        ("%%loommux --wait 0.5\nprint('fraction')", CellHeader(wait_seconds=0.5)),
+        ("%%loommux --full-output\nprint('full')", CellHeader(full_output=True)),
+        ("%%loommux --wait 2 --full-output\nprint('both')", CellHeader(2.0, True)),
+        ("%%loommux  --full-output   --wait=3\nprint('argparse spacing')", CellHeader(3.0, True)),
+        ("%%loommux --wait 2\n%%bash\necho shell", CellHeader(wait_seconds=2.0)),
+        ("%%loommux --wait 2\r\nprint('crlf')\r\n", CellHeader(wait_seconds=2.0)),
+        ("%%loommux --wait 2", CellHeader(wait_seconds=2.0)),
     ],
 )
-def test_scan_resolves_policy_and_removes_exact_active_lines(source: str, wait_seconds: float, full_output: bool, clean_source: str) -> None:
-    scan = scan_active_loommux_directives(source)
+def test_header_on_the_first_line_resolves_the_observation_policy(source: str, header: CellHeader) -> None:
+    assert read_cell_header(source) == header
 
-    assert scan.initial_wait_seconds == wait_seconds
-    assert scan.full_output_requested is full_output
-    assert remove_active_directive_lines(source, scan.active_directive_ranges) == clean_source
+
+def test_blank_lines_and_indentation_before_the_header_follow_ipython() -> None:
+    # IPython drops leading blank lines and the common indentation before it
+    # looks for a cell magic; the daemon must find the same first line.
+    assert read_cell_header("\n\n   \n  %%loommux --wait 4\n  x = 1\n") == CellHeader(wait_seconds=4.0)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "x = 1\n%%loommux --wait 5\nprint(x)",
+        'payload = """\n%%loommux --wait 0\n"""',
+        "%%loommux?",
+        "%%loommuxed --wait 0\npass",
+        "%loommux --wait 0",
+        "# %%loommux --wait 0\npass",
+    ],
+)
+def test_only_a_first_line_header_is_read(source: str) -> None:
+    assert read_cell_header(source) == CellHeader()
+
+
+@pytest.mark.parametrize(
+    ("line", "arguments"),
+    [
+        ("%%loommux", ""),
+        ("%%loommux\n", ""),
+        ("%%loommux --wait 3\n", "--wait 3"),
+        ("%%loommux\t--full-output", "--full-output"),
+        ("%%loommux?", None),
+        ("%%loommuxx", None),
+        ("print()", None),
+    ],
+)
+def test_header_arguments_recognize_the_magic_name_as_a_whole_word(line: str, arguments: str | None) -> None:
+    assert header_arguments(line) == arguments
 
 
 @pytest.mark.parametrize(
     ("source", "message"),
     [
-        ("# loommux:\npass", "# loommux: requires at least one option"),
-        ("# loommux: --wait\npass", "--wait requires one positive finite decimal value"),
-        ("# loommux: --wait 0\npass", "--wait requires one positive finite decimal value"),
-        ("# loommux: --wait -1\npass", "invalid --wait value '-1'"),
-        ("# loommux: --wait infinity\npass", "invalid --wait value 'infinity'"),
-        ("# loommux: --unknown\npass", "unknown option '--unknown'"),
-        ("# loommux: --wait 20 --wait 30\npass", "--wait may be specified at most once"),
-        ("# loommux: --full-output --full-output\npass", "--full-output may be specified at most once"),
-        ("# loommux: --wait 20\n# loommux: --wait 30\npass", "--wait may be specified at most once"),
-        ("# loommux:  --wait 1\npass", "options must be separated by one space"),
-        ("# loommux: --wait 1 \npass", "options must be separated by one space"),
-        ("# loommux:\t--wait 1\npass", "options must be separated by one space"),
+        ("%%loommux --wait\npass", "expected one argument"),
+        ("%%loommux --wait 0\npass", "got '0'"),
+        ("%%loommux --wait -1\npass", "got '-1'"),
+        ("%%loommux --wait=-1\npass", "got '-1'"),
+        ("%%loommux --wait inf\npass", "got 'inf'"),
+        ("%%loommux --wait nan\npass", "got 'nan'"),
+        ("%%loommux --wait soon\npass", "got 'soon'"),
+        (f"%%loommux --wait {'9' * 400}\npass", "positive finite"),
+        ("%%loommux --unknown\npass", "unrecognized arguments: --unknown"),
+        ("%%loommux build\npass", "unrecognized arguments: build"),
+        ("%%loommux --help\npass", "unrecognized arguments: --help"),
+        ("%%loommux --wait '3\npass", "No closing quotation"),
     ],
 )
-def test_scan_rejects_each_ambiguous_or_invalid_control_declaration(source: str, message: str) -> None:
-    with pytest.raises(LoommuxDirectiveError, match=message):
-        scan_active_loommux_directives(source)
+def test_invalid_header_is_an_error_value_not_a_process_exit(source: str, message: str) -> None:
+    with pytest.raises(CellHeaderError, match=message):
+        read_cell_header(source)
 
 
-def test_directive_shaped_text_inside_an_ordinary_python_string_is_data() -> None:
-    source = 'payload = """\n# loommux: --full-output\n"""\nprint(payload)'
-
-    scan = scan_active_loommux_directives(source)
-
-    assert scan.full_output_requested is False
-    assert scan.active_directive_ranges == ()
-    assert remove_active_directive_lines(source, scan.active_directive_ranges) == source
-
-
-def test_directive_shaped_text_inside_a_lone_cr_python_string_is_data() -> None:
-    source = 'payload = """\r# loommux: --wait 0\r"""\rprint(payload)'
-
-    scan = scan_active_loommux_directives(source)
-
-    assert scan.full_output_requested is False
-    assert scan.active_directive_ranges == ()
-    assert remove_active_directive_lines(source, scan.active_directive_ranges) == source
-
-
-@pytest.mark.parametrize("line_ending", ["\n", "\r\n", "\r"])
-def test_directive_shaped_text_inside_an_f_string_is_data(line_ending: str) -> None:
-    source = f'payload = f"""{line_ending}# loommux: --wait 0{line_ending}"""{line_ending}print(payload)'
-
-    scan = scan_active_loommux_directives(source)
-
-    assert scan.full_output_requested is False
-    assert scan.active_directive_ranges == ()
-    assert remove_active_directive_lines(source, scan.active_directive_ranges) == source
-
-
-def test_scan_rejects_a_decimal_that_overflows_to_infinity() -> None:
-    source = f"# loommux: --wait {'9' * 400}\npass"
-
-    with pytest.raises(LoommuxDirectiveError, match="positive finite decimal"):
-        scan_active_loommux_directives(source)
-
-
-def test_preparation_removes_crlf_directives_without_padding() -> None:
-    source = "# loommux: --wait 2\r\n# loommux: --full-output\r\n%%bash\r\nprintf 'ok\\n'\r\n"
+def test_preparation_keeps_the_header_in_the_kernel_source() -> None:
+    source = "%%loommux --wait 2 --full-output\r\n%%bash\r\nprintf 'ok\\n'\r\n"
 
     prepared = prepare_run_cell(source)
 
-    assert prepared.kernel_source == "%%bash\r\nprintf 'ok\\n'\r\n"
+    assert prepared.kernel_source == source
     assert prepared.initial_wait_seconds == 2.0
     assert prepared.full_output_requested is True
 
 
-def test_preparation_deletes_a_final_directive_without_a_terminator() -> None:
-    source = "print('before')\n# loommux: --full-output"
-
-    prepared = prepare_run_cell(source)
-
-    assert prepared.kernel_source == "print('before')\n"
-    assert prepared.full_output_requested is True
-
-
-def test_preparation_removes_outer_directives_before_apply_patch_conversion() -> None:
-    source = '''# loommux: --full-output
+def test_preparation_converts_an_apply_patch_literal_below_the_header() -> None:
+    source = '''%%loommux --full-output
 payload = r"""
 *** Begin Patch
 *** Add File: captured.txt
@@ -119,12 +109,12 @@ payload
 
     prepared = prepare_run_cell(source)
 
-    assert "# loommux:" not in prepared.kernel_source
-    assert "*** Begin Patch" in prepared.kernel_source
+    assert prepared.kernel_source.startswith("%%loommux --full-output\npayload = ")
+    assert 'r"""' not in prepared.kernel_source
     assert prepared.full_output_requested is True
 
 
-def test_run_cell_passes_clean_source_and_resolved_policy_to_submission() -> None:
+def test_run_cell_passes_the_unchanged_source_and_resolved_policy_to_submission() -> None:
     class CapturingSession(IPythonSession):
         def __init__(self) -> None:
             super().__init__()
@@ -135,13 +125,13 @@ def test_run_cell_passes_clean_source_and_resolved_policy_to_submission() -> Non
             return {"ok": True, "status": "captured"}
 
     session = CapturingSession()
-    source = "# loommux: --wait 2\n# loommux: --full-output\nprint('clean')"
+    source = "%%loommux --wait 2 --full-output\nprint('kept')"
 
     assert session.run_cell(source)["status"] == "captured"
-    assert session.calls == [("print('clean')", 2.0, True)]
+    assert session.calls == [(source, 2.0, True)]
 
 
-def test_invalid_directive_does_not_allocate_or_submit_an_execution() -> None:
+def test_invalid_header_does_not_allocate_or_submit_an_execution() -> None:
     class CapturingSession(IPythonSession):
         def __init__(self) -> None:
             super().__init__()
@@ -152,12 +142,12 @@ def test_invalid_directive_does_not_allocate_or_submit_an_execution() -> None:
             return {"ok": True}
 
     session = CapturingSession()
-    response = session.run_cell("# loommux: --wait 10\n# loommux: --wait 20\nprint('must not run')")
+    response = session.run_cell("%%loommux --wait 10 --later\nprint('must not run')")
 
     assert response == {
         "ok": False,
-        "status": "invalid_loommux_directive",
-        "message": "invalid_loommux_directive: --wait may be specified at most once",
+        "status": "invalid_cell_header",
+        "message": "invalid %%loommux header: unrecognized arguments: --later",
     }
     assert session.submitted is False
     assert session.executions == {}

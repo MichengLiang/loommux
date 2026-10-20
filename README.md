@@ -332,6 +332,38 @@ radius = 3
 math.pi * radius**2
 ```
 
+### The Cell Header
+
+A cell that needs its own control begins with a `%%loommux` header, written in
+ordinary IPython cell-magic syntax:
+
+```python
+%%loommux --wait 120
+build_report()
+```
+
+The default initial wait for one MCP call is 10 seconds. `--wait SECONDS` only
+changes how long that `run_cell` call waits: it does not limit Python runtime,
+interrupt the cell when time expires, modify later calls, or add a variable to
+the kernel. `--full-output` is described under
+[Requesting Complete Output](#requesting-complete-output). The options apply to
+that one cell; the next cell starts from the defaults again.
+
+The header is IPython, not transport metadata. The daemon reads its options
+and submits the cell unchanged, and the kernel interprets the header itself, so
+another cell magic may follow and IPython history keeps the header:
+
+```python
+%%loommux --wait 0.5
+%%bash
+uv run pytest
+```
+
+A malformed header returns `invalid_cell_header` before an execution is
+allocated or source is submitted. A `%%loommux` line anywhere but first raises
+a `UsageError` saying so. See [Cell Header Design](docs/cell-header-design.md)
+for the grammar and its reasons.
+
 ### Apply Patch Literals
 
 Use an outer triple-double-quoted literal containing a valid Apply Patch
@@ -358,22 +390,6 @@ prefixes do not apply raw-string or f-string interpretation to the converted
 patch text. Marker-shaped text with invalid patch grammar is ordinary Python
 source and is not converted. See [Apply Patch Literal Transform Design](docs/ipython-mcp-protected-multiline-string-design.md)
 for the full contract and acceptance rules.
-
-The default initial wait for one MCP call is 10 seconds. A cell can make its
-complete submission policy explicit with a Loommux control directive:
-
-```python
-# loommux: --wait 120
-build_report()
-```
-
-`--wait` only changes how long that `run_cell` call waits. It does not limit
-Python runtime, interrupt the cell when time expires, modify later calls, or
-add a variable to the kernel. A malformed or duplicated option returns
-`invalid_loommux_directive` before an execution is allocated or source is
-submitted. Valid directive lines are transport-only metadata: Loommux consumes
-them before IPython receives the cell, so they do not appear in IPython history
-or execution records. A directive may therefore precede a `%%` cell magic.
 
 When the call returns while the cell is still running, use `wait`,
 `execution_status`, `read_output`, `search_output`,
@@ -406,7 +422,7 @@ lines, Unicode code point characters, and UTF-8 size using one binary unit (`B`,
 `output_total_utf8_bytes`. The output is not discarded; the notice itself names
 the recovery paths, and the caller reads or searches the retained text through
 `read_output` and `search_output`, or requests the complete body with the
-`# loommux: --full-output` directive. Token counting is required for this
+`%%loommux --full-output` header. Token counting is required for this
 automatic delivery policy; if the `o200k_base` tokenizer cannot be loaded, the
 call fails instead of silently changing to another limit.
 
@@ -435,10 +451,10 @@ mark selected context lines with `C`.
 ### Requesting Complete Output
 
 When a cell's entire terminal combined output is the intended result, include
-`--full-output` in a Loommux control directive:
+`--full-output` in its header:
 
 ```python
-# loommux: --full-output
+%%loommux --full-output
 build_report()
 ```
 
@@ -448,19 +464,10 @@ later `wait` return the complete collected `combined` output. It does not cause
 partial running output to be returned and does not alter the input or behavior
 of `read_output` and `search_output`.
 
-The full-output and wait options are independent and may appear in the same
-directive:
+The full-output and wait options are independent and may be combined:
 
 ```python
-# loommux: --wait 120 --full-output
-build_report()
-```
-
-They may also be split across two directives:
-
-```python
-# loommux: --wait 120
-# loommux: --full-output
+%%loommux --wait 120 --full-output
 build_report()
 ```
 
@@ -521,12 +528,14 @@ loommux/
             Removes terminal controls while preserving chunk boundaries.
     submission/
         cell.py
-            Combines directive consumption and source transformation into one
-            prepared cell passed to the session.
-        directives.py
-            Parses and consumes submission-owned control directives.
+            Combines the header's observation policy and source transformation
+            into one prepared cell passed to the session.
+        header.py
+            Parses the %%loommux cell header for the daemon and the kernel.
         apply_patch_literals.py
             Converts valid Apply Patch literals before kernel submission.
+    kernel_extension.py
+        IPython extension every kernel loads: interprets the cell header.
     mcp/
         factory.py
             Registers MCP tools that consume the protocol-neutral session.
@@ -548,7 +557,8 @@ does not depend on its transport consumer.
 
 The current public contract is documented in [Coding Agent Control Plane
 Design](docs/coding-agent-control-plane-design.md).
-Focused references cover [freeform cell control](docs/ipython-mcp-freeform-run-cell-design.md),
+Focused references cover the [cell header](docs/cell-header-design.md),
+[freeform cell input](docs/ipython-mcp-freeform-run-cell-design.md),
 [complete-output control](docs/ipython-mcp-full-output-directive-design.md),
 [workspace configuration](docs/workspace-configuration.md), and the
 [changelog](CHANGELOG.md).

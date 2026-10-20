@@ -150,7 +150,7 @@ def test_status_reports_a_restart_in_progress_and_clears_it_after_failure(tmp_pa
 
 
 def test_busy_submission_reports_running_integer_without_queueing(session: IPythonSession) -> None:
-    running = session.run_cell("# loommux: --wait 0.1\nimport time\ntime.sleep(1)")
+    running = session.run_cell("%%loommux --wait 0.1\nimport time\ntime.sleep(1)")
     busy = session.run_cell("'not queued'")
 
     assert running["execution"] == 1
@@ -161,7 +161,7 @@ def test_busy_submission_reports_running_integer_without_queueing(session: IPyth
 
 
 def test_interrupts_a_running_kernel_cell_through_the_managed_runtime(session: IPythonSession) -> None:
-    running = session.run_cell("# loommux: --wait 0.1\nimport time\nprint('started', flush=True)\ntime.sleep(30)")
+    running = session.run_cell("%%loommux --wait 0.1\nimport time\nprint('started', flush=True)\ntime.sleep(30)")
     deadline = time.monotonic() + 3
     while time.monotonic() < deadline and "started" not in str(session.read_output(running["execution"], "stdout")["text"]):
         time.sleep(0.05)
@@ -176,25 +176,25 @@ def test_interrupts_a_running_kernel_cell_through_the_managed_runtime(session: I
     assert completed["error"] == {"ename": "KeyboardInterrupt", "evalue": ""}
 
 
-def test_full_output_directive_returns_complete_long_combined_output(session: IPythonSession) -> None:
-    response = session.run_cell("# loommux: --full-output\nprint(('abcdefghij ' * 20 + '\\n') * 301, end='')")
+def test_full_output_header_returns_complete_long_combined_output(session: IPythonSession) -> None:
+    response = session.run_cell("%%loommux --full-output\nprint(('abcdefghij ' * 20 + '\\n') * 301, end='')")
 
     assert response["status"] == "completed"
     assert response["output_omitted"] is False
     assert response["output_text"] == TOKEN_HEAVY_MANY_LINES
 
 
-def test_full_output_directive_preserves_the_combined_iopub_order(session: IPythonSession) -> None:
-    response = session.run_cell("# loommux: --full-output\nimport sys\nprint('stdout')\nprint('stderr', file=sys.stderr)\n'display'")
+def test_full_output_header_preserves_the_combined_iopub_order(session: IPythonSession) -> None:
+    response = session.run_cell("%%loommux --full-output\nimport sys\nprint('stdout')\nprint('stderr', file=sys.stderr)\n'display'")
     output = response["output_text"]
 
     assert response["output_omitted"] is False
     assert output.index("stdout") < output.index("stderr") < output.index("Out[1]: 'display'")
 
 
-def test_directive_does_not_create_namespace_control_state(session: IPythonSession) -> None:
+def test_header_does_not_create_namespace_control_state(session: IPythonSession) -> None:
     session.run_cell("counter = 0")
-    response = session.run_cell("# loommux: --full-output\ncounter += 1\ncounter")
+    response = session.run_cell("%%loommux --full-output\ncounter += 1\ncounter")
     namespace = session.run_cell("counter")
 
     assert response["execution"] == 2
@@ -203,9 +203,9 @@ def test_directive_does_not_create_namespace_control_state(session: IPythonSessi
     assert "loommux" not in str(session.run_cell("sorted(name for name in globals() if 'loommux' in name)")["output_text"])
 
 
-def test_directive_preserves_rich_display_events(session: IPythonSession) -> None:
+def test_header_preserves_rich_display_events(session: IPythonSession) -> None:
     response = session.run_cell(
-        "# loommux: --full-output\n"
+        "%%loommux --full-output\n"
         "from IPython.display import display\n"
         "from PIL import Image\n"
         "print('before-image')\n"
@@ -220,8 +220,8 @@ def test_directive_preserves_rich_display_events(session: IPythonSession) -> Non
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="IPython %%bash requires a POSIX shell")
-def test_directive_composes_with_a_bash_cell_magic(session: IPythonSession) -> None:
-    running = session.run_cell("# loommux: --wait 0.1\n# loommux: --full-output\n%%bash\nsleep 0.3\nprintf 'bash-finished\\n'")
+def test_header_composes_with_a_bash_cell_magic(session: IPythonSession) -> None:
+    running = session.run_cell("%%loommux --wait 0.1 --full-output\n%%bash\nsleep 0.3\nprintf 'bash-finished\\n'")
 
     assert running["status"] == "running"
 
@@ -251,8 +251,8 @@ def test_unmarked_token_heavy_output_is_omitted(session: IPythonSession) -> None
     assert response["output_total_utf8_bytes"] == len(TOKEN_HEAVY_MANY_LINES.encode("utf-8"))
 
 
-def test_full_output_directive_survives_running_wait_error_and_reset(session: IPythonSession) -> None:
-    running = session.run_cell("# loommux: --wait 0.1 --full-output\nimport time\ntime.sleep(0.3)\nprint(('abcdefghij ' * 20 + '\\n') * 301, end='')")
+def test_full_output_header_survives_running_wait_error_and_reset(session: IPythonSession) -> None:
+    running = session.run_cell("%%loommux --wait 0.1 --full-output\nimport time\ntime.sleep(0.3)\nprint(('abcdefghij ' * 20 + '\\n') * 301, end='')")
     assert running["status"] == "running"
     assert running["output_omitted_reason"] == "running"
 
@@ -260,13 +260,13 @@ def test_full_output_directive_survives_running_wait_error_and_reset(session: IP
     assert completed["status"] == "completed"
     assert completed["output_text"] == TOKEN_HEAVY_MANY_LINES
 
-    failed = session.run_cell("# loommux: --full-output\nprint('before failure')\nraise RuntimeError('expected failure')")
+    failed = session.run_cell("%%loommux --full-output\nprint('before failure')\nraise RuntimeError('expected failure')")
     assert failed["status"] == "error"
     assert failed["output_omitted"] is False
     assert "before failure" in failed["output_text"]
     assert "RuntimeError: expected failure" in failed["output_text"]
 
-    killed = session.run_cell("# loommux: --wait 0.1 --full-output\nimport time\nprint('before reset', flush=True)\ntime.sleep(5)")
+    killed = session.run_cell("%%loommux --wait 0.1 --full-output\nimport time\nprint('before reset', flush=True)\ntime.sleep(5)")
     assert killed["status"] == "running"
     time.sleep(0.2)
     session.restart()
@@ -276,26 +276,26 @@ def test_full_output_directive_survives_running_wait_error_and_reset(session: IP
     assert "before reset" in reset_result["output_text"]
 
 
-def test_legacy_key_value_declaration_fails_before_python_execution(session: IPythonSession) -> None:
-    response = session.run_cell("# loommux: legacy_key=0.1\nprint('\\n'.join(f'line-{number}' for number in range(301)))")
+def test_invalid_header_fails_before_python_execution(session: IPythonSession) -> None:
+    response = session.run_cell("%%loommux legacy_key=0.1\nprint('\\n'.join(f'line-{number}' for number in range(301)))")
 
-    assert response["status"] == "invalid_loommux_directive"
-    assert "unknown option" in response["message"]
+    assert response["status"] == "invalid_cell_header"
+    assert "unrecognized arguments: legacy_key=0.1" in response["message"]
 
 
 def test_apply_patch_literal_preserves_raw_value_without_archiving_request_source(session: IPythonSession) -> None:
-    source = '''# loommux: --wait 2 --full-output
+    source = """%%loommux --wait 2 --full-output
 name = "Ada"
-payload = f"""
+payload = f\"\"\"
 *** Begin Patch
 *** Update File: example.py
 @@
-+message = r"""
++message = r\"\"\"
 +C:\\new\\temp {name}
-+"""
++\"\"\"
 *** End Patch
+\"\"\"
 """
-'''
 
     submitted = session.run_cell(source)
     inspected = session.run_cell("payload")
@@ -309,27 +309,28 @@ payload = f"""
 
 
 def test_apply_patch_literal_is_a_function_argument_and_keeps_later_traceback_lines(session: IPythonSession) -> None:
-    source = '''# loommux: --full-output
+    source = """%%loommux --full-output
 received = None
 def capture(value):
     global received
     received = value
-capture(r"""
+capture(r\"\"\"
 *** Begin Patch
 *** Add File: captured.txt
-+inside = """
++inside = \"\"\"
 +quoted
-+"""
++\"\"\"
 *** End Patch
-""")
+\"\"\")
 raise RuntimeError("mapped")
-'''
+"""
 
     failed = session.run_cell(source)
     received = session.run_cell("received")
 
     assert failed["status"] == "error"
-    assert "line 13" in failed["output_text"]
+    # The header is line 1 of the cell IPython receives, so the raise is line 14.
+    assert "line 14" in failed["output_text"]
     assert received["status"] == "completed"
     assert "*** Begin Patch" in received["output_text"]
 
@@ -337,7 +338,7 @@ raise RuntimeError("mapped")
 def test_reset_preserves_records_and_sequence_and_reauthors_out_label(session: IPythonSession) -> None:
     first = session.run_cell("'before reset'")
     reset = session.restart()
-    second = session.run_cell("# loommux: --full-output\n'after reset'")
+    second = session.run_cell("%%loommux --full-output\n'after reset'")
 
     assert reset["status"] == "restarted"
     assert first["execution"] == 1
@@ -347,7 +348,7 @@ def test_reset_preserves_records_and_sequence_and_reauthors_out_label(session: I
 
 
 def test_reset_kills_running_execution_but_keeps_it_readable(session: IPythonSession) -> None:
-    running = session.run_cell("# loommux: --wait 0.1\nimport time\ntime.sleep(5)")
+    running = session.run_cell("%%loommux --wait 0.1\nimport time\ntime.sleep(5)")
     session.restart()
 
     status = session.execution_status(running["execution"])
@@ -355,18 +356,18 @@ def test_reset_kills_running_execution_but_keeps_it_readable(session: IPythonSes
     assert status["execution"] == 1
 
 
-def test_invalid_directive_has_no_real_kernel_or_sequence_side_effect(session: IPythonSession) -> None:
+def test_invalid_header_has_no_real_kernel_or_sequence_side_effect(session: IPythonSession) -> None:
     accepted = session.run_cell("'before invalid'")
-    invalid = session.run_cell("# loommux: --wait 10 --wait 20\nprint('must not run')")
+    invalid = session.run_cell("%%loommux --wait 0\nprint('must not run')")
     after = session.run_cell("'after invalid'")
 
-    assert invalid["status"] == "invalid_loommux_directive"
+    assert invalid["status"] == "invalid_cell_header"
     assert "must not run" not in str(session.read_output(accepted["execution"])["text"])
     assert after["execution"] == accepted["execution"] + 1
 
 
-def test_invalid_python_indentation_with_a_valid_directive_reaches_the_kernel(session: IPythonSession) -> None:
-    response = session.run_cell("if True:\n    pass\n  pass\n# loommux: --full-output\n")
+def test_invalid_python_indentation_below_a_valid_header_reaches_the_kernel(session: IPythonSession) -> None:
+    response = session.run_cell("%%loommux --full-output\nif True:\n    pass\n  pass\n")
 
     assert response["execution"] == 1
     assert response["status"] == "error"
@@ -374,62 +375,78 @@ def test_invalid_python_indentation_with_a_valid_directive_reaches_the_kernel(se
     assert "unindent does not match any outer indentation level" in response["error"]["evalue"]
 
 
-def test_inner_directive_text_is_python_data_and_cannot_change_outer_policy(session: IPythonSession) -> None:
-    response = session.run_cell('# loommux: --wait 2\npayload = """\n# loommux: --full-output\n"""\nprint(payload)')
-
-    assert response["output_text"].strip() == "# loommux: --full-output"
-
-
-def test_lone_cr_string_data_does_not_become_a_control_directive(session: IPythonSession) -> None:
-    response = session.run_cell('payload = """\r# loommux: --wait 0\r"""\rprint(payload)')
+def test_header_shaped_string_data_is_python_data(session: IPythonSession) -> None:
+    response = session.run_cell('payload = """\n%%loommux --wait 0\n"""\nprint(payload)')
 
     assert response["status"] == "completed"
-    assert response["output_text"].strip() == "# loommux: --wait 0"
+    assert response["output_text"].strip() == "%%loommux --wait 0"
 
 
-def test_f_string_data_does_not_become_a_control_directive(session: IPythonSession) -> None:
-    response = session.run_cell('payload = f"""\n# loommux: --wait 0\n"""\nprint(payload)')
+def test_header_runs_top_level_await_and_displays_the_last_expression(session: IPythonSession) -> None:
+    response = session.run_cell("%%loommux --wait 5\nimport asyncio\nawait asyncio.sleep(0.01)\nanswer = 42\nanswer")
 
     assert response["status"] == "completed"
-    assert response["output_text"].strip() == "# loommux: --wait 0"
+    assert response["output_text"] == "Out[1]: 42\n"
 
 
-def test_directives_are_absent_from_real_ipython_history_without_padding(session: IPythonSession) -> None:
-    source = "# loommux: --wait 2\n# loommux: --full-output\nvalue_for_history = 41\nvalue_for_history + 1"
+def test_indented_header_is_found_where_ipython_finds_a_cell_magic(session: IPythonSession) -> None:
+    response = session.run_cell("\n  %%loommux --wait 3\n  value = 'indented'\n  value")
+
+    assert response["output_text"] == "Out[1]: 'indented'\n"
+
+
+def test_header_is_kept_in_real_ipython_history(session: IPythonSession) -> None:
+    source = "%%loommux --wait 2 --full-output\nvalue_for_history = 41\nvalue_for_history + 1"
 
     response = session.run_cell(source)
     history = session.run_cell("get_ipython().history_manager.input_hist_raw[1]")
 
-    assert response["status"] == "completed"
-    assert history["result_text"] == "'value_for_history = 41\\nvalue_for_history + 1'"
+    assert response["output_text"] == "Out[1]: 42\n"
+    assert history["result_text"] == repr(source)
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="IPython %%bash requires a POSIX shell")
-def test_directive_inside_a_magic_body_is_removed_before_that_body_runs(session: IPythonSession) -> None:
-    response = session.run_cell("%%bash\n# loommux: --full-output\nprintf 'body-clean\\n'")
-
-    assert response["status"] == "completed"
-    assert response["output_text"] == "body-clean\n"
-
-
-def test_directive_is_removed_before_a_non_comment_magic_body_receives_it(session: IPythonSession) -> None:
+def test_header_never_reaches_the_body_of_a_following_cell_magic(session: IPythonSession) -> None:
     registered = session.run_cell(
         "from IPython.core.magic import register_cell_magic\n"
         "@register_cell_magic\n"
         "def strict_body(_line, cell):\n"
-        "    if '# loommux:' in cell:\n"
-        "        raise RuntimeError('transport metadata leaked into body')\n"
+        "    if 'loommux' in cell:\n"
+        "        raise RuntimeError('header leaked into body')\n"
         "    print(cell)"
     )
-    response = session.run_cell("# loommux: --full-output\n%%strict_body\nbody language text")
+    response = session.run_cell("%%loommux --full-output\n%%strict_body\nbody language text")
 
     assert registered["status"] == "completed"
     assert response["status"] == "completed"
     assert response["output_text"] == "body language text\n\n"
 
 
-def test_public_execution_responses_exclude_consumed_control_details(session: IPythonSession) -> None:
-    response = session.run_cell("# loommux: --wait 2 --full-output\nprint('done')")
+def test_repeated_headers_naming_this_kernel_all_dissolve(session: IPythonSession) -> None:
+    response = session.run_cell("%%loommux --wait 4\n%%loommux --full-output\n6 * 7")
+
+    assert response["output_text"] == "Out[1]: 42\n"
+
+
+def test_misplaced_or_single_percent_header_names_the_mistake(session: IPythonSession) -> None:
+    misplaced = session.run_cell("before = 1\n%%loommux --wait 5\nprint(before)")
+    single = session.run_cell("%loommux --wait 5")
+
+    assert "UsageError: %%loommux must be the first line of the cell" in misplaced["output_text"]
+    assert "with two percent signs" in single["output_text"]
+
+
+def test_header_magic_called_directly_explains_why_it_cannot_run_the_body(session: IPythonSession) -> None:
+    invalid = session.run_cell("get_ipython().run_cell_magic('loommux', '--wait 0', 'pass')")
+    own = session.run_cell("get_ipython().run_cell_magic('loommux', '--wait 1', 'pass')")
+
+    # IPython reports a UsageError as text rather than as an execution error.
+    assert "UsageError: invalid %%loommux header" in invalid["output_text"]
+    assert "UsageError: this %%loommux header names this kernel" in own["output_text"]
+    assert "top-level await" in own["output_text"]
+
+
+def test_public_execution_responses_exclude_header_policy(session: IPythonSession) -> None:
+    response = session.run_cell("%%loommux --wait 2 --full-output\nprint('done')")
     waited = session.wait(response["execution"])
     status = session.execution_status(response["execution"])
 

@@ -69,6 +69,7 @@ class KernelLaunch:
             "--InteractiveShell.cache_size=0",
             "--HistoryManager.enabled=False",
             "--InteractiveShellApp.exec_PYTHONSTARTUP=False",
+            "--InteractiveShellApp.extensions=loommux.kernel_extension",
             f"--InteractiveShellApp.exec_lines={_IPYTHON_COLOR_CLEANUP}",
             f"--InteractiveShellApp.exec_lines={_IPYTHON_PROMPT_STRIPPING_REMOVAL}",
         )

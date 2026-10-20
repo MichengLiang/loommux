@@ -158,11 +158,12 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
     assert "向持久 IPython kernel 提交一个原始 IPython cell。" in run_cell
     assert "当前持久 IPython 会话中的后续 cell" in run_cell
     assert "输入\n----" in run_cell
-    assert "等待上限\n--------" in run_cell
+    assert "cell 头\n-------" in run_cell
     assert "执行编号与后续操作\n--------------------" in run_cell
     assert "后续工具\n使用它定位当前持久 IPython 会话中的这次执行" in run_cell
-    assert "# loommux: --wait 120" in run_cell
-    assert "# loommux: --full-output" in run_cell
+    assert "%%loommux --wait 120 --full-output" in run_cell
+    assert "invalid_cell_header" in run_cell
+    assert "loommux:" not in run_cell
     assert "5,000 token" in run_cell
     assert "UTF-8 字节数" in run_cell
     assert "wait" in run_cell
@@ -299,7 +300,7 @@ print('after-image', flush=True)
 
 
 async def test_result_modes_share_marked_complete_long_output(default_client: Client[Any]) -> None:
-    source = "# loommux: --full-output\nprint(('abcdefghij ' * 20 + '\\n') * 301, end='')"
+    source = "%%loommux --full-output\nprint(('abcdefghij ' * 20 + '\\n') * 301, end='')"
     async with Client(create_structured_mcp()) as structured_client:
         structured = await structured_client.call_tool("run_cell", {"freeform": source})
     default = await default_client.call_tool("run_cell", {"freeform": source})
@@ -337,7 +338,7 @@ async def test_token_limited_result_reports_one_human_readable_size_and_exact_st
     assert "64.96 KiB" in notice
     assert "read_output()" in notice
     assert "search_output()" in notice
-    assert "# loommux: --full-output" in notice
+    assert "%%loommux --full-output" in notice
     assert structured.structured_content is not None
     assert structured.structured_content["output_total_lines"] == 301
     assert structured.structured_content["output_total_characters"] == len(TOKEN_HEAVY_MANY_LINES)
@@ -374,7 +375,7 @@ async def test_real_mcp_eight_tool_loop_preserves_public_sequence_across_reset(w
         small = await client.call_tool("run_cell", {"freeform": "print('small-output')"})
         running = await client.call_tool(
             "run_cell",
-            {"freeform": "# loommux: --wait 0.1\nimport time\nprint('long-start', flush=True)\ntime.sleep(1.5)\nprint('long-finished', flush=True)"},
+            {"freeform": "%%loommux --wait 0.1\nimport time\nprint('long-start', flush=True)\ntime.sleep(1.5)\nprint('long-finished', flush=True)"},
         )
         long_execution = running.data["execution"]
         observed = await client.call_tool("execution_status", {"execution": long_execution})
@@ -383,7 +384,7 @@ async def test_real_mcp_eight_tool_loop_preserves_public_sequence_across_reset(w
         completed = await client.call_tool("wait", {"execution": long_execution, "timeout_seconds": 3})
         interruptible = await client.call_tool(
             "run_cell",
-            {"freeform": "# loommux: --wait 0.1\nimport time\nprint('interrupt-ready', flush=True)\ntime.sleep(5)"},
+            {"freeform": "%%loommux --wait 0.1\nimport time\nprint('interrupt-ready', flush=True)\ntime.sleep(5)"},
         )
         interrupted_execution = interruptible.data["execution"]
         interrupt_ready = await client.call_tool("read_output", {"execution": interrupted_execution, "stream": "stdout"})

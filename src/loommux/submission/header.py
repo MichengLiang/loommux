@@ -1,0 +1,111 @@
+"""Read the ``%%loommux`` header that may open a Loommux cell.
+
+The header is ordinary IPython cell-magic syntax and has two readers. The
+daemon answers the submitting ``run_cell`` call before the kernel finishes, so
+it reads ``--wait`` and ``--full-output`` here; the kernel extension interprets
+the cell. Both use this one parser, so they cannot disagree about the grammar.
+"""
+
+from __future__ import annotations
+
+import argparse
+import math
+import shlex
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import NoReturn
+
+from IPython.core.inputtransformer2 import leading_empty_lines, leading_indent
+
+HEADER_MAGIC = "loommux"
+_HEADER_PREFIX = f"%%{HEADER_MAGIC}"
+DEFAULT_INITIAL_WAIT_SECONDS = 10.0
+
+
+class CellHeaderError(ValueError):
+    """A concise, safe-to-return validation failure for ``%%loommux``."""
+
+
+@dataclass(frozen=True)
+class CellHeader:
+    """How the submitting call observes one cell."""
+
+    wait_seconds: float = DEFAULT_INITIAL_WAIT_SECONDS
+    full_output: bool = False
+
+
+class _HeaderParser(argparse.ArgumentParser):
+    # argparse reports errors by printing usage and exiting the process, which
+    # would end the daemon or the kernel; a header error is a value to return.
+    def error(self, message: str) -> NoReturn:
+        raise CellHeaderError(message)
+
+
+def _positive_seconds(value: str) -> float:
+    try:
+        seconds = float(value)
+    except ValueError:
+        seconds = math.nan
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise argparse.ArgumentTypeError(f"expected a positive finite number of seconds, got {value!r}")
+    return seconds
+
+
+_PARSER = _HeaderParser(prog=_HEADER_PREFIX, add_help=False)
+_PARSER.add_argument("--wait", type=_positive_seconds, default=DEFAULT_INITIAL_WAIT_SECONDS, metavar="SECONDS")
+_PARSER.add_argument("--full-output", action="store_true")
+
+
+def header_arguments(line: str) -> str | None:
+    """Return the argument text when ``line`` is a header, else ``None``.
+
+    ``%%loommux?`` is IPython's help request for the magic, not a header, so
+    the name must be followed by whitespace or the end of the line.
+    """
+    if not line.startswith(_HEADER_PREFIX):
+        return None
+    rest = line[len(_HEADER_PREFIX) :]
+    if rest and not rest[0].isspace():
+        return None
+    return rest.strip()
+
+
+def parse_header_arguments(arguments: str) -> CellHeader:
+    try:
+        tokens = shlex.split(arguments)
+    except ValueError as exc:
+        raise CellHeaderError(str(exc)) from exc
+    options = _PARSER.parse_args(tokens)
+    return CellHeader(wait_seconds=options.wait, full_output=options.full_output)
+
+
+def first_cell_line(lines: Sequence[str]) -> str | None:
+    """The line IPython examines for a cell magic.
+
+    IPython's own cleanup transforms decide it, so a header indented or
+    preceded by blank lines is a header for both readers or for neither.
+    """
+    cleaned = leading_indent(leading_empty_lines(list(lines)))
+    return cleaned[0] if cleaned else None
+
+
+def read_cell_header(source: str) -> CellHeader:
+    """Validate the header of ``source``; a cell without one gets the defaults."""
+    line = first_cell_line(source.splitlines(keepends=True))
+    arguments = None if line is None else header_arguments(line)
+    return CellHeader() if arguments is None else parse_header_arguments(arguments)
+
+
+HEADER_HELP = f"""Declare how this cell is interpreted and observed.
+
+Write it as the first line of a cell:
+
+    {_HEADER_PREFIX} [--wait SECONDS] [--full-output]
+
+--wait SECONDS   wait up to SECONDS for this cell before run_cell returns
+                 (default {DEFAULT_INITIAL_WAIT_SECONDS:g}); an expired wait leaves the cell running
+--full-output    deliver the complete combined output when the cell ends
+
+The options describe this one cell only. Another cell magic such as %%bash
+may follow on the next line.
+"""

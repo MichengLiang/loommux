@@ -9,7 +9,7 @@ from typing import Any
 from loommux.execution import Execution
 from loommux.kernel.session import KernelSession
 from loommux.submission.cell import prepare_run_cell
-from loommux.submission.directives import LoommuxDirectiveError
+from loommux.submission.header import CellHeaderError
 
 KERNEL_START_ATTEMPTS = 2
 OUTPUT_STREAMS = {"combined", "stdout", "stderr", "result", "traceback"}
@@ -72,8 +72,8 @@ class IPythonSession:
             prepared = prepare_run_cell(freeform)
         except TypeError:
             return {"ok": False, "status": "invalid_code", "message": "freeform must be a string"}
-        except LoommuxDirectiveError as exc:
-            return {"ok": False, "status": "invalid_loommux_directive", "message": f"invalid_loommux_directive: {exc}"}
+        except CellHeaderError as exc:
+            return {"ok": False, "status": "invalid_cell_header", "message": f"invalid %%loommux header: {exc}"}
         return self._submit_python_cell(
             prepared.kernel_source,
             prepared.initial_wait_seconds,

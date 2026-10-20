@@ -1,34 +1,30 @@
 # `run_cell` Freeform Input Contract
 
-The target authority for this contract is [Loommux Cell Control Directive
-Design](ipython-mcp-cell-control-directive-design.md). This companion document
-records the stable MCP input boundary without creating a second control language.
+The cell-control authority is [Cell Header Design](cell-header-design.md).
+This companion document records the stable MCP input boundary without creating
+a second control language.
 
 ## Input
 
-`run_cell(freeform)` accepts exactly one loommux IPython cell. It has no
-structured `code`, `wait`, `timeout`, or `full_output` argument. Ordinary
-Python source uses the default initial wait of 10 seconds and no complete-output
-request.
+`run_cell(freeform)` accepts exactly one IPython cell. It has no structured
+`code`, `wait`, `timeout`, or `full_output` argument. A cell without a header
+uses the default initial wait of 10 seconds and no complete-output request.
 
-When an author needs to declare submission policy, the cell contains one or more
-column-zero control comments:
+When an author needs to control one cell, its first line is a `%%loommux`
+header:
 
 ```python
-# loommux: --wait 120 --full-output
+%%loommux --wait 120 --full-output
 build_report()
 ```
 
-`--wait` accepts one positive finite decimal value. `--full-output` requests
-complete terminal combined-output delivery. The parser rejects unknown,
-duplicated, missing, malformed, or non-positive options as
-`invalid_loommux_directive` before execution allocation and kernel submission.
+`--wait` accepts one positive finite number of seconds. `--full-output`
+requests complete terminal combined-output delivery. An invalid header returns
+`invalid_cell_header` before execution allocation and kernel submission.
 
-Distinct options may be declared on separate control comments. Active directive
-lines are transport-only metadata: the adapter resolves policy, deletes their
-complete physical lines, and then submits the clean source. They do not enter
-IPython history, a cell-magic body, or an execution record. This permits a
-directive to precede `%%bash` or another cell magic without padding before `%`.
+The daemon reads the header's options and submits the cell unchanged. The
+kernel interprets the header as IPython, so it may precede `%%bash` or another
+cell magic, and IPython history records it as written.
 
 ## Apply Patch Transport
 

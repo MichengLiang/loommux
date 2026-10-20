@@ -1,29 +1,27 @@
 # IPython MCP Complete Output Control Design
 
-The cell-control authority is [Loommux Cell Control Directive
-Design](ipython-mcp-cell-control-directive-design.md). This document narrows
-its focus to complete terminal combined-output delivery.
+The cell-control authority is [Cell Header Design](cell-header-design.md). This
+document narrows its focus to complete terminal combined-output delivery.
 
 ## Author Surface
 
-An author requests complete terminal combined output with a control directive:
+An author requests complete terminal combined output in the cell header:
 
 ```python
-# loommux: --full-output
+%%loommux --full-output
 print("\n".join(generate_manifest()))
 ```
 
 It may be combined with an initial wait:
 
 ```python
-# loommux: --wait 120 --full-output
+%%loommux --wait 120 --full-output
 build_report()
 ```
 
-The adapter validates and consumes all directives before allocating an
-execution. It retains the resolved complete-output policy as private runtime
-state only because a later `wait` needs it; the selected body interpreter and
-public response data do not receive the option.
+The daemon reads the option before allocating an execution and retains it as
+private runtime state only because a later `wait` needs it; public response
+data does not include it.
 
 ## Delivery Behavior
 
@@ -42,8 +40,8 @@ readable size uses one binary unit selected from `B`, `KiB`, `MiB`, and larger
 units; structured responses retain the exact UTF-8 byte count. The notice also
 names its recovery paths, so an oversized body never leaves the caller without
 the next move: `read_output` reads the complete stored stream, `search_output`
-locates text inside it, and the `# loommux: --full-output` directive requests
-the complete body for an execution whose full output is the intended result.
+locates text inside it, and the `%%loommux --full-output` header requests the
+complete body for an execution whose full output is the intended result.
 
 The option is per execution. It survives a later `wait`, error,
 interrupt, or reset-induced `killed` state, but it does not alter
@@ -55,4 +53,4 @@ cells.
 Real-MCP tests must prove complete 301-line delivery, normal combined ordering
 of stdout, stderr, execute results, rich displays, and tracebacks, plus
 continuity through delayed completion and reset. Tool descriptions must present
-only the `# loommux: --full-output` surface.
+only the `%%loommux --full-output` surface.
