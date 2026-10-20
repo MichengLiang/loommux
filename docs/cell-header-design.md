@@ -178,6 +178,7 @@ Outside a kernel, `Daemon()` uses `LOOMMUX_CONTROL_URL` or
 | `kernel.run(code, wait=10)` | submit `code`; returns a `Job` |
 | `kernel.interrupt()`, `kernel.restart()`, `kernel.recycle(force=False)` | control operations |
 | `job.wait(timeout)`, `job.status()`, `job.output(stream, lines)`, `job.follow(offset)`, `job.interrupt()` | follow one execution |
+| `loommux.close()` | close the HTTP connections; the extension's unload calls it, and a later request reopens them |
 
 The client sends requests with `trust_env=False`: the control plane is always
 on loopback, and an inherited `ALL_PROXY` would route loopback traffic into a
@@ -203,7 +204,11 @@ kernel has it, and no special "daemon kernel" is needed.
 3. relays `build`'s combined output into A's cell as it arrives, by character
    offset into the append-only combined log, until the execution ends; each
    follow request returns as soon as new text exists or the execution ends,
-   and holds a daemon worker thread for at most one second;
+   and holds a daemon worker thread for at most one second. A request costs
+   only the text it returns: it neither joins the whole log nor counts its
+   lines. Doing either per request is quadratic in the output and holds the
+   lock the target's output collector needs; end to end it added about 2.6 s
+   (18 %) to relaying 32 MB, and a follower asking more often pays more;
 4. ends A's cell in the same state: an error in `build` raises in A an error
    whose display is one line naming the kernel and the exception, because the
    traceback itself has already been relayed.

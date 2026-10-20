@@ -13,6 +13,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   header, written in ordinary IPython cell-magic syntax. Its options control
   that one cell; another cell magic such as `%%bash` may follow it, top-level
   `await` keeps working, and IPython history records the header as written.
+  A cell has one header: a second `%%loommux` line right after a header for
+  this kernel is reported as a `UsageError`, so every option is read from the
+  first line by both the daemon and the kernel.
 - `%%loommux --kernel build` runs the rest of the cell in the kernel named `build`,
   opened on first use. Its output is relayed into the cell as it arrives, an
   error there ends the cell with a one-line `ForwardedCellError` below the
@@ -23,7 +26,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   of its daemon: `loommux.kernels()`, `loommux.self`, `loommux["lab"]` with
   `run()`, `restart()`, `interrupt()`, and `recycle()`, and jobs with
   `wait()`, `status()`, `output()`, and `follow()`. `loommux.daemon.Daemon()`
-  is the same client outside a kernel (default `http://127.0.0.1:8801`).
+  is the same client outside a kernel (default `http://127.0.0.1:8801`), and
+  `close()` releases its connections.
 - A kernel opened by name is held by the kernel that opened it and lives as
   long as a client lease reaches it through its holders; kernels that only hold
   each other are released. Snapshots and `loommux.kernels()` report `held_by`,
@@ -66,6 +70,10 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Changed
 
+- `POST /api/resources/{id}/recycle` answers 404 for a missing resource, as
+  every other resource route does (it answered 409), and rejects a malformed
+  JSON body with 400 instead of reading it as `{}`. An empty body still means
+  no options.
 - **Breaking:** the `# loommux:` control comment is gone; it is an ordinary
   Python comment now. Write `%%loommux --wait 120 --full-output` as the first
   line instead. An invalid header returns `invalid_cell_header`, which replaces
