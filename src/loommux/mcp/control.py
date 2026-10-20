@@ -218,15 +218,9 @@ def install_control_routes(
 
     @mcp.custom_route("/api/resources/{resource_id}/recycle", methods=["POST"])
     async def recycle_resource(request: Request) -> Response:
-        try:
-            body = await request.json()
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            body = {}
-        if not isinstance(body, dict):
-            return JSONResponse(
-                {"ok": False, "message": "request body must be a JSON object"},
-                status_code=400,
-            )
+        body, error = await _json_object(request, optional=True)
+        if error is not None:
+            return error
         force = body.get("force", False)
         if not isinstance(force, bool):
             return JSONResponse(
@@ -239,7 +233,9 @@ def install_control_routes(
                 force=force,
                 reason="recycled from HTTP control plane",
             )
-        except (ResourceBusyError, ResourceNotFoundError) as exc:
+        except ResourceNotFoundError as exc:
+            return JSONResponse({"ok": False, "message": str(exc)}, status_code=404)
+        except ResourceBusyError as exc:
             return JSONResponse(
                 {"ok": False, "message": str(exc)},
                 status_code=409,
@@ -284,9 +280,17 @@ async def _resource_action(
     )
 
 
-async def _json_object(request: Request) -> tuple[dict[str, Any], JSONResponse | None]:
+async def _json_object(request: Request, *, optional: bool = False) -> tuple[dict[str, Any], JSONResponse | None]:
+    """The request's JSON object body, or the 400 response to return instead.
+
+    ``optional`` reads an empty body as ``{}``, for an action whose every
+    option has a default and that, like interrupt or restart, needs no body.
+    """
+    raw = await request.body()
+    if optional and not raw.strip():
+        return {}, None
     try:
-        body = await request.json()
+        body = json.loads(raw)
     except (json.JSONDecodeError, UnicodeDecodeError):
         body = None
     if not isinstance(body, dict):

@@ -13,6 +13,10 @@ Outside a kernel, ``Daemon()`` connects to ``LOOMMUX_CONTROL_URL`` or to
 ``http://127.0.0.1:8801``. The client speaks the daemon's HTTP control plane,
 so a mistake made through it stays in the calling process and can never stop
 the daemon's event loop.
+
+A kernel's identity is its environment, which its child processes inherit:
+a script started from a kernel acts as that kernel, holding what it opens on
+that kernel's behalf.
 """
 
 from __future__ import annotations
@@ -73,10 +77,16 @@ class Daemon:
 
     @property
     def self(self) -> Kernel:
-        """The kernel this code runs in."""
+        """The kernel this process is, or was started from."""
         if self.identity is None:
             raise DaemonError("this process is not a Loommux kernel")
         return Kernel(self, self.identity.kernel_id, self.identity.name)
+
+    def close(self) -> None:
+        """Close the HTTP connections; a later request opens new ones."""
+        if self._http is not None:
+            self._http.close()
+            self._http = None
 
     def __repr__(self) -> str:
         where = self.url or "no HTTP control plane (stdio daemon)"

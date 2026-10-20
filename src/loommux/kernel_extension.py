@@ -17,6 +17,7 @@ import functools
 import sys
 import time
 from collections.abc import Callable, Collection
+from typing import Literal
 
 from IPython.core.error import UsageError
 from IPython.core.interactiveshell import InteractiveShell
@@ -168,7 +169,8 @@ def _single_percent_header(line: str) -> None:
     raise UsageError(f"write the header as %%{HEADER_MAGIC}, with two percent signs, on the first line of the cell")
 
 
-_installed: dict[int, Callable[[list[str]], list[str]]] = {}
+_MAGICS: tuple[tuple[Literal["cell", "line"], str], ...] = (("cell", HEADER_MAGIC), ("line", f"%{HEADER_MAGIC}"), ("line", HEADER_MAGIC))
+_installed: dict[int, tuple[Callable[[list[str]], list[str]], Daemon]] = {}
 
 
 def load_ipython_extension(ip: InteractiveShell) -> None:
@@ -178,22 +180,28 @@ def load_ipython_extension(ip: InteractiveShell) -> None:
     own_names = frozenset() if identity is None else identity.names
     daemon = Daemon()
     transformer = functools.partial(remove_own_header, own_names=own_names)
-    _installed[id(ip)] = transformer
+    _installed[id(ip)] = (transformer, daemon)
     ip.input_transformers_cleanup.append(transformer)
     # Hidden from %who: it belongs to the kernel, not to the author's work.
     ip.push({"loommux": daemon}, interactive=False)
     magic = functools.partial(_header_magic, daemon=daemon, own_names=own_names)
     functools.update_wrapper(magic, _header_magic)
     magic.__doc__ = HEADER_HELP
-    magics = ip.magics_manager
-    magics.register_function(magic, "cell", HEADER_MAGIC)
     # IPython reads ``%%loommux`` on a later line as a line magic whose name
-    # keeps one percent sign, so this name catches exactly that mistake.
-    magics.register_function(_misplaced_header, "line", f"%{HEADER_MAGIC}")
-    magics.register_function(_single_percent_header, "line", HEADER_MAGIC)
+    # keeps one percent sign, so the second name catches exactly that mistake.
+    for (kind, name), function in zip(_MAGICS, (magic, _misplaced_header, _single_percent_header), strict=True):
+        ip.magics_manager.register_function(function, kind, name)
 
 
 def unload_ipython_extension(ip: InteractiveShell) -> None:
-    transformer = _installed.pop(id(ip), None)
-    if transformer is not None and transformer in ip.input_transformers_cleanup:
+    installed = _installed.pop(id(ip), None)
+    if installed is None:
+        return
+    transformer, daemon = installed
+    if transformer in ip.input_transformers_cleanup:
         ip.input_transformers_cleanup.remove(transformer)
+    for kind, name in _MAGICS:
+        ip.magics_manager.magics[kind].pop(name, None)
+    # Only while the name still holds this client; the author may have rebound it.
+    ip.drop_by_id({"loommux": daemon})
+    daemon.close()

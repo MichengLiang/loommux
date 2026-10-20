@@ -152,6 +152,22 @@ def test_http_control_plane_requires_boolean_force(
     assert response.json()["message"] == "force must be a boolean"
 
 
+def test_recycle_needs_no_body_and_reports_a_missing_resource_as_not_found(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    app = create_mcp().http_app(path="/mcp")
+
+    with TestClient(app) as client:
+        empty = client.post("/api/resources/missing/recycle")
+        malformed = client.post("/api/resources/missing/recycle", content=b"{not json")
+
+    assert empty.status_code == 404
+    assert malformed.status_code == 400
+    assert malformed.json()["message"] == "request body must be a JSON object"
+
+
 async def test_resource_action_preserves_manager_and_operation_failures() -> None:
     async def failed_result():
         return {"ok": False, "status": "kernel_not_started"}

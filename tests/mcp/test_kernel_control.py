@@ -84,6 +84,9 @@ def test_a_kernel_opens_runs_and_holds_kernels_that_leave_with_it(tmp_path: Path
             assert outside["build"].name == "build"
             with pytest.raises(DaemonError, match="only a kernel can open one"):
                 outside["elsewhere"]
+            outside.close()
+            # A closed client opens new connections for its next request.
+            assert outside["build"].name == "build"
             drive_from_outside(outside)
 
         await wait_for_resource_count(origin, 0, timeout=10)

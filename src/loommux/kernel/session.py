@@ -207,6 +207,9 @@ class KernelSession:
             try:
                 reply = client.get_shell_msg(timeout=remaining)
             except Exception:
+                # queue.Empty when no reply arrives in time; a shutdown closing
+                # the channel meanwhile raises whatever the channel raises, and
+                # either way the execution still has to finish.
                 return ""
             if reply.get("parent_header", {}).get("msg_id") != execution.msg_id:
                 continue

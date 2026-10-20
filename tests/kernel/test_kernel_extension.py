@@ -44,7 +44,7 @@ def test_transformer_is_pure_so_ipython_may_apply_it_twice() -> None:
 class _Shell:
     def __init__(self) -> None:
         self.input_transformers_cleanup: list[Any] = []
-        self.magics: dict[tuple[str, str], Any] = {}
+        self.magics: dict[str, dict[str, Any]] = {"line": {}, "cell": {}}
         self.namespace: dict[str, Any] = {}
         self.magics_manager = self
 
@@ -52,11 +52,16 @@ class _Shell:
         assert interactive is False
         self.namespace.update(variables)
 
+    def drop_by_id(self, variables: dict[str, Any]) -> None:
+        for name, value in variables.items():
+            if self.namespace.get(name) is value:
+                del self.namespace[name]
+
     def register_function(self, function: Any, kind: str, name: str) -> None:
-        self.magics[kind, name] = function
+        self.magics[kind][name] = function
 
 
-def test_loading_twice_installs_once_and_unloading_removes_the_transformer(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_loading_twice_installs_once_and_unloading_removes_everything(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LOOMMUX_KERNEL_ID", "abc123")
     monkeypatch.setenv("LOOMMUX_KERNEL_NAME", "lab")
     shell: Any = _Shell()
@@ -67,14 +72,27 @@ def test_loading_twice_installs_once_and_unloading_removes_the_transformer(monke
     [transformer] = shell.input_transformers_cleanup
     assert transformer(["%%loommux --kernel lab\n", "x\n"]) == ["\n", "x\n"]
     assert transformer(["%%loommux --kernel abc123\n", "x\n"]) == ["\n", "x\n"]
-    assert set(shell.magics) == {("cell", "loommux"), ("line", "%loommux"), ("line", "loommux")}
-    assert "--kernel NAME" in (shell.magics["cell", "loommux"].__doc__ or "")
+    assert {kind: set(names) for kind, names in shell.magics.items()} == {"cell": {"loommux"}, "line": {"%loommux", "loommux"}}
+    assert "--kernel NAME" in (shell.magics["cell"]["loommux"].__doc__ or "")
     assert type(shell.namespace["loommux"]).__name__ == "Daemon"
 
     kernel_extension.unload_ipython_extension(shell)
     kernel_extension.unload_ipython_extension(shell)
 
     assert shell.input_transformers_cleanup == []
+    assert shell.magics == {"line": {}, "cell": {}}
+    assert shell.namespace == {}
+
+
+def test_unloading_keeps_a_loommux_name_the_author_rebound(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LOOMMUX_KERNEL_ID", raising=False)
+    shell: Any = _Shell()
+    kernel_extension.load_ipython_extension(shell)
+    shell.namespace["loommux"] = "mine"
+
+    kernel_extension.unload_ipython_extension(shell)
+
+    assert shell.namespace == {"loommux": "mine"}
 
 
 class _Job:
