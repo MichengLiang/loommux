@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import bisect
 import re
 import threading
 from collections.abc import Callable
@@ -36,6 +37,9 @@ class LineLog:
         self._lock = threading.Lock()
         self._text = ""
         self._pending: list[str] = []
+        # The character count at the end of each pending chunk, so a follower
+        # can find its offset among chunks that have not been joined yet.
+        self._pending_ends: list[int] = []
         self._lines: list[str] | None = []
         self._character_count = 0
         self._utf8_byte_count = 0
@@ -46,9 +50,22 @@ class LineLog:
             return self._joined_locked()
 
     def text_since(self, offset: int) -> str:
-        """The text appended after the first ``offset`` characters."""
+        """The text appended after the first ``offset`` characters.
+
+        Costs time in the returned text only, and never joins the log: a
+        follower asks again as each chunk arrives, so joining the whole text
+        per request was quadratic in the output, under the lock the iopub
+        collector needs to append.
+        """
         with self._lock:
-            return self._joined_locked()[offset:]
+            joined = len(self._text)
+            if offset < joined:
+                return "".join((self._text[offset:], *self._pending))
+            index = bisect.bisect_right(self._pending_ends, offset)
+            if index == len(self._pending):
+                return ""
+            start = self._pending_ends[index - 1] if index else joined
+            return "".join((self._pending[index][offset - start :], *self._pending[index + 1 :]))
 
     @property
     def line_count(self) -> int:
@@ -74,6 +91,7 @@ class LineLog:
             # every status.
             self._character_count += len(text)
             self._utf8_byte_count += encoded_size
+            self._pending_ends.append(self._character_count)
 
     def read(self, line_range: str | None = None, *, max_chars: int | None = None) -> dict[str, object]:
         max_chars_error = _validate_max_chars(max_chars)
@@ -121,6 +139,7 @@ class LineLog:
         if self._pending:
             self._text = "".join((self._text, *self._pending))
             self._pending.clear()
+            self._pending_ends.clear()
             self._lines = None
         return self._text
 

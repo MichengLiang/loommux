@@ -38,6 +38,35 @@ def test_line_log_appends_in_linear_time() -> None:
     assert time.perf_counter() - started < 2
 
 
+def test_text_since_follows_output_in_linear_time() -> None:
+    log = LineLog()
+    chunk = "x" * 1023 + "\n"
+    offset = 0
+    started = time.perf_counter()
+    for index in range(8 * 1024):
+        log.append(chunk)
+        if index % 4 == 0:
+            offset += len(log.text_since(offset))
+    offset += len(log.text_since(offset))
+    assert offset == log.character_count
+    # Joining the whole log per follow took about 5 s here for these 8 MB.
+    assert time.perf_counter() - started < 2
+
+
+@pytest.mark.parametrize("join_after", [None, 0, 1, 2, 3])
+def test_text_since_matches_the_text_at_every_offset(join_after: int | None) -> None:
+    log = LineLog()
+    chunks = ["ab", "", "c", "中🙂\n", "defg"]
+    for index, chunk in enumerate(chunks):
+        log.append(chunk)
+        if index == join_after:
+            _ = log.text
+    text = "".join(chunks)
+
+    assert [log.text_since(offset) for offset in range(len(text) + 2)] == [text[offset:] for offset in range(len(text) + 2)]
+    assert log.text == text
+
+
 def test_line_log_keeps_every_chunk_appended_while_another_thread_reads() -> None:
     chunks = 50_000
 

@@ -205,7 +205,7 @@ class Execution:
             "stdout": "" if omitted else self.logs.stdout.text,
             "stderr": "" if omitted else self.logs.stderr.text,
             "result_text": "" if omitted else self.result_text,
-            "error": self._error_summary(),
+            "error": self.error_summary,
             "output_omitted": omitted,
             "output_omitted_reason": omission_reason,
             "output_total_lines": output_total_lines,
@@ -228,14 +228,15 @@ class Execution:
             "completed_at": self.completed_at,
             "kernel_pid": self.kernel_pid,
             "execution_count_at_submit": self.execution_count_at_submit,
-            "error": self._error_summary(),
+            "error": self.error_summary,
             "output_total_lines": output_total_lines,
             "output_total_characters": combined_log.character_count,
             "output_total_utf8_bytes": combined_log.utf8_byte_count,
             "output_omitted_reason": self._output_omitted_reason(),
         }
 
-    def _error_summary(self) -> dict[str, Any] | None:
+    @property
+    def error_summary(self) -> dict[str, Any] | None:
         if self.error is None:
             return None
         return {key: self.error.get(key) for key in ("ename", "evalue") if key in self.error}

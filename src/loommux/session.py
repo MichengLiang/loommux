@@ -209,10 +209,12 @@ class IPythonSession:
             record.done.wait(min(_FOLLOW_POLL_SECONDS, remaining))
         # Status before text: output ends before an execution is marked
         # finished, so text read after a terminal status is all of it, and text
-        # read while running is completed by the next request.
-        status = record.status_snapshot()
+        # read while running is completed by the next request. Not
+        # status_snapshot(): it counts the log's lines, which a follower asking
+        # after every chunk would pay for the whole output each time.
+        status, error = record.status, record.error_summary
         text = log.text_since(offset)
-        return {"ok": True, "execution": record.execution, "status": status["status"], "error": status["error"], "text": text, "offset": offset + len(text)}
+        return {"ok": True, "execution": record.execution, "status": status, "error": error, "text": text, "offset": offset + len(text)}
 
     def interrupt(self) -> dict[str, Any]:
         with self._lock:
