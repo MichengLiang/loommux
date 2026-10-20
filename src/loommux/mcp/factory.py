@@ -198,6 +198,18 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
         于这一个 cell。头的下一行可以接另一个 cell magic，例如 ``%%bash``。
         无效的头返回 ``invalid_cell_header``，不分配 execution，也不提交 kernel。
 
+        头里可以写另一个 kernel 的名字，把这个 cell 交给它::
+
+            %%loommux build --wait 120
+            %%bash
+            uv run pytest
+
+        名叫 ``build`` 的 kernel 不存在时首次使用就开出，它跟着当前 kernel
+        活、跟着它回收。它的输出实时转回这个 cell，它的错误也让这个 cell
+        以一行 ``ForwardedCellError`` 结束；中断这个 cell 会一并中断它。每个
+        kernel 里都有 ``loommux`` 对象：``loommux.kernels()`` 列出所有
+        kernel，``loommux["build"].run(code)`` 在后台提交并返回 job。
+
         图像展示
         --------
 

@@ -15,8 +15,22 @@ KERNEL_ID_ENV = "LOOMMUX_KERNEL_ID"
 KERNEL_NAME_ENV = "LOOMMUX_KERNEL_NAME"
 CONTROL_URL_ENV = "LOOMMUX_CONTROL_URL"
 IDENTITY_ENVIRONMENT = (KERNEL_ID_ENV, KERNEL_NAME_ENV, CONTROL_URL_ENV)
+MAX_LABEL_LENGTH = 256
 
 _WILDCARD_HOSTS = {"", "0.0.0.0", "::", "[::]"}
+
+
+def label_problem(value: str, label: str) -> str | None:
+    """Why ``value`` cannot name a kernel resource or operator, or ``None``.
+
+    Names reach the daemon through HTTP headers, cell headers, and control
+    requests alike, so all of them are judged by this one rule.
+    """
+    if len(value) > MAX_LABEL_LENGTH:
+        return f"{label} must not exceed {MAX_LABEL_LENGTH} characters"
+    if not value.isprintable():
+        return f"{label} must contain printable characters only"
+    return None
 
 
 @dataclass(frozen=True)
@@ -30,6 +44,11 @@ class KernelIdentity:
     kernel_id: str
     name: str
     control_url: str | None
+
+    @property
+    def names(self) -> frozenset[str]:
+        """Every way a cell header may name this kernel."""
+        return frozenset({self.kernel_id, self.name} - {""})
 
     def environment(self) -> dict[str, str]:
         environment = {KERNEL_ID_ENV: self.kernel_id, KERNEL_NAME_ENV: self.name}

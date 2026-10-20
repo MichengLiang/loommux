@@ -192,7 +192,9 @@ kernel has it, and no special "daemon kernel" is needed.
    and records A as one of its holders (section 8);
 2. submits the body unchanged to `build`;
 3. relays `build`'s combined output into A's cell as it arrives, by character
-   offset into the append-only combined log, until the execution ends;
+   offset into the append-only combined log, until the execution ends; each
+   follow request returns as soon as new text exists or the execution ends,
+   and holds a daemon worker thread for at most one second;
 4. ends A's cell in the same state: an error in `build` raises in A an error
    whose display is one line naming the kernel and the exception, because the
    traceback itself has already been relayed.
@@ -204,7 +206,9 @@ Consequences that the implementation must preserve:
   expired `--wait` leaves the forwarding running.
 - **Interrupts travel down.** Interrupting A delivers `KeyboardInterrupt` to the
   magic, which interrupts `build`, keeps relaying until `build` finishes or ten
-  seconds pass, and then re-raises.
+  seconds pass, and then raises a `KeyboardInterrupt` that displays as one line.
+  Its class name stays `KeyboardInterrupt`, which is how A's execution record
+  recognizes an interrupted rather than a failed cell.
 - **Cycles fail immediately.** If `build` forwards back to the busy A, the
   daemon answers `busy`; the inner magic raises, and the error reaches A.
   Nothing waits for itself.

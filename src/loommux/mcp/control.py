@@ -174,6 +174,17 @@ def install_control_routes(
         line_range = request.query_params.get("lines")
         return await _session_call(request, lambda session: session.read_output(execution, stream, line_range))
 
+    @mcp.custom_route("/api/resources/{resource_id}/executions/{execution:int}/combined", methods=["GET"])
+    async def follow_output(request: Request) -> Response:
+        """Combined output after character ``since``; returns early when new text arrives."""
+        execution = request.path_params["execution"]
+        try:
+            since = int(request.query_params.get("since", "0"))
+            wait = float(request.query_params.get("wait", "0"))
+        except ValueError:
+            return JSONResponse({"ok": False, "message": "since must be an integer and wait a number"}, status_code=400)
+        return await _session_call(request, lambda session: session.output_since(execution, since, wait))
+
     async def _session_call(request: Request, operation: Callable[[IPythonSession], dict[str, Any]]) -> JSONResponse:
         try:
             async with manager().program_operation(request.path_params["resource_id"]) as resource:

@@ -17,6 +17,8 @@ from typing import NoReturn
 
 from IPython.core.inputtransformer2 import leading_empty_lines, leading_indent
 
+from loommux.identity import label_problem
+
 HEADER_MAGIC = "loommux"
 _HEADER_PREFIX = f"%%{HEADER_MAGIC}"
 DEFAULT_INITIAL_WAIT_SECONDS = 10.0
@@ -28,10 +30,15 @@ class CellHeaderError(ValueError):
 
 @dataclass(frozen=True)
 class CellHeader:
-    """How the submitting call observes one cell."""
+    """Which kernel interprets one cell, and how the submitting call observes it.
+
+    ``kernel`` is ``None`` when the header names no kernel, which means the
+    kernel that received the cell.
+    """
 
     wait_seconds: float = DEFAULT_INITIAL_WAIT_SECONDS
     full_output: bool = False
+    kernel: str | None = None
 
 
 class _HeaderParser(argparse.ArgumentParser):
@@ -51,7 +58,14 @@ def _positive_seconds(value: str) -> float:
     return seconds
 
 
+def _kernel_name(value: str) -> str:
+    if (problem := label_problem(value, "kernel name")) is not None:
+        raise argparse.ArgumentTypeError(problem)
+    return value
+
+
 _PARSER = _HeaderParser(prog=_HEADER_PREFIX, add_help=False)
+_PARSER.add_argument("kernel", nargs="?", type=_kernel_name, metavar="KERNEL")
 _PARSER.add_argument("--wait", type=_positive_seconds, default=DEFAULT_INITIAL_WAIT_SECONDS, metavar="SECONDS")
 _PARSER.add_argument("--full-output", action="store_true")
 
@@ -76,7 +90,7 @@ def parse_header_arguments(arguments: str) -> CellHeader:
     except ValueError as exc:
         raise CellHeaderError(str(exc)) from exc
     options = _PARSER.parse_args(tokens)
-    return CellHeader(wait_seconds=options.wait, full_output=options.full_output)
+    return CellHeader(wait_seconds=options.wait, full_output=options.full_output, kernel=options.kernel)
 
 
 def first_cell_line(lines: Sequence[str]) -> str | None:
@@ -96,12 +110,15 @@ def read_cell_header(source: str) -> CellHeader:
     return CellHeader() if arguments is None else parse_header_arguments(arguments)
 
 
-HEADER_HELP = f"""Declare how this cell is interpreted and observed.
+HEADER_HELP = f"""Declare which kernel interprets this cell and how it is observed.
 
 Write it as the first line of a cell:
 
-    {_HEADER_PREFIX} [--wait SECONDS] [--full-output]
+    {_HEADER_PREFIX} [KERNEL] [--wait SECONDS] [--full-output]
 
+KERNEL           run the rest of the cell in the kernel with this name or id,
+                 opening a named kernel on first use; its output is relayed
+                 here and its errors end this cell. Omitted: this kernel.
 --wait SECONDS   wait up to SECONDS for this cell before run_cell returns
                  (default {DEFAULT_INITIAL_WAIT_SECONDS:g}); an expired wait leaves the cell running
 --full-output    deliver the complete combined output when the cell ends

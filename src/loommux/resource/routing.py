@@ -7,12 +7,12 @@ from urllib.parse import unquote
 from fastmcp import Context
 from fastmcp.server.dependencies import get_http_headers
 
+from loommux.identity import label_problem
 from loommux.resource.model import LeaseClient, ResourceAddress
 
 RESOURCE_HEADER = "x-loommux-resource"
 OPERATOR_HEADER = "x-loommux-operator"
 LEASE_POLICY_GENERATION_HEADER = "x-loommux-lease-policy-generation"
-MAX_DISPLAY_LABEL_LENGTH = 256
 
 
 class ResourceRoutingError(RuntimeError):
@@ -79,10 +79,6 @@ def resolve_policy_generation() -> int | None:
 
 
 def _validate_display_label(value: str, label: str) -> str:
-    if len(value) > MAX_DISPLAY_LABEL_LENGTH:
-        raise ResourceRoutingError(
-            f"{label} must not exceed {MAX_DISPLAY_LABEL_LENGTH} characters"
-        )
-    if not value.isprintable():
-        raise ResourceRoutingError(f"{label} must contain printable characters only")
+    if (problem := label_problem(value, label)) is not None:
+        raise ResourceRoutingError(problem)
     return value

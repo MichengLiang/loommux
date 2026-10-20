@@ -178,6 +178,16 @@ class Job:
         params = {"stream": stream} | ({} if lines is None else {"lines": lines})
         return self.kernel.daemon._request("GET", f"/api/resources/{self.kernel.id}/executions/{self.execution}/output", params=params)["result"]["text"]
 
+    def follow(self, offset: int, wait: float = 0.5) -> dict[str, Any]:
+        """Combined output after ``offset`` characters, with ``status`` and the next ``offset``.
+
+        Answers as soon as new text exists or the execution ends, within
+        ``wait`` seconds, so a loop of calls relays output as it arrives.
+        """
+        params = {"since": str(offset), "wait": str(wait)}
+        self.last = self.kernel.daemon._request("GET", f"/api/resources/{self.kernel.id}/executions/{self.execution}/combined", params=params)["result"]
+        return self.last
+
     def interrupt(self) -> dict[str, Any]:
         return self.kernel.interrupt()
 

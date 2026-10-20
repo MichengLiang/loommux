@@ -21,6 +21,9 @@ from loommux.submission.header import header_arguments
         ("%%loommux --wait 2\n%%bash\necho shell", CellHeader(wait_seconds=2.0)),
         ("%%loommux --wait 2\r\nprint('crlf')\r\n", CellHeader(wait_seconds=2.0)),
         ("%%loommux --wait 2", CellHeader(wait_seconds=2.0)),
+        ("%%loommux build\nmake()", CellHeader(kernel="build")),
+        ("%%loommux --wait 5 build --full-output\nmake()", CellHeader(5.0, True, "build")),
+        ("%%loommux 'my lab'\nmake()", CellHeader(kernel="my lab")),
     ],
 )
 def test_header_on_the_first_line_resolves_the_observation_policy(source: str, header: CellHeader) -> None:
@@ -76,7 +79,9 @@ def test_header_arguments_recognize_the_magic_name_as_a_whole_word(line: str, ar
         ("%%loommux --wait soon\npass", "got 'soon'"),
         (f"%%loommux --wait {'9' * 400}\npass", "positive finite"),
         ("%%loommux --unknown\npass", "unrecognized arguments: --unknown"),
-        ("%%loommux build\npass", "unrecognized arguments: build"),
+        ("%%loommux build extra\npass", "unrecognized arguments: extra"),
+        ("%%loommux 'a\tb'\npass", "kernel name must contain printable characters only"),
+        (f"%%loommux {'k' * 257}\npass", "kernel name must not exceed 256 characters"),
         ("%%loommux --help\npass", "unrecognized arguments: --help"),
         ("%%loommux --wait '3\npass", "No closing quotation"),
     ],

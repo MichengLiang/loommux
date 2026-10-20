@@ -5,7 +5,9 @@ from typing import Any
 import pytest
 
 from loommux import kernel_extension
-from loommux.kernel_extension import remove_own_header
+from loommux.daemon import DaemonError
+from loommux.kernel_extension import ForwardedCellError, ForwardedInterrupt, forward, remove_own_header
+from loommux.submission.header import CellHeader
 
 
 @pytest.mark.parametrize(
@@ -20,10 +22,14 @@ from loommux.kernel_extension import remove_own_header
         (["%%loommux --bogus\n", "x\n"], ["%%loommux --bogus\n", "x\n"]),
         (["%%loommux\n", "%%loommux --bogus\n", "x\n"], ["%%loommux --bogus\n", "x\n"]),
         (["%%loommux?\n"], ["%%loommux?\n"]),
+        (["%%loommux me --wait 2\n", "x\n"], ["\n", "x\n"]),
+        (["%%loommux me-id\n", "x\n"], ["\n", "x\n"]),
+        (["%%loommux build\n", "x\n"], ["%%loommux build\n", "x\n"]),
+        (["%%loommux --wait 2\n", "%%loommux build\n", "x\n"], ["%%loommux build\n", "x\n"]),
     ],
 )
 def test_headers_naming_this_kernel_dissolve_and_keep_line_numbers(lines: list[str], transformed: list[str]) -> None:
-    assert remove_own_header(lines) == transformed
+    assert remove_own_header(lines, own_names={"me", "me-id"}) == transformed
 
 
 def test_transformer_is_pure_so_ipython_may_apply_it_twice() -> None:
@@ -49,18 +55,128 @@ class _Shell:
         self.magics[kind, name] = function
 
 
-def test_loading_twice_installs_one_transformer_and_unloading_removes_it() -> None:
+def test_loading_twice_installs_once_and_unloading_removes_the_transformer(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LOOMMUX_KERNEL_ID", "abc123")
+    monkeypatch.setenv("LOOMMUX_KERNEL_NAME", "lab")
     shell: Any = _Shell()
 
     kernel_extension.load_ipython_extension(shell)
     kernel_extension.load_ipython_extension(shell)
 
-    assert shell.input_transformers_cleanup == [remove_own_header]
+    [transformer] = shell.input_transformers_cleanup
+    assert transformer(["%%loommux lab\n", "x\n"]) == ["\n", "x\n"]
+    assert transformer(["%%loommux abc123\n", "x\n"]) == ["\n", "x\n"]
     assert set(shell.magics) == {("cell", "loommux"), ("line", "%loommux"), ("line", "loommux")}
-    assert "--full-output" in (shell.magics["cell", "loommux"].__doc__ or "")
+    assert "KERNEL" in (shell.magics["cell", "loommux"].__doc__ or "")
     assert type(shell.namespace["loommux"]).__name__ == "Daemon"
 
     kernel_extension.unload_ipython_extension(shell)
     kernel_extension.unload_ipython_extension(shell)
 
     assert shell.input_transformers_cleanup == []
+
+
+class _Job:
+    def __init__(self, states: list[Any]) -> None:
+        self.states = states
+        self.last: dict[str, Any] = {"status": "running"}
+        self.interrupted = 0
+
+    def follow(self, offset: int) -> dict[str, Any]:
+        state = self.states.pop(0)
+        if isinstance(state, BaseException):
+            raise state
+        self.last = state
+        return state
+
+    def interrupt(self) -> None:
+        self.interrupted += 1
+
+
+class _Daemon:
+    def __init__(self, job: _Job | None = None, refusal: DaemonError | None = None) -> None:
+        self.job, self.refusal, self.bodies = job, refusal, []
+
+    def __getitem__(self, name: str) -> Any:
+        daemon = self
+
+        class Target:
+            def run(self, body: str, *, wait: float) -> _Job:
+                if daemon.refusal is not None:
+                    raise daemon.refusal
+                daemon.bodies.append(body)
+                assert daemon.job is not None
+                return daemon.job
+
+        return Target()
+
+
+def state(status: str, text: str = "", offset: int = 0, error: dict[str, str] | None = None) -> dict[str, Any]:
+    return {"status": status, "text": text, "offset": offset, "error": error}
+
+
+def run_forward(daemon: Any) -> str:
+    written: list[str] = []
+    forward(daemon, CellHeader(kernel="build"), "body", written.append)
+    return "".join(written)
+
+
+def test_forward_relays_output_until_the_target_completes() -> None:
+    job = _Job([state("running", "a\n", 2), state("running", "", 2), state("completed", "b\n", 4)])
+    daemon = _Daemon(job)
+
+    assert run_forward(daemon) == "a\nb\n"
+    assert daemon.bodies == ["body"]
+
+
+@pytest.mark.parametrize(
+    ("final", "message"),
+    [
+        (state("error", "Traceback\n", 10, {"ename": "NameError", "evalue": "name 'x' is not defined"}), "build: NameError: name 'x' is not defined"),
+        (state("killed", error={"ename": "KernelProcessExited", "evalue": ""}), "build: KernelProcessExited"),
+        (state("interrupted"), "build: interrupted"),
+    ],
+)
+def test_forward_ends_as_the_target_ended_with_a_one_line_error(final: dict[str, Any], message: str) -> None:
+    with pytest.raises(ForwardedCellError) as raised:
+        run_forward(_Daemon(_Job([final])))
+
+    assert str(raised.value) == message
+    assert raised.value._render_traceback_() == [f"ForwardedCellError: {message}"]
+
+
+def test_a_refused_forward_names_the_reason() -> None:
+    with pytest.raises(ForwardedCellError, match="build: busy: kernel is already executing code"):
+        run_forward(_Daemon(refusal=DaemonError("kernel is already executing code", "busy")))
+    with pytest.raises(ForwardedCellError, match="build: DaemonError: no control plane"):
+        run_forward(_Daemon(refusal=DaemonError("no control plane")))
+
+
+def test_an_interrupt_is_passed_to_the_target_and_its_last_output_relayed() -> None:
+    job = _Job([state("running", "working\n", 8), KeyboardInterrupt(), state("interrupted", "KeyboardInterrupt\n", 26)])
+
+    with pytest.raises(ForwardedInterrupt) as raised:
+        run_forward(_Daemon(job))
+
+    assert job.interrupted == 1
+    assert raised.value._render_traceback_() == ["KeyboardInterrupt: passed on to build; its traceback is above"]
+    assert type(raised.value).__name__ == "KeyboardInterrupt"
+
+
+def test_an_interrupt_while_draining_is_not_passed_twice(monkeypatch: pytest.MonkeyPatch) -> None:
+    job = _Job([KeyboardInterrupt(), KeyboardInterrupt()])
+
+    with pytest.raises(KeyboardInterrupt):
+        run_forward(_Daemon(job))
+
+    assert job.interrupted == 1
+
+
+def test_draining_after_an_interrupt_stops_at_its_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(kernel_extension, "INTERRUPT_RELAY_SECONDS", 0.0)
+    job = _Job([KeyboardInterrupt()])
+
+    with pytest.raises(KeyboardInterrupt):
+        run_forward(_Daemon(job))
+
+    assert job.interrupted == 1

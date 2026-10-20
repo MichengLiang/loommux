@@ -279,10 +279,10 @@ def test_full_output_header_survives_running_wait_error_and_reset(session: IPyth
 
 
 def test_invalid_header_fails_before_python_execution(session: IPythonSession) -> None:
-    response = session.run_cell("%%loommux legacy_key=0.1\nprint('\\n'.join(f'line-{number}' for number in range(301)))")
+    response = session.run_cell("%%loommux --legacy-key=0.1\nprint('\\n'.join(f'line-{number}' for number in range(301)))")
 
     assert response["status"] == "invalid_cell_header"
-    assert "unrecognized arguments: legacy_key=0.1" in response["message"]
+    assert "unrecognized arguments: --legacy-key=0.1" in response["message"]
 
 
 def test_apply_patch_literal_preserves_raw_value_without_archiving_request_source(session: IPythonSession) -> None:
@@ -454,6 +454,22 @@ def test_public_execution_responses_exclude_header_policy(session: IPythonSessio
 
     for result in (response, waited, status):
         assert {"initial_wait_seconds", "full_output_requested", "control_directives"}.isdisjoint(result)
+
+
+def test_output_since_follows_a_cell_by_character_offset(session: IPythonSession) -> None:
+    running = session.run_cell("import time\nprint('first', flush=True)\ntime.sleep(0.4)\nprint('second')", wait_seconds=0.05)
+
+    first = session.output_since(running["execution"], 0, wait_seconds=1)
+    rest = session.output_since(running["execution"], first["offset"], wait_seconds=1)
+    while rest["status"] == "running":
+        rest = session.output_since(running["execution"], first["offset"], wait_seconds=1)
+
+    assert first["text"] == "first\n"
+    assert first["status"] == "running"
+    assert rest == {"ok": True, "execution": 1, "status": "completed", "error": None, "text": "second\n", "offset": 13}
+    assert session.output_since(1, 13, wait_seconds=5)["text"] == ""
+    assert session.output_since(9, 0)["status"] == "execution_not_found"
+    assert session.output_since(1, -1)["status"] == "invalid_offset"
 
 
 def test_stream_read_search_and_invalid_inputs(session: IPythonSession) -> None:

@@ -392,6 +392,22 @@ allocated or source is submitted. A `%%loommux` line anywhere but first raises
 a `UsageError` saying so. See [Cell Header Design](docs/cell-header-design.md)
 for the grammar and its reasons.
 
+A kernel name in the header hands the cell to that kernel:
+
+```python
+%%loommux build --wait 120
+%%bash
+uv run pytest
+```
+
+The kernel named `build` is opened on first use and held by the kernel that
+forwarded to it (see [Controlling Kernels From A Kernel](#controlling-kernels-from-a-kernel)).
+Its combined output is relayed into this cell as it arrives; an error there
+ends this cell with a one-line `ForwardedCellError` beneath the relayed
+traceback, and interrupting this cell interrupts it as well. Writing the
+receiving kernel's own name is the same as writing none. Relayed output is
+text; rich displays such as images stay in the target's execution record.
+
 ### Apply Patch Literals
 
 Use an outer triple-double-quoted literal containing a valid Apply Patch

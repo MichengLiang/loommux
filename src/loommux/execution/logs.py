@@ -45,6 +45,11 @@ class LineLog:
         with self._lock:
             return self._joined_locked()
 
+    def text_since(self, offset: int) -> str:
+        """The text appended after the first ``offset`` characters."""
+        with self._lock:
+            return self._joined_locked()[offset:]
+
     @property
     def line_count(self) -> int:
         return len(self._split_lines())

@@ -89,6 +89,8 @@ def test_program_routes_validate_requests_before_reaching_a_kernel(
             "wait body": client.post("/api/resources/missing/executions/1/wait", content=b"x"),
             "timeout type": client.post("/api/resources/missing/executions/1/wait", json={"timeout_seconds": "soon"}),
             "output target": client.get("/api/resources/missing/executions/1/output"),
+            "follow params": client.get("/api/resources/missing/executions/1/combined?since=later"),
+            "follow target": client.get("/api/resources/missing/executions/1/combined?since=0&wait=0.1"),
         }
 
     assert {name: response.status_code for name, response in responses.items()} == {
@@ -107,6 +109,8 @@ def test_program_routes_validate_requests_before_reaching_a_kernel(
         "wait body": 400,
         "timeout type": 400,
         "output target": 404,
+        "follow params": 400,
+        "follow target": 404,
     }
     assert responses["no holder"].json()["message"] == "no kernel named 'lab'; only a kernel can open one"
 

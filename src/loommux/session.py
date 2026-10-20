@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,10 @@ from loommux.submission.header import CellHeaderError
 
 KERNEL_START_ATTEMPTS = 2
 OUTPUT_STREAMS = {"combined", "stdout", "stderr", "result", "traceback"}
+# Bounds how long one follow request may hold a worker thread, since every
+# blocking session call shares the server's thread pool.
+MAX_FOLLOW_WAIT_SECONDS = 1.0
+_FOLLOW_POLL_SECONDS = 0.05
 
 
 class IPythonSession:
@@ -186,6 +191,28 @@ class IPythonSession:
         if record.is_running:
             record.done.wait(float(timeout_seconds))
         return self._execution_response(record)
+
+    def output_since(self, execution: int, offset: int, wait_seconds: float = MAX_FOLLOW_WAIT_SECONDS) -> dict[str, Any]:
+        """Combined output after the first ``offset`` characters, for following a cell.
+
+        Returns as soon as new text exists or the execution ends, and at most
+        after ``wait_seconds`` (capped at ``MAX_FOLLOW_WAIT_SECONDS``).
+        """
+        record = self._select_execution(execution)
+        if record is None:
+            return {"ok": False, "status": "execution_not_found", "message": "execution was not found"}
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            return {"ok": False, "status": "invalid_offset", "message": "offset must be a non-negative integer"}
+        log = record.logs.combined
+        deadline = time.monotonic() + min(max(wait_seconds, 0.0), MAX_FOLLOW_WAIT_SECONDS)
+        while log.character_count <= offset and record.is_running and (remaining := deadline - time.monotonic()) > 0:
+            record.done.wait(min(_FOLLOW_POLL_SECONDS, remaining))
+        # Status before text: output ends before an execution is marked
+        # finished, so text read after a terminal status is all of it, and text
+        # read while running is completed by the next request.
+        status = record.status_snapshot()
+        text = log.text_since(offset)
+        return {"ok": True, "execution": record.execution, "status": status["status"], "error": status["error"], "text": text, "offset": offset + len(text)}
 
     def interrupt(self) -> dict[str, Any]:
         with self._lock:
