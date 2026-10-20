@@ -102,6 +102,9 @@ def forward(daemon: Daemon, header: CellHeader, body: str, write: Callable[[str]
         _relay(job, write, 0, deadline=None)
     except KeyboardInterrupt:
         raise ForwardedInterrupt(header.kernel) from None
+    except DaemonError as exc:
+        # The target was retired or restarted while its cell ran here.
+        raise ForwardedCellError(header.kernel, exc.status or "DaemonError", str(exc)) from None
     _raise_for(header.kernel, job.last)
 
 

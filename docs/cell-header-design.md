@@ -1,9 +1,9 @@
 # Loommux Cell Header And In-Kernel Control Design
 
-> **Status: Accepted on October 21, 2026; implemented by work packages 5.2
-> through 5.6.** This document supersedes the July 24, 2026 *Cell Control
-> Directive Design* and its *Transient Control Directive Consumption* rationale.
-> Section 9 records which of their decisions are reversed and why.
+> **Status: Implemented on October 21, 2026.** This document supersedes the
+> July 24, 2026 *Cell Control Directive Design* and its *Transient Control
+> Directive Consumption* rationale. Section 9 records which of their decisions
+> are reversed and why.
 
 ## 1. Decision
 
@@ -168,7 +168,7 @@ Outside a kernel, `Daemon()` uses `LOOMMUX_CONTROL_URL` or
 | `loommux.self` | handle of this kernel |
 | `kernel.run(code, wait=10)` | submit `code`; returns a `Job` |
 | `kernel.interrupt()`, `kernel.restart()`, `kernel.recycle(force=False)` | control operations |
-| `job.wait(timeout)`, `job.status()`, `job.output(stream, lines)`, `job.interrupt()` | follow one execution |
+| `job.wait(timeout)`, `job.status()`, `job.output(stream, lines)`, `job.follow(offset)`, `job.interrupt()` | follow one execution |
 
 The client sends requests with `trust_env=False`: the control plane is always
 on loopback, and an inherited `ALL_PROXY` would route loopback traffic into a

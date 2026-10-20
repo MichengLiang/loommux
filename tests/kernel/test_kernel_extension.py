@@ -152,6 +152,13 @@ def test_a_refused_forward_names_the_reason() -> None:
         run_forward(_Daemon(refusal=DaemonError("no control plane")))
 
 
+def test_a_target_retired_while_relaying_ends_the_cell_in_one_line() -> None:
+    job = _Job([state("running", "partial\n", 8), DaemonError("resource was not found")])
+
+    with pytest.raises(ForwardedCellError, match="^build: DaemonError: resource was not found$"):
+        run_forward(_Daemon(job))
+
+
 def test_an_interrupt_is_passed_to_the_target_and_its_last_output_relayed() -> None:
     job = _Job([state("running", "working\n", 8), KeyboardInterrupt(), state("interrupted", "KeyboardInterrupt\n", 26)])
 

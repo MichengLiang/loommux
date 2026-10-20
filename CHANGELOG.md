@@ -9,6 +9,32 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- A cell may begin with a `%%loommux [KERNEL] [--wait SECONDS] [--full-output]`
+  header, written in ordinary IPython cell-magic syntax. Its options control
+  that one cell; another cell magic such as `%%bash` may follow it, top-level
+  `await` keeps working, and IPython history records the header as written.
+- `%%loommux build` runs the rest of the cell in the kernel named `build`,
+  opened on first use. Its output is relayed into the cell as it arrives, an
+  error there ends the cell with a one-line `ForwardedCellError` below the
+  relayed traceback, an interrupt is passed on, and a forward back into a busy
+  kernel fails at once with `busy`.
+- Every kernel knows its resource (`LOOMMUX_KERNEL_ID`, `LOOMMUX_KERNEL_NAME`,
+  and for an HTTP server `LOOMMUX_CONTROL_URL`) and holds `loommux`, a client
+  of its daemon: `loommux.kernels()`, `loommux.self`, `loommux["lab"]` with
+  `run()`, `restart()`, `interrupt()`, and `recycle()`, and jobs with
+  `wait()`, `status()`, `output()`, and `follow()`. `loommux.daemon.Daemon()`
+  is the same client outside a kernel (default `http://127.0.0.1:8801`).
+- A kernel opened by name is held by the kernel that opened it and lives as
+  long as a client lease reaches it through its holders; kernels that only hold
+  each other are released. Snapshots and `loommux.kernels()` report `held_by`,
+  and the console shows it.
+- Control routes for programs: `GET /api/resources/{id}`,
+  `POST /api/resources/ensure`, and `/api/resources/{id}/executions` with
+  status, `wait`, `output`, and `combined` (follow by character offset).
+- Help that IPython sends to a pager (`obj?`, `obj??`, `%%loommux?`) is part of
+  the output, after the cell's other output, instead of being lost.
+- `scripts/stress.py` includes a cell that forwards to a shared named kernel.
+
 - Add the `connection` lease mode. A lease is held for as long as its MCP
   session keeps the standalone Streamable HTTP `GET` stream open, so a client
   such as Claude Code keeps its kernel while it runs, however long it idles,
@@ -40,6 +66,19 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Changed
 
+- **Breaking:** the `# loommux:` control comment is gone; it is an ordinary
+  Python comment now. Write `%%loommux --wait 120 --full-output` as the first
+  line instead. An invalid header returns `invalid_cell_header`, which replaces
+  `invalid_loommux_directive`.
+- **Breaking:** the server factory given to `run_entrypoint` receives the
+  control URL as a second argument (`None` for stdio).
+- The sweeper releases resources that no client lease reaches, directly or
+  through holders, instead of resources without a lease of their own.
+- `import loommux` no longer imports the session, so loading the kernel
+  extension costs each kernel about 4 ms instead of about 85 ms;
+  `loommux.IPythonSession` and `loommux.__version__` resolve on first use.
+- loommux declares `ipython>=9.17.1` directly: the header is located with
+  IPython's own cleanup transforms.
 - Kernels on Linux and macOS use ZMQ IPC sockets in their private runtime
   directory instead of loopback TCP ports, so no other process can take a
   kernel's port during startup, and kernels no longer log a "running over TCP
