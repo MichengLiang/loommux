@@ -26,13 +26,7 @@ def decode_header(name: str) -> str:
 def resolve_address(ctx: Context) -> ResourceAddress:
     resource_name = decode_header(RESOURCE_HEADER)
     if resource_name:
-        resource_name = _validate_display_label(resource_name, "resource name")
-        return ResourceAddress(
-            key=f"named:{resource_name}",
-            display_name=resource_name,
-            scope="named_shared",
-            shared=True,
-        )
+        return named_address(resource_name)
 
     session_id = ctx.session_id
     if not session_id:
@@ -42,6 +36,17 @@ def resolve_address(ctx: Context) -> ResourceAddress:
         display_name=f"private-{session_id[:8]}",
         scope="session_private",
         shared=False,
+    )
+
+
+def named_address(name: str) -> ResourceAddress:
+    """The shared resource a header, or a kernel asking by name, addresses."""
+    name = _validate_display_label(name, "resource name")
+    return ResourceAddress(
+        key=f"named:{name}",
+        display_name=name,
+        scope="named_shared",
+        shared=True,
     )
 
 

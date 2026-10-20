@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from loommux.resource import (
+    ClientLease,
     KernelResourceManager,
     LeaseClient,
     LeaseMode,
@@ -99,6 +100,106 @@ def policy() -> LeasePolicy:
         heartbeat_timeout_seconds=20,
         connection_grace_seconds=20,
     )
+
+
+def private_address(name: str) -> ResourceAddress:
+    return ResourceAddress(key=f"session:{name}", display_name=name, scope="session_private", shared=False)
+
+
+def test_kernels_opened_by_name_live_as_long_as_a_leased_resource_reaches_them(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        manager = KernelResourceManager(tmp_path, "launch_cwd", session_factory=FakeSession)
+        root = await manager.get_or_create(private_address("agent"))
+        root.client_leases["client"] = ClientLease.create(LeaseClient("client", "client"), policy())
+
+        x = await manager.ensure_held("x", root.resource_id)
+        y = await manager.ensure_held("y", x.resource_id)
+        assert await manager.ensure_held("y", y.resource_id) is y
+        assert await manager.ensure_held("x", y.resource_id) is x
+        assert x.held_by == {root.resource_id, y.resource_id}
+        assert y.held_by == {x.resource_id}
+        assert (await manager.snapshot_one(x.resource_id))["held_by"] == ["agent", "y"]
+
+        assert await manager.sweep_once() == 0
+        assert {x.lifecycle, y.lifecycle} == {ResourceLifecycle.RUNNING}
+
+        # The client leaves: x and y still hold each other, and nothing
+        # leased reaches either, so the cycle is released with its root.
+        del root.client_leases["client"]
+        assert await manager.sweep_once() == 3
+        assert {root.lifecycle, x.lifecycle, y.lifecycle} == {ResourceLifecycle.STOPPED}
+        await manager.stop()
+
+    asyncio.run(scenario())
+
+
+def test_opening_by_name_needs_a_registered_holder_and_never_holds_a_private_kernel(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        manager = KernelResourceManager(tmp_path, "launch_cwd", session_factory=FakeSession)
+        agent = await manager.get_or_create(private_address("agent"))
+        other = await manager.get_or_create(private_address("other"))
+
+        with pytest.raises(ResourceNotFoundError, match="only a kernel can open one"):
+            await manager.ensure_held("lab", None)
+        with pytest.raises(ResourceNotFoundError, match="holder resource was not found"):
+            await manager.ensure_held("lab", "retired-holder")
+        assert await manager.ensure_held("other", agent.resource_id) is other
+        assert await manager.ensure_held(other.resource_id, None) is other
+        assert other.held_by == set()
+        await manager.stop()
+
+    asyncio.run(scenario())
+
+
+def test_a_holder_reopening_an_orphaned_kernel_returns_it_to_running(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        manager = KernelResourceManager(tmp_path, "launch_cwd", session_factory=FakeSession, orphan_grace_seconds=60)
+        agent = await manager.get_or_create(private_address("agent"))
+        agent.client_leases["client"] = ClientLease.create(LeaseClient("client", "client"), policy())
+        lab = await manager.ensure_held("lab", agent.resource_id)
+        lab.session.current_execution = 1
+        lab.held_by.clear()
+
+        assert await manager.sweep_once() == 0
+        assert lab.lifecycle is ResourceLifecycle.ORPHANED
+        await manager.ensure_held("lab", agent.resource_id)
+        assert lab.lifecycle is ResourceLifecycle.RUNNING
+        assert lab.orphaned_at is None
+        await manager.stop()
+
+    asyncio.run(scenario())
+
+
+def test_retiring_a_holder_removes_its_holding_edges(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        manager = KernelResourceManager(tmp_path, "launch_cwd", session_factory=FakeSession)
+        agent = await manager.get_or_create(private_address("agent"))
+        lab = await manager.ensure_held("lab", agent.resource_id)
+
+        await manager.recycle(agent.resource_id)
+
+        assert lab.held_by == set()
+        await manager.stop()
+
+    asyncio.run(scenario())
+
+
+def test_program_operations_count_as_work_without_creating_a_lease(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        manager = KernelResourceManager(tmp_path, "launch_cwd", session_factory=FakeSession)
+        lab = await manager.get_or_create(address("lab"))
+
+        async with manager.program_operation(lab.resource_id) as admitted:
+            assert admitted is lab
+            assert lab.is_busy
+        assert lab.active_operations == 0
+        assert lab.client_leases == {}
+        with pytest.raises(ResourceNotFoundError):
+            async with manager.program_operation("missing"):
+                pass
+        await manager.stop()
+
+    asyncio.run(scenario())
 
 
 def test_same_address_shares_one_provisioning_task(tmp_path: Path) -> None:

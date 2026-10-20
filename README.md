@@ -253,13 +253,22 @@ a client of that daemon as `loommux`:
 ```python
 loommux.kernels()             # every kernel: name, id, state, busy, pid, executions, leases
 loommux.self                  # this kernel
-loommux["lab"].restart()      # another kernel, by name or id
+lab = loommux["lab"]          # by name or id; a new named kernel opens on first use
+job = lab.run("train()", wait=5)
+job.wait(600)                 # its state; job.output() reads its combined output
+lab.restart()
 loommux["lab"].recycle(force=True)
 ```
 
+A kernel opened this way is held by the kernel that asked for it: it lives as
+long as its holder is held by a client lease, directly or through other
+holders, and is released after. A kernel already running a cell refuses
+`run()` with `DaemonError` whose `status` is `busy`; cells are never queued.
+
 The client speaks the HTTP control plane, so anything it does stays outside
 the daemon process. Outside a kernel, `loommux.daemon.Daemon()` connects to
-`LOOMMUX_CONTROL_URL` or `http://127.0.0.1:8801`. A stdio server has no HTTP
+`LOOMMUX_CONTROL_URL` or `http://127.0.0.1:8801` and resolves existing kernels
+only, since nothing there can hold a new one. A stdio server has no HTTP
 control plane; its kernels still know who they are, and every request explains
 that no control plane exists.
 

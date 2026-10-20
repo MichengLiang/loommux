@@ -292,8 +292,18 @@ also separate from client liveness and does not renew participation.
 ## 6. Expiry and orphaned execution
 
 A sweep first removes leases whose standing is expired and whose client has
-no active operation. It then evaluates resources with no remaining
-participants and forgets disconnected sessions that no lease refers to.
+no active operation. It then evaluates resources that are no longer
+anchored and forgets disconnected sessions that no lease refers to.
+
+A resource is anchored when a client lease holds it, or when an anchored
+resource holds it. A kernel that opens another kernel by name (`loommux["lab"]`
+in the kernel, `POST /api/resources/ensure` on the wire) records itself as one
+of that resource's holders; the holder is recorded in the same locked step that
+registers a newly created resource, so no sweep can find it unheld in between.
+Anchoring is computed by reachability from leased resources, so kernels that
+hold each other are still released once no client reaches them. Only named
+shared resources are held: a private resource belongs to its MCP session. A
+holding edge disappears when either end is retired.
 
 An idle unowned resource is reclaimed immediately. A resource whose cell is
 still running enters `orphaned`. This distinction matters because a loommux
@@ -305,7 +315,8 @@ kernel process group is terminated. This prevents an abandoned infinite cell
 from retaining a resource forever.
 
 A new valid operation arriving before retirement returns the resource to
-`running` and attaches a fresh client lease.
+`running` and attaches a fresh client lease; a holder opening it again by name
+does the same without a lease.
 
 ## 7. HTTP control plane
 
@@ -316,6 +327,11 @@ The Streamable HTTP application serves:
 | `GET` | `/` | Dependency-free resource console. |
 | `GET` | `/api/resources` | Resource, execution, kernel, and lease snapshots. |
 | `GET` | `/api/resources/{id}` | One resource's snapshot. |
+| `POST` | `/api/resources/ensure` | Open a kernel by `name` for the kernel `holder`, creating a named resource if needed; without a holder, resolve existing kernels only. |
+| `POST` | `/api/resources/{id}/executions` | Submit `source` as one cell, waiting up to `wait_seconds`; refuses with `busy` instead of queueing. |
+| `GET` | `/api/resources/{id}/executions/{n}` | One execution's status. |
+| `POST` | `/api/resources/{id}/executions/{n}/wait` | Wait up to `timeout_seconds` for it to end. |
+| `GET` | `/api/resources/{id}/executions/{n}/output` | Read one stream (`stream`, `lines` as `start:stop`). |
 | `GET` | `/api/lease-policy` | Current policy generation. |
 | `PUT` | `/api/lease-policy` | Atomically validate and update future defaults. |
 | `POST` | `/api/resources/{id}/interrupt` | Interrupt the selected running execution. |
@@ -328,6 +344,10 @@ The Streamable HTTP application serves:
 The control plane is operational infrastructure. It is not added to MCP
 `tools/list`. It does not provide its own authentication layer; deployment
 must keep it inside the same trusted boundary as arbitrary Python execution.
+
+The execution routes are admitted like any work on the resource (it counts as
+busy, and a dead kernel is recovered first) but create and renew no lease: the
+program calling them is a kernel, and its holding is what keeps the target.
 
 Kernels are clients of this plane too. A resource's id is assigned before its
 kernel starts, and the launch environment carries `LOOMMUX_KERNEL_ID`,

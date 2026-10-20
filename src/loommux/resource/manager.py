@@ -24,6 +24,7 @@ from loommux.resource.model import (
     ResourceLifecycle,
 )
 from loommux.resource.policy import LeasePolicy, LeasePolicyManager
+from loommux.resource.routing import named_address
 from loommux.session import IPythonSession
 
 SessionFactory = Callable[[], IPythonSession]
@@ -98,7 +99,14 @@ class KernelResourceManager:
                 name="loommux-resource-sweeper",
             )
 
-    async def get_or_create(self, address: ResourceAddress) -> KernelResource:
+    async def get_or_create(self, address: ResourceAddress, *, holder_id: str | None = None) -> KernelResource:
+        """Return the resource at ``address``, provisioning it if absent.
+
+        ``holder_id`` is recorded in the same locked step that registers a new
+        resource. Returning first would leave a suspension point in which the
+        sweeper finds the new resource leaseless, unheld, and idle, and
+        retires it before its opener ever holds it.
+        """
         async with self._registry_lock:
             if self._stopping:
                 raise ResourceManagerError("resource manager is stopping")
@@ -109,7 +117,7 @@ class KernelResourceManager:
             provisioning = self._provisioning_by_key.get(address.key)
             if provisioning is None:
                 provisioning = asyncio.create_task(
-                    self._provision(address),
+                    self._provision(address, holder_id),
                     name=f"loommux-provision-{address.key}",
                 )
                 self._provisioning_by_key[address.key] = provisioning
@@ -119,6 +127,56 @@ class KernelResourceManager:
     async def get_by_id(self, resource_id: str) -> KernelResource | None:
         async with self._registry_lock:
             return self._resources_by_id.get(resource_id)
+
+    async def ensure_held(self, name: str, holder_id: str | None) -> KernelResource:
+        """Return the kernel a kernel asks for by name, recording who holds it.
+
+        A registered resource is matched by name or id. Otherwise a named
+        shared resource is created, which needs a holder: with no lease of its
+        own, only its holder keeps it anchored. A private resource belongs to
+        its MCP session and is never held by another kernel.
+        """
+        address = named_address(name)
+        async with self._registry_lock:
+            holder = None if holder_id is None else self._resources_by_id.get(holder_id)
+            if holder_id is not None and holder is None:
+                raise ResourceNotFoundError("holder resource was not found")
+            existing = self._resources_by_key.get(address.key) or next(
+                (resource for resource in self._resources_by_id.values() if name in (resource.resource_id, resource.address.display_name)),
+                None,
+            )
+            if existing is not None:
+                self._hold_locked(existing, holder)
+                return existing
+        if holder is None:
+            raise ResourceNotFoundError(f"no kernel named {name!r}; only a kernel can open one")
+        resource = await self.get_or_create(address, holder_id=holder.resource_id)
+        async with self._registry_lock:
+            if self._resources_by_id.get(holder.resource_id) is not holder:
+                # The holder retired while the kernel started; nothing anchors it.
+                raise ResourceNotFoundError("holder resource was not found")
+            self._hold_locked(resource, holder)
+        return resource
+
+    @asynccontextmanager
+    async def program_operation(self, resource_id: str) -> AsyncIterator[KernelResource]:
+        """Admit one control-plane operation that runs or observes cells.
+
+        Unlike an MCP operation it creates and renews no lease: the program
+        calling it is a kernel, and what keeps the target alive is its
+        holding, not this request.
+        """
+        resource = await self._require_resource(resource_id)
+        await self._recover_if_needed(resource)
+        async with self._registry_lock:
+            if self._resources_by_id.get(resource_id) is not resource:
+                raise ResourceNotFoundError("resource was not found")
+            resource.active_operations += 1
+        try:
+            yield resource
+        finally:
+            async with self._registry_lock:
+                resource.active_operations = max(0, resource.active_operations - 1)
 
     @asynccontextmanager
     async def operation(
@@ -360,9 +418,14 @@ class KernelResourceManager:
                 }
             )
 
+            anchored = self._anchored_locked()
             closing: list[KernelResource] = []
             for resource in list(self._resources_by_id.values()):
-                if resource.client_leases:
+                if resource.resource_id in anchored:
+                    if resource.lifecycle is ResourceLifecycle.ORPHANED:
+                        # A holder opened it again by name during the grace.
+                        resource.lifecycle = ResourceLifecycle.RUNNING
+                        resource.orphaned_at = None
                     continue
                 if resource.orphaned_at is None:
                     resource.orphaned_at = now
@@ -436,7 +499,7 @@ class KernelResourceManager:
     async def snapshot_one(self, resource_id: str) -> dict[str, Any]:
         return self._snapshot_resource(await self._require_resource(resource_id))
 
-    async def _provision(self, address: ResourceAddress) -> KernelResource:
+    async def _provision(self, address: ResourceAddress, holder_id: str | None = None) -> KernelResource:
         session = self._session_factory()
         # The id exists before the kernel does, so the kernel can be told who
         # it is when it starts.
@@ -456,6 +519,8 @@ class KernelResourceManager:
             async with self._registry_lock:
                 if self._stopping:
                     raise ResourceManagerError("resource manager is stopping")
+                if holder_id in self._resources_by_id:
+                    resource.held_by.add(holder_id)
                 self._resources_by_key[address.key] = resource
                 self._resources_by_id[resource.resource_id] = resource
             return resource
@@ -472,6 +537,36 @@ class KernelResourceManager:
         self._resources_by_id.pop(resource.resource_id, None)
         if self._resources_by_key.get(resource.address.key) is resource:
             self._resources_by_key.pop(resource.address.key, None)
+        for held in self._resources_by_id.values():
+            held.held_by.discard(resource.resource_id)
+
+    @staticmethod
+    def _hold_locked(resource: KernelResource, holder: KernelResource | None) -> None:
+        if holder is None or holder is resource or not resource.address.shared:
+            return
+        resource.held_by.add(holder.resource_id)
+        if resource.lifecycle is ResourceLifecycle.ORPHANED:
+            resource.lifecycle = ResourceLifecycle.RUNNING
+            resource.orphaned_at = None
+
+    def _anchored_locked(self) -> set[str]:
+        """Ids of resources a client lease holds, directly or through holders.
+
+        Reachability rather than "has a holder" decides, so two kernels that
+        hold each other after every client has left are released as well.
+        """
+        holds: dict[str, list[str]] = {}
+        for resource in self._resources_by_id.values():
+            for holder_id in resource.held_by:
+                holds.setdefault(holder_id, []).append(resource.resource_id)
+        frontier = [resource.resource_id for resource in self._resources_by_id.values() if resource.client_leases]
+        anchored = set(frontier)
+        while frontier:
+            for held_id in holds.get(frontier.pop(), ()):
+                if held_id not in anchored:
+                    anchored.add(held_id)
+                    frontier.append(held_id)
+        return anchored
 
     @staticmethod
     def _renew_lease_locked(lease: ClientLease) -> None:
@@ -579,4 +674,9 @@ class KernelResourceManager:
             "execution_count": len(resource.session.executions),
             "lease_count": len(leases),
             "leases": leases,
+            "held_by": sorted(
+                holder.address.display_name
+                for holder_id in resource.held_by
+                if (holder := self._resources_by_id.get(holder_id)) is not None
+            ),
         }

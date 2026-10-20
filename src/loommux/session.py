@@ -75,7 +75,12 @@ class IPythonSession:
             self._next_execution = 1
         return self.status()
 
-    def run_cell(self, freeform: str) -> dict[str, Any]:
+    def run_cell(self, freeform: str, *, wait_seconds: float | None = None) -> dict[str, Any]:
+        """Submit one cell; ``wait_seconds`` overrides the header's wait.
+
+        A program states its wait as an argument, while the header still
+        decides complete-output delivery and is validated either way.
+        """
         try:
             prepared = prepare_run_cell(freeform)
         except TypeError:
@@ -84,7 +89,7 @@ class IPythonSession:
             return {"ok": False, "status": "invalid_cell_header", "message": f"invalid %%loommux header: {exc}"}
         return self._submit_python_cell(
             prepared.kernel_source,
-            prepared.initial_wait_seconds,
+            prepared.initial_wait_seconds if wait_seconds is None else wait_seconds,
             prepared.full_output_requested,
         )
 

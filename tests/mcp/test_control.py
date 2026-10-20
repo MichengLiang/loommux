@@ -61,8 +61,54 @@ def test_console_reads_the_connection_lease_contract() -> None:
 
     assert '<option value="connection">connection</option>' in console
     assert 'id="grace"' in console
-    for field in ("connection_grace_seconds", "l.standing", "l.alert", "l.grace_remaining_seconds", "r.kernel_state", 'id="signal"'):
+    for field in ("connection_grace_seconds", "l.standing", "l.alert", "l.grace_remaining_seconds", "r.kernel_state", "r.held_by", 'id="signal"'):
         assert field in console
+
+
+def test_program_routes_validate_requests_before_reaching_a_kernel(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    app = create_mcp().http_app(path="/mcp")
+
+    with TestClient(app) as client:
+        responses = {
+            "unknown resource": client.get("/api/resources/missing"),
+            "not an object": client.post("/api/resources/ensure", content=b"[1]"),
+            "not json": client.post("/api/resources/ensure", content=b"{"),
+            "name type": client.post("/api/resources/ensure", json={"name": 3}),
+            "unprintable name": client.post("/api/resources/ensure", json={"name": "a\nb", "holder": None}),
+            "no holder": client.post("/api/resources/ensure", json={"name": "lab", "holder": None}),
+            "missing holder": client.post("/api/resources/ensure", json={"name": "lab", "holder": "gone"}),
+            "source type": client.post("/api/resources/missing/executions", json={"source": 1}),
+            "wait type": client.post("/api/resources/missing/executions", json={"source": "1", "wait_seconds": True}),
+            "submit body": client.post("/api/resources/missing/executions", content=b"null"),
+            "submit target": client.post("/api/resources/missing/executions", json={"source": "1"}),
+            "status target": client.get("/api/resources/missing/executions/1"),
+            "wait body": client.post("/api/resources/missing/executions/1/wait", content=b"x"),
+            "timeout type": client.post("/api/resources/missing/executions/1/wait", json={"timeout_seconds": "soon"}),
+            "output target": client.get("/api/resources/missing/executions/1/output"),
+        }
+
+    assert {name: response.status_code for name, response in responses.items()} == {
+        "unknown resource": 404,
+        "not an object": 400,
+        "not json": 400,
+        "name type": 400,
+        "unprintable name": 400,
+        "no holder": 404,
+        "missing holder": 404,
+        "source type": 400,
+        "wait type": 400,
+        "submit body": 400,
+        "submit target": 404,
+        "status target": 404,
+        "wait body": 400,
+        "timeout type": 400,
+        "output target": 404,
+    }
+    assert responses["no holder"].json()["message"] == "no kernel named 'lab'; only a kernel can open one"
 
 
 def test_http_control_plane_rejects_invalid_policy(

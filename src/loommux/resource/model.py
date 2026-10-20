@@ -110,6 +110,9 @@ class KernelResource:
     active_operations: int = 0
     orphaned_at: float | None = None
     closing_reason: str | None = None
+    # Ids of the resources whose kernels opened this one by name; any one of
+    # them that is anchored keeps it anchored (see the manager's sweep).
+    held_by: set[str] = field(default_factory=set)
     lifecycle_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
     @classmethod

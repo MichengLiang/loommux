@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -17,9 +18,14 @@ from loommux.resource import (
     ResourceBusyError,
     ResourceManagerError,
     ResourceNotFoundError,
+    ResourceRoutingError,
 )
+from loommux.session import IPythonSession
 
 CONSOLE_PATH = Path(__file__).with_name("console.html")
+# A session answers ok=False for an execution that ended in error; that is the
+# requested record, not a failed request.
+_EXECUTION_STATES = {"running", "completed", "error", "interrupted", "killed"}
 
 
 def install_control_routes(
@@ -118,6 +124,69 @@ def install_control_routes(
             return JSONResponse({"ok": False, "message": str(exc)}, status_code=404)
         return JSONResponse({"ok": True, "resource": snapshot})
 
+    @mcp.custom_route("/api/resources/ensure", methods=["POST"])
+    async def ensure_resource(request: Request) -> Response:
+        """Open a kernel by name for the kernel ``holder``, which then holds it."""
+        body, error = await _json_object(request)
+        if error is not None:
+            return error
+        name, holder = body.get("name"), body.get("holder")
+        if not isinstance(name, str) or not (holder is None or isinstance(holder, str)):
+            return JSONResponse({"ok": False, "message": "name must be a string and holder a string or null"}, status_code=400)
+        selected = manager()
+        try:
+            resource = await selected.ensure_held(name, holder)
+        except ResourceRoutingError as exc:
+            return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
+        except ResourceNotFoundError as exc:
+            return JSONResponse({"ok": False, "message": str(exc)}, status_code=404)
+        return JSONResponse({"ok": True, "resource": await selected.snapshot_one(resource.resource_id)})
+
+    @mcp.custom_route("/api/resources/{resource_id}/executions", methods=["POST"])
+    async def submit_cell(request: Request) -> Response:
+        body, error = await _json_object(request)
+        if error is not None:
+            return error
+        source, wait_seconds = body.get("source"), body.get("wait_seconds", 10)
+        if not isinstance(source, str) or isinstance(wait_seconds, bool) or not isinstance(wait_seconds, int | float):
+            return JSONResponse({"ok": False, "message": "source must be a string and wait_seconds a number"}, status_code=400)
+        return await _session_call(request, lambda session: session.run_cell(source, wait_seconds=float(wait_seconds)))
+
+    @mcp.custom_route("/api/resources/{resource_id}/executions/{execution:int}", methods=["GET"])
+    async def execution_status(request: Request) -> Response:
+        execution = request.path_params["execution"]
+        return await _session_call(request, lambda session: session.execution_status(execution))
+
+    @mcp.custom_route("/api/resources/{resource_id}/executions/{execution:int}/wait", methods=["POST"])
+    async def wait_execution(request: Request) -> Response:
+        body, error = await _json_object(request)
+        if error is not None:
+            return error
+        execution, timeout = request.path_params["execution"], body.get("timeout_seconds", 30)
+        if isinstance(timeout, bool) or not isinstance(timeout, int | float):
+            return JSONResponse({"ok": False, "message": "timeout_seconds must be a number"}, status_code=400)
+        return await _session_call(request, lambda session: session.wait(execution, float(timeout)))
+
+    @mcp.custom_route("/api/resources/{resource_id}/executions/{execution:int}/output", methods=["GET"])
+    async def read_output(request: Request) -> Response:
+        execution = request.path_params["execution"]
+        stream = request.query_params.get("stream", "combined")
+        line_range = request.query_params.get("lines")
+        return await _session_call(request, lambda session: session.read_output(execution, stream, line_range))
+
+    async def _session_call(request: Request, operation: Callable[[IPythonSession], dict[str, Any]]) -> JSONResponse:
+        try:
+            async with manager().program_operation(request.path_params["resource_id"]) as resource:
+                result = await asyncio.to_thread(operation, resource.session)
+        except ResourceNotFoundError as exc:
+            return JSONResponse({"ok": False, "message": str(exc)}, status_code=404)
+        except ResourceManagerError as exc:
+            return JSONResponse({"ok": False, "message": str(exc)}, status_code=409)
+        public = {key: value for key, value in result.items() if not key.startswith("_")}
+        if public.get("ok") is False and public.get("status") not in _EXECUTION_STATES:
+            return JSONResponse({"ok": False, "status": public.get("status"), "message": public.get("message"), "result": public}, status_code=409)
+        return JSONResponse({"ok": True, "result": public})
+
     @mcp.custom_route("/api/resources/{resource_id}/interrupt", methods=["POST"])
     async def interrupt_resource(request: Request) -> Response:
         return await _resource_action(
@@ -202,6 +271,16 @@ async def _resource_action(
         {"ok": succeeded, "result": result},
         status_code=200 if succeeded else 409,
     )
+
+
+async def _json_object(request: Request) -> tuple[dict[str, Any], JSONResponse | None]:
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        body = None
+    if not isinstance(body, dict):
+        return {}, JSONResponse({"ok": False, "message": "request body must be a JSON object"}, status_code=400)
+    return body, None
 
 
 def _number(
