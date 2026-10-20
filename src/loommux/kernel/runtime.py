@@ -17,6 +17,7 @@ from jupyter_client.kernelspec import KernelSpec
 from jupyter_client.manager import KernelManager
 from jupyter_core.utils import ensure_event_loop
 
+from loommux.identity import KernelIdentity
 from loommux.kernel.launch import KernelLaunch
 
 
@@ -98,9 +99,10 @@ class _WindowsKernelContainment(_KernelContainment):
 class KernelRuntime:
     """Start, interrupt, and stop one private kernel without OS-specific calls."""
 
-    def __init__(self, workspace: Path, python_path: Path) -> None:
+    def __init__(self, workspace: Path, python_path: Path, identity: KernelIdentity | None = None) -> None:
         self.workspace = workspace
         self.python_path = python_path
+        self.identity = identity
         self.launch: KernelLaunch | None = None
         self.manager: _LoommuxKernelManager | None = None
         self.client: BlockingKernelClient | None = None
@@ -128,7 +130,7 @@ class KernelRuntime:
         return self._jupyter_context.run(self._start, timeout_seconds)
 
     def _start(self, timeout_seconds: float) -> BlockingKernelClient:
-        launch = KernelLaunch.create(self.python_path, self.workspace)
+        launch = KernelLaunch.create(self.python_path, self.workspace, self.identity)
         manager = _LoommuxKernelManager(
             _kernel_spec(launch),
             connection_file=str(launch.connection_file),

@@ -27,6 +27,7 @@ class FakeSession:
     next_pid = 4000
     created = 0
     start_barrier: threading.Barrier | None = None
+    identities: list[Any] = []
 
     def __init__(self) -> None:
         type(self).created += 1
@@ -43,7 +44,10 @@ class FakeSession:
         self,
         workspace: Path,
         workspace_resolution: str,
+        *,
+        identity: object = None,
     ) -> dict[str, Any]:
+        type(self).identities.append(identity)
         barrier = type(self).start_barrier
         if barrier is not None:
             barrier.wait(timeout=2)
@@ -115,6 +119,27 @@ def test_same_address_shares_one_provisioning_task(tmp_path: Path) -> None:
         await manager.stop()
         assert first.lifecycle is ResourceLifecycle.STOPPED
         assert first.session.closed
+
+    asyncio.run(scenario())
+
+
+def test_a_kernel_is_told_its_resource_id_name_and_control_url_at_start(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        FakeSession.identities = []
+        manager = KernelResourceManager(
+            tmp_path,
+            "launch_cwd",
+            session_factory=FakeSession,
+            control_url="http://127.0.0.1:9999",
+        )
+        resource = await manager.get_or_create(address("lab"))
+        [identity] = FakeSession.identities
+
+        assert identity.kernel_id == resource.resource_id
+        assert identity.name == "lab"
+        assert identity.control_url == "http://127.0.0.1:9999"
+        assert (await manager.snapshot_one(resource.resource_id))["resource_id"] == resource.resource_id
+        await manager.stop()
 
     asyncio.run(scenario())
 

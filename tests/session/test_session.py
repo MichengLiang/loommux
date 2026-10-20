@@ -200,7 +200,9 @@ def test_header_does_not_create_namespace_control_state(session: IPythonSession)
     assert response["execution"] == 2
     assert response["output_text"].strip() == "Out[2]: 1"
     assert namespace["output_text"].strip() == "Out[3]: 1"
-    assert "loommux" not in str(session.run_cell("sorted(name for name in globals() if 'loommux' in name)")["output_text"])
+    # The daemon client is the one name a Loommux kernel adds; the header adds none.
+    assert session.run_cell("sorted(name for name in globals() if 'loommux' in name)")["output_text"] == "Out[4]: ['loommux']\n"
+    assert session.run_cell("type(loommux).__name__")["output_text"] == "Out[5]: 'Daemon'\n"
 
 
 def test_header_preserves_rich_display_events(session: IPythonSession) -> None:

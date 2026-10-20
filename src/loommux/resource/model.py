@@ -118,10 +118,11 @@ class KernelResource:
         address: ResourceAddress,
         session: IPythonSession,
         *,
+        resource_id: str | None = None,
         now: datetime | None = None,
     ) -> KernelResource:
         return cls(
-            resource_id=uuid4().hex,
+            resource_id=uuid4().hex if resource_id is None else resource_id,
             address=address,
             session=session,
             created_at=datetime.now(UTC) if now is None else now,

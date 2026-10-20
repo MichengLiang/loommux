@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from loommux.identity import CONTROL_URL_ENV, KERNEL_ID_ENV, KERNEL_NAME_ENV, KernelIdentity
 from loommux.kernel.launch import _IPYTHON_PROMPT_STRIPPING_REMOVAL, KernelLaunch
 from loommux.kernel.runtime import KernelRuntime, _kernel_spec, _KernelContainment
 from loommux.session import IPythonSession
@@ -72,8 +73,8 @@ def test_kernel_runtime_start_failure_cleans_its_private_root(tmp_path: Path, mo
     launches: list[KernelLaunch] = []
     original_create = KernelLaunch.create
 
-    def record_launch(python_path: Path, launch_workspace: Path) -> KernelLaunch:
-        launch = original_create(python_path, launch_workspace)
+    def record_launch(python_path: Path, launch_workspace: Path, identity: KernelIdentity | None = None) -> KernelLaunch:
+        launch = original_create(python_path, launch_workspace, identity)
         launches.append(launch)
         return launch
 
@@ -479,3 +480,22 @@ def _wait_for_posix_process_exit(pid: int) -> bool:
             return True
         time.sleep(0.05)
     return False
+def test_kernel_launch_replaces_an_inherited_identity_with_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setenv(KERNEL_ID_ENV, "grandparent")
+    monkeypatch.setenv(KERNEL_NAME_ENV, "grandparent-name")
+    monkeypatch.setenv(CONTROL_URL_ENV, "http://127.0.0.1:1")
+
+    anonymous = KernelLaunch.create(Path(sys.executable).absolute(), workspace)
+    named = KernelLaunch.create(Path(sys.executable).absolute(), workspace, KernelIdentity("own", "lab", None))
+    try:
+        assert not {KERNEL_ID_ENV, KERNEL_NAME_ENV, CONTROL_URL_ENV} & anonymous.environment.keys()
+        assert named.environment[KERNEL_ID_ENV] == "own"
+        assert named.environment[KERNEL_NAME_ENV] == "lab"
+        assert CONTROL_URL_ENV not in named.environment
+    finally:
+        shutil.rmtree(anonymous.runtime_root, ignore_errors=True)
+        shutil.rmtree(named.runtime_root, ignore_errors=True)
+
+

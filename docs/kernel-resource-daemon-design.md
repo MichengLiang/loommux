@@ -315,6 +315,7 @@ The Streamable HTTP application serves:
 | --- | --- | --- |
 | `GET` | `/` | Dependency-free resource console. |
 | `GET` | `/api/resources` | Resource, execution, kernel, and lease snapshots. |
+| `GET` | `/api/resources/{id}` | One resource's snapshot. |
 | `GET` | `/api/lease-policy` | Current policy generation. |
 | `PUT` | `/api/lease-policy` | Atomically validate and update future defaults. |
 | `POST` | `/api/resources/{id}/interrupt` | Interrupt the selected running execution. |
@@ -327,6 +328,14 @@ The Streamable HTTP application serves:
 The control plane is operational infrastructure. It is not added to MCP
 `tools/list`. It does not provide its own authentication layer; deployment
 must keep it inside the same trusted boundary as arbitrary Python execution.
+
+Kernels are clients of this plane too. A resource's id is assigned before its
+kernel starts, and the launch environment carries `LOOMMUX_KERNEL_ID`,
+`LOOMMUX_KERNEL_NAME`, and, for an HTTP server, `LOOMMUX_CONTROL_URL` (a
+wildcard bind address is published as `127.0.0.1`). Inherited values of these
+variables are removed first, so a server started inside a kernel never passes
+its parent's identity on. The `loommux` object every kernel holds is described
+in [Cell Header Design](cell-header-design.md) section 6.
 
 The console renders a lease-signal row above the policy panel on every
 refresh. It names every lease in an alert standing and turns red, and is

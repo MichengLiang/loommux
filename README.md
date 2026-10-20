@@ -244,6 +244,25 @@ The complete identity, lifecycle, policy, orphan-execution, control API, and
 source-ownership contract is documented in
 [Kernel Resource Daemon Design](docs/kernel-resource-daemon-design.md).
 
+### Controlling Kernels From A Kernel
+
+Every kernel knows which resource it is and where its daemon listens
+(`LOOMMUX_KERNEL_ID`, `LOOMMUX_KERNEL_NAME`, `LOOMMUX_CONTROL_URL`), and holds
+a client of that daemon as `loommux`:
+
+```python
+loommux.kernels()             # every kernel: name, id, state, busy, pid, executions, leases
+loommux.self                  # this kernel
+loommux["lab"].restart()      # another kernel, by name or id
+loommux["lab"].recycle(force=True)
+```
+
+The client speaks the HTTP control plane, so anything it does stays outside
+the daemon process. Outside a kernel, `loommux.daemon.Daemon()` connects to
+`LOOMMUX_CONTROL_URL` or `http://127.0.0.1:8801`. A stdio server has no HTTP
+control plane; its kernels still know who they are, and every request explains
+that no control plane exists.
+
 ## Workspace And Interpreter
 
 Workspace selection occurs when the server process starts. loommux does not
@@ -535,7 +554,12 @@ loommux/
         apply_patch_literals.py
             Converts valid Apply Patch literals before kernel submission.
     kernel_extension.py
-        IPython extension every kernel loads: interprets the cell header.
+        IPython extension every kernel loads: interprets the cell header and
+        places the daemon client in the namespace as ``loommux``.
+    daemon.py
+        HTTP client of the daemon's control plane.
+    identity.py
+        Names the kernel identity variables the daemon passes to its kernels.
     mcp/
         factory.py
             Registers MCP tools that consume the protocol-neutral session.

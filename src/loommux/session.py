@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from loommux.execution import Execution
+from loommux.identity import KernelIdentity
 from loommux.kernel.session import KernelSession
 from loommux.submission.cell import prepare_run_cell
 from loommux.submission.header import CellHeaderError
@@ -27,6 +28,7 @@ class IPythonSession:
         self.workspace: Path | None = None
         self.workspace_resolution: str | None = None
         self.python_path: Path | None = None
+        self.identity: KernelIdentity | None = None
         self.kernel: KernelSession | None = None
         self.executions: dict[int, Execution] = {}
         self.current_execution: int | None = None
@@ -42,11 +44,17 @@ class IPythonSession:
         if kernel is not None:
             kernel.shutdown()
 
-    def start_workspace(self, workspace: Path, workspace_resolution: str) -> dict[str, Any]:
-        """Start the configured kernel at server lifespan start."""
+    def start_workspace(self, workspace: Path, workspace_resolution: str, *, identity: KernelIdentity | None = None) -> dict[str, Any]:
+        """Start the configured kernel at server lifespan start.
+
+        ``identity`` is handed to every kernel this session starts, including
+        each restart's replacement, because it names the resource rather than
+        one process.
+        """
         workspace = workspace.resolve(strict=False)
         python_path = Path(sys.executable).absolute()
         self._close_kernel()
+        self.identity = identity
         if not workspace.exists():
             return self._workspace_error("workspace_not_found", "workspace does not exist", workspace, python_path)
         if not workspace.is_dir():
@@ -282,6 +290,7 @@ class IPythonSession:
             python_path,
             self._on_execution_idle,
             self._on_kernel_exit,
+            self.identity,
         )
 
     def _replace_kernel(self, old_kernel: KernelSession | None, workspace: Path, python_path: Path) -> KernelSession:

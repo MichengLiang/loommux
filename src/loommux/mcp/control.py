@@ -110,6 +110,14 @@ def install_control_routes(
             }
         )
 
+    @mcp.custom_route("/api/resources/{resource_id}", methods=["GET"])
+    async def get_resource(request: Request) -> Response:
+        try:
+            snapshot = await manager().snapshot_one(request.path_params["resource_id"])
+        except ResourceNotFoundError as exc:
+            return JSONResponse({"ok": False, "message": str(exc)}, status_code=404)
+        return JSONResponse({"ok": True, "resource": snapshot})
+
     @mcp.custom_route("/api/resources/{resource_id}/interrupt", methods=["POST"])
     async def interrupt_resource(request: Request) -> Response:
         return await _resource_action(

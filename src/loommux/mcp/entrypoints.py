@@ -11,9 +11,12 @@ from typing import cast
 
 from fastmcp import FastMCP
 
+from loommux.identity import loopback_control_url
 from loommux.mcp.result import ResultMode
 
-ServerFactory = Callable[[ResultMode], FastMCP]
+# The second argument is the HTTP origin kernels use to reach this daemon's
+# control plane, or None for stdio, which serves none.
+ServerFactory = Callable[[ResultMode, str | None], FastMCP]
 
 
 def run_entrypoint(
@@ -39,10 +42,11 @@ def run_entrypoint(
         # handler, so `kill -USR1 <pid>` works while the event loop is frozen and
         # needs none of the ptrace privileges py-spy or gdb require.
         faulthandler.register(signal.SIGUSR1, all_threads=True)
-    mcp = create_server(cast(ResultMode, options.result_mode))
+    result_mode = cast(ResultMode, options.result_mode)
     if not options.server:
-        mcp.run(transport="stdio")
+        create_server(result_mode, None).run(transport="stdio")
         return
+    mcp = create_server(result_mode, loopback_control_url(options.host, options.port))
     mcp.run(transport="streamable-http", host=options.host, port=options.port, path=options.path)
 
 

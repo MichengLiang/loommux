@@ -63,8 +63,12 @@ class _LoommuxMCP(FastMCP):
         return app
 
 
-def create_mcp(result_mode: ResultMode) -> FastMCP:
-    """Build one MCP server whose tools consume selected kernel resources."""
+def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> FastMCP:
+    """Build one MCP server whose tools consume selected kernel resources.
+
+    ``control_url`` is the origin of this server's HTTP control plane as its
+    kernels reach it; every kernel learns it at start.
+    """
 
     manager: KernelResourceManager | None = None
     connections = ConnectionRegistry()
@@ -149,6 +153,7 @@ def create_mcp(result_mode: ResultMode) -> FastMCP:
             connections=connections,
             sweep_interval_seconds=settings.sweep_interval_seconds,
             orphan_grace_seconds=settings.orphan_grace_seconds,
+            control_url=control_url,
         )
         await manager.start()
         try:

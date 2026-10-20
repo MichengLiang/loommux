@@ -7,7 +7,12 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-_REMOVED_ENVIRONMENT_VARIABLES = ("IPYTHONDIR", "JUPYTER_CONFIG_DIR", "CLICOLOR", "CLICOLOR_FORCE", "FORCE_COLOR")
+from loommux.identity import IDENTITY_ENVIRONMENT, KernelIdentity
+
+# A daemon started from inside a Loommux kernel inherits that kernel's
+# identity; passed on, its own kernels would believe they were their
+# grandparent and talk to the wrong daemon.
+_REMOVED_ENVIRONMENT_VARIABLES = ("IPYTHONDIR", "JUPYTER_CONFIG_DIR", "CLICOLOR", "CLICOLOR_FORCE", "FORCE_COLOR", *IDENTITY_ENVIRONMENT)
 _CONTROLLED_ENVIRONMENT = {
     "NO_COLOR": "1",
     "PY_COLORS": "0",
@@ -44,7 +49,7 @@ class KernelLaunch:
     connection_file: Path
 
     @classmethod
-    def create(cls, python_path: Path, workspace: Path) -> KernelLaunch:
+    def create(cls, python_path: Path, workspace: Path, identity: KernelIdentity | None = None) -> KernelLaunch:
         """Build inputs for one process without reusing user or workspace state."""
         runtime_root = _create_runtime_root(workspace)
         ipython_dir = runtime_root / "ipython"
@@ -56,6 +61,8 @@ class KernelLaunch:
         for name in _REMOVED_ENVIRONMENT_VARIABLES:
             environment.pop(name, None)
         environment.update(_CONTROLLED_ENVIRONMENT)
+        if identity is not None:
+            environment.update(identity.environment())
         environment["IPYTHONDIR"] = str(ipython_dir)
         environment["JUPYTER_CONFIG_DIR"] = str(jupyter_config_dir)
         command = (

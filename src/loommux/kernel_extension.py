@@ -13,6 +13,7 @@ from __future__ import annotations
 from IPython.core.error import UsageError
 from IPython.core.interactiveshell import InteractiveShell
 
+from loommux.daemon import Daemon
 from loommux.submission.header import HEADER_HELP, HEADER_MAGIC, CellHeaderError, header_arguments, parse_header_arguments
 
 
@@ -66,6 +67,8 @@ def _single_percent_header(line: str) -> None:
 def load_ipython_extension(ip: InteractiveShell) -> None:
     if remove_own_header not in ip.input_transformers_cleanup:
         ip.input_transformers_cleanup.append(remove_own_header)
+    # Hidden from %who: it belongs to the kernel, not to the author's work.
+    ip.push({"loommux": Daemon()}, interactive=False)
     magics = ip.magics_manager
     magics.register_function(_header_magic, "cell", HEADER_MAGIC)
     # IPython reads ``%%loommux`` on a later line as a line magic whose name

@@ -15,6 +15,7 @@ from typing import Any
 from jupyter_client.blocking.client import BlockingKernelClient
 
 from loommux.execution import Execution
+from loommux.identity import KernelIdentity
 from loommux.kernel.launch import KernelLaunch
 from loommux.kernel.runtime import KernelRuntime, close_jupyter_event_loop
 
@@ -34,12 +35,13 @@ class KernelSession:
         python_path: Path,
         on_idle: Callable[[Execution], None],
         on_kernel_exit: Callable[[Execution | None, int | None], None],
+        identity: KernelIdentity | None = None,
     ) -> None:
         self.workspace = workspace
         self.python_path = python_path
         self._on_idle = on_idle
         self._on_kernel_exit = on_kernel_exit
-        self.runtime = KernelRuntime(workspace, python_path)
+        self.runtime = KernelRuntime(workspace, python_path, identity)
         self.client: BlockingKernelClient | None = None
         self.current_execution: Execution | None = None
         self.latest_execution_count = 0

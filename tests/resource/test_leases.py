@@ -31,6 +31,8 @@ class FakeSession:
         self,
         workspace: Path,
         workspace_resolution: str,
+        *,
+        identity: object = None,
     ) -> dict[str, Any]:
         return {"ok": True}
 

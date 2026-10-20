@@ -38,7 +38,12 @@ class _Shell:
     def __init__(self) -> None:
         self.input_transformers_cleanup: list[Any] = []
         self.magics: dict[tuple[str, str], Any] = {}
+        self.namespace: dict[str, Any] = {}
         self.magics_manager = self
+
+    def push(self, variables: dict[str, Any], interactive: bool = True) -> None:
+        assert interactive is False
+        self.namespace.update(variables)
 
     def register_function(self, function: Any, kind: str, name: str) -> None:
         self.magics[kind, name] = function
@@ -53,6 +58,7 @@ def test_loading_twice_installs_one_transformer_and_unloading_removes_it() -> No
     assert shell.input_transformers_cleanup == [remove_own_header]
     assert set(shell.magics) == {("cell", "loommux"), ("line", "%loommux"), ("line", "loommux")}
     assert "--full-output" in (shell.magics["cell", "loommux"].__doc__ or "")
+    assert type(shell.namespace["loommux"]).__name__ == "Daemon"
 
     kernel_extension.unload_ipython_extension(shell)
     kernel_extension.unload_ipython_extension(shell)

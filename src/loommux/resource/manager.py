@@ -11,7 +11,9 @@ from math import isfinite
 from pathlib import Path
 from time import monotonic
 from typing import Any
+from uuid import uuid4
 
+from loommux.identity import KernelIdentity
 from loommux.resource.connections import ConnectionRegistry
 from loommux.resource.liveness import LeaseStanding, LeaseVerdict, assess_lease
 from loommux.resource.model import (
@@ -62,6 +64,7 @@ class KernelResourceManager:
         connections: ConnectionRegistry | None = None,
         sweep_interval_seconds: float = 10,
         orphan_grace_seconds: float = 30,
+        control_url: str | None = None,
     ) -> None:
         for label, value in {
             "sweep_interval_seconds": sweep_interval_seconds,
@@ -74,6 +77,7 @@ class KernelResourceManager:
         self._session_factory = session_factory
         self.policy_manager = policy_manager or LeasePolicyManager()
         self.connections = connections or ConnectionRegistry()
+        self._control_url = control_url
         self._sweep_interval_seconds = sweep_interval_seconds
         self._orphan_grace_seconds = orphan_grace_seconds
         self._resources_by_key: dict[str, KernelResource] = {}
@@ -429,19 +433,26 @@ class KernelResourceManager:
         resources = await self.list_resources()
         return [self._snapshot_resource(resource) for resource in resources]
 
+    async def snapshot_one(self, resource_id: str) -> dict[str, Any]:
+        return self._snapshot_resource(await self._require_resource(resource_id))
+
     async def _provision(self, address: ResourceAddress) -> KernelResource:
         session = self._session_factory()
+        # The id exists before the kernel does, so the kernel can be told who
+        # it is when it starts.
+        resource_id = uuid4().hex
         try:
             startup = await asyncio.to_thread(
                 session.start_workspace,
                 self.workspace,
                 self.workspace_resolution,
+                identity=KernelIdentity(resource_id, address.display_name, self._control_url),
             )
             if not startup.get("ok"):
                 raise ResourceProvisionError(
                     str(startup.get("message", "IPython session failed to start"))
                 )
-            resource = KernelResource.create(address, session)
+            resource = KernelResource.create(address, session, resource_id=resource_id)
             async with self._registry_lock:
                 if self._stopping:
                     raise ResourceManagerError("resource manager is stopping")
