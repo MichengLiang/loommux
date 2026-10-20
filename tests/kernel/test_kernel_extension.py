@@ -22,10 +22,10 @@ from loommux.submission.header import CellHeader
         (["%%loommux --bogus\n", "x\n"], ["%%loommux --bogus\n", "x\n"]),
         (["%%loommux\n", "%%loommux --bogus\n", "x\n"], ["%%loommux --bogus\n", "x\n"]),
         (["%%loommux?\n"], ["%%loommux?\n"]),
-        (["%%loommux me --wait 2\n", "x\n"], ["\n", "x\n"]),
-        (["%%loommux me-id\n", "x\n"], ["\n", "x\n"]),
-        (["%%loommux build\n", "x\n"], ["%%loommux build\n", "x\n"]),
-        (["%%loommux --wait 2\n", "%%loommux build\n", "x\n"], ["%%loommux build\n", "x\n"]),
+        (["%%loommux --kernel me --wait 2\n", "x\n"], ["\n", "x\n"]),
+        (["%%loommux --kernel me-id\n", "x\n"], ["\n", "x\n"]),
+        (["%%loommux --kernel build\n", "x\n"], ["%%loommux --kernel build\n", "x\n"]),
+        (["%%loommux --wait 2\n", "%%loommux --kernel build\n", "x\n"], ["%%loommux --kernel build\n", "x\n"]),
     ],
 )
 def test_headers_naming_this_kernel_dissolve_and_keep_line_numbers(lines: list[str], transformed: list[str]) -> None:
@@ -64,10 +64,10 @@ def test_loading_twice_installs_once_and_unloading_removes_the_transformer(monke
     kernel_extension.load_ipython_extension(shell)
 
     [transformer] = shell.input_transformers_cleanup
-    assert transformer(["%%loommux lab\n", "x\n"]) == ["\n", "x\n"]
-    assert transformer(["%%loommux abc123\n", "x\n"]) == ["\n", "x\n"]
+    assert transformer(["%%loommux --kernel lab\n", "x\n"]) == ["\n", "x\n"]
+    assert transformer(["%%loommux --kernel abc123\n", "x\n"]) == ["\n", "x\n"]
     assert set(shell.magics) == {("cell", "loommux"), ("line", "%loommux"), ("line", "loommux")}
-    assert "KERNEL" in (shell.magics["cell", "loommux"].__doc__ or "")
+    assert "--kernel NAME" in (shell.magics["cell", "loommux"].__doc__ or "")
     assert type(shell.namespace["loommux"]).__name__ == "Daemon"
 
     kernel_extension.unload_ipython_extension(shell)

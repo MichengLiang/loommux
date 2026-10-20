@@ -53,7 +53,7 @@ CELLS = (
     "%%loommux --wait 0.3\nimport time; time.sleep(1.5); print('slept')",
     # Every client forwards to one named kernel: holding by many kernels at
     # once, the follow endpoint, and busy refusals between forwards.
-    "%%loommux stress-forward --wait 0.5\nimport time; time.sleep(0.2); print('forwarded')",
+    "%%loommux --kernel stress-forward --wait 0.5\nimport time; time.sleep(0.2); print('forwarded')",
     "1 + 1",
     "raise ValueError('boom')",
 )

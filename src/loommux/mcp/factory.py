@@ -198,9 +198,9 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
         于这一个 cell。头的下一行可以接另一个 cell magic，例如 ``%%bash``。
         无效的头返回 ``invalid_cell_header``，不分配 execution，也不提交 kernel。
 
-        头里可以写另一个 kernel 的名字，把这个 cell 交给它::
+        头里用 ``--kernel NAME`` 写另一个 kernel 的名字，把这个 cell 交给它::
 
-            %%loommux build --wait 120
+            %%loommux --kernel build --wait 120
             %%bash
             uv run pytest
 

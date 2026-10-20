@@ -64,8 +64,12 @@ def _kernel_name(value: str) -> str:
     return value
 
 
-_PARSER = _HeaderParser(prog=_HEADER_PREFIX, add_help=False)
-_PARSER.add_argument("kernel", nargs="?", type=_kernel_name, metavar="KERNEL")
+# Options only, spelled out in full. A positional kernel name turned every
+# word without dashes into a forward (`%%loommux full-output` would open a
+# kernel named full-output), and argparse's prefix matching would quietly read
+# `--wai 5` as `--wait 5`; with neither, a slip of the pen is an error.
+_PARSER = _HeaderParser(prog=_HEADER_PREFIX, add_help=False, allow_abbrev=False)
+_PARSER.add_argument("--kernel", type=_kernel_name, metavar="NAME")
 _PARSER.add_argument("--wait", type=_positive_seconds, default=DEFAULT_INITIAL_WAIT_SECONDS, metavar="SECONDS")
 _PARSER.add_argument("--full-output", action="store_true")
 
@@ -114,9 +118,9 @@ HEADER_HELP = f"""Declare which kernel interprets this cell and how it is observ
 
 Write it as the first line of a cell:
 
-    {_HEADER_PREFIX} [KERNEL] [--wait SECONDS] [--full-output]
+    {_HEADER_PREFIX} [--kernel NAME] [--wait SECONDS] [--full-output]
 
-KERNEL           run the rest of the cell in the kernel with this name or id,
+--kernel NAME    run the rest of the cell in the kernel with this name or id,
                  opening a named kernel on first use; its output is relayed
                  here and its errors end this cell. Omitted: this kernel.
 --wait SECONDS   wait up to SECONDS for this cell before run_cell returns

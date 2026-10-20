@@ -392,10 +392,10 @@ allocated or source is submitted. A `%%loommux` line anywhere but first raises
 a `UsageError` saying so. See [Cell Header Design](docs/cell-header-design.md)
 for the grammar and its reasons.
 
-A kernel name in the header hands the cell to that kernel:
+`--kernel NAME` in the header hands the cell to that kernel:
 
 ```python
-%%loommux build --wait 120
+%%loommux --kernel build --wait 120
 %%bash
 uv run pytest
 ```

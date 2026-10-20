@@ -144,24 +144,24 @@ def test_a_header_naming_another_kernel_forwards_the_cell_there(tmp_path: Path) 
         async with LeaseAwareClient(f"{origin}/mcp", "agent") as agent:
             me = (await output(agent, "print(loommux.self.name)")).strip()
 
-            relayed = await output(agent, "%%loommux build --wait 30\nimport time\nfor i in range(3):\n    print(i, flush=True)\n    time.sleep(0.2)\n6 * 7")
+            relayed = await output(agent, "%%loommux --kernel build --wait 30\nimport time\nfor i in range(3):\n    print(i, flush=True)\n    time.sleep(0.2)\n6 * 7")
             assert relayed == "0\n1\n2\nOut[1]: 42\n"
-            assert await output(agent, "%%loommux build --wait 30\n%%bash\necho from-bash") == "from-bash\n"
-            assert await output(agent, "%%loommux build\nimport asyncio\nawait asyncio.sleep(0)\n'awaited'") == "Out[3]: 'awaited'\n"
-            assert await output(agent, f"%%loommux {me} --wait 5\nlocal = 5\nlocal") == "Out[5]: 5\n"
+            assert await output(agent, "%%loommux --kernel build --wait 30\n%%bash\necho from-bash") == "from-bash\n"
+            assert await output(agent, "%%loommux --kernel build\nimport asyncio\nawait asyncio.sleep(0)\n'awaited'") == "Out[3]: 'awaited'\n"
+            assert await output(agent, f"%%loommux --kernel {me} --wait 5\nlocal = 5\nlocal") == "Out[5]: 5\n"
 
-            failed = await agent.call_tool("run_cell", {"freeform": "%%loommux build --wait 30\nmissing_name"})
+            failed = await agent.call_tool("run_cell", {"freeform": "%%loommux --kernel build --wait 30\nmissing_name"})
             failed_text = failed.content[0].text
             assert "NameError: name 'missing_name' is not defined" in failed_text
             assert failed_text.rstrip().endswith("ForwardedCellError: build: NameError: name 'missing_name' is not defined")
 
             # build forwards back into the agent, which is busy forwarding to
             # build: refused at once rather than waiting on itself.
-            cycle = await output(agent, f"%%loommux build --wait 30\n%%loommux {me}\nprint('never')")
+            cycle = await output(agent, f"%%loommux --kernel build --wait 30\n%%loommux --kernel {me}\nprint('never')")
             assert "never" not in cycle
             assert cycle.rstrip().endswith(f"ForwardedCellError: build: ForwardedCellError: {me}: busy: kernel is already executing code")
 
-            running = await agent.call_tool("run_cell", {"freeform": "%%loommux build --wait 0.5\nimport time\nprint('started', flush=True)\ntime.sleep(30)"})
+            running = await agent.call_tool("run_cell", {"freeform": "%%loommux --kernel build --wait 0.5\nimport time\nprint('started', flush=True)\ntime.sleep(30)"})
             assert "started" in running.content[0].text or "Running" in running.content[0].text
             for _ in range(50):
                 seen = await agent.call_tool("read_output", {})

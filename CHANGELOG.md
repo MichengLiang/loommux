@@ -9,11 +9,11 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
-- A cell may begin with a `%%loommux [KERNEL] [--wait SECONDS] [--full-output]`
+- A cell may begin with a `%%loommux [--kernel NAME] [--wait SECONDS] [--full-output]`
   header, written in ordinary IPython cell-magic syntax. Its options control
   that one cell; another cell magic such as `%%bash` may follow it, top-level
   `await` keeps working, and IPython history records the header as written.
-- `%%loommux build` runs the rest of the cell in the kernel named `build`,
+- `%%loommux --kernel build` runs the rest of the cell in the kernel named `build`,
   opened on first use. Its output is relayed into the cell as it arrives, an
   error there ends the cell with a one-line `ForwardedCellError` below the
   relayed traceback, an interrupt is passed on, and a forward back into a busy

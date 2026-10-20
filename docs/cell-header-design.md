@@ -11,12 +11,12 @@ A Loommux cell may begin with one header line written in ordinary IPython
 cell-magic syntax:
 
 ```text
-%%loommux [KERNEL] [--wait SECONDS] [--full-output]
+%%loommux [--kernel NAME] [--wait SECONDS] [--full-output]
 ```
 
 The header declares **which kernel interprets the rest of the cell**, in the
 same sense that `%%bash` declares that Bash interprets it. Omitting the header,
-or omitting `KERNEL`, means the kernel that received the cell. Its options
+or omitting `--kernel`, means the kernel that received the cell. Its options
 declare how the submitting call observes this one cell: how long `run_cell`
 waits, and whether a terminal response carries the complete combined output.
 
@@ -31,7 +31,7 @@ The interpreters form a tree, and every layer reads only its next hop:
 
 ```text
 loommux daemon
-└── kernel (IPython)      %%loommux build      → kernel "build"
+└── kernel (IPython)      %%loommux --kernel build   → kernel "build"
     └── engine            %%bash               → bash
 ```
 
@@ -44,7 +44,7 @@ names the only rule it needs.
 | --- | --- | --- |
 | Ordinary work | `df.describe()` | none |
 | Wait longer, read everything | `%%loommux --wait 120 --full-output` then the code | the header is the first line |
-| Run elsewhere | `%%loommux build --wait 60` then `%%bash` and the command | a kernel name may follow `%%loommux` |
+| Run elsewhere | `%%loommux --kernel build --wait 60` then `%%bash` and the command | `--kernel` names the kernel |
 | Manage kernels | `loommux.kernels()`, `loommux["build"].restart()` | `loommux` is a Python object |
 | Background work in another kernel | `job = loommux["build"].run(code)` | `run` returns a job handle |
 
@@ -65,12 +65,14 @@ remains IPython's help request for the magic.
 The rest of the line is split with POSIX shell-word rules and parsed by one
 `argparse` parser defined in `loommux.submission.header`:
 
-- `KERNEL`: optional positional kernel name, printable, at most 256
-  characters (the same rule as `X-Loommux-Resource`);
+- `--kernel NAME`: the kernel that interprets the cell, printable, at most
+  256 characters (the same rule as `X-Loommux-Resource`);
 - `--wait SECONDS`: a positive finite number of seconds;
 - `--full-output`: a flag.
 
-Every other token is an error. An invalid header in a `run_cell` submission
+Every other token is an error, and option names are never abbreviated, so
+a word without dashes, such as `full-output`, or a prefix such as `--wai`, is
+rejected rather than read as something else. An invalid header in a `run_cell` submission
 returns `invalid_cell_header` before an execution number is allocated or source
 reaches a kernel.
 
@@ -81,7 +83,7 @@ The header line serves two readers, and each takes its own part:
 | Reader | Reads | Why it must be this reader |
 | --- | --- | --- |
 | Daemon, in `run_cell` | `--wait`, `--full-output`, validity | They describe the MCP call, which the daemon answers before the kernel finishes |
-| Kernel extension | `KERNEL` | Only the interpreting kernel can route the body onward |
+| Kernel extension | `--kernel` | Only the interpreting kernel can route the body onward |
 
 Both readers import the same parser, so they cannot disagree about the
 grammar. The daemon reads the first line and submits the cell unchanged. When
@@ -186,7 +188,7 @@ kernel has it, and no special "daemon kernel" is needed.
 
 ## 7. Forwarding
 
-`%%loommux build` in kernel A:
+`%%loommux --kernel build` in kernel A:
 
 1. resolves `build`, creating a named kernel resource if none is registered,
    and records A as one of its holders (section 8);
@@ -254,6 +256,7 @@ needs a holder.
 | An IPython shell embedded in the daemon as its control kernel | Breaks event-loop discipline (section 6.3) |
 | A session default such as `%loommux --wait 30` | Control is per cell; a default would make one cell's meaning depend on earlier cells |
 | Per-line provenance labels on relayed output | Token cost with no ambiguity to resolve |
+| A positional kernel name, `%%loommux build` | Every word without dashes became a forward: the slip `%%loommux full-output` would open a kernel named `full-output`. With options only, a bare word can only be an error. Adopted briefly and replaced the same day |
 | A reserved name such as `self` | The author never needs it; the receiving kernel's own name already works |
 
 ## 11. Verification
@@ -271,7 +274,7 @@ needs a holder.
 | K2 | `loommux.kernels()`, `loommux.self`, interrupt, restart, and recycle work from inside a kernel over HTTP |
 | P1 | `loommux["build"].run()` creates a held kernel and its job waits, reports status, and reads output |
 | P2 | A held kernel is released after its holder is released, including a two-kernel holding cycle |
-| F1 | `%%loommux build` relays output, ends in the target's state, and shows a one-line error |
+| F1 | `%%loommux --kernel build` relays output, ends in the target's state, and shows a one-line error |
 | F2 | Interrupting the forwarding cell interrupts the target |
 | F3 | Forwarding back into the busy origin fails with `busy` instead of hanging |
 | S1 | `scripts/stress.py` passes with header cells in its load mix |
