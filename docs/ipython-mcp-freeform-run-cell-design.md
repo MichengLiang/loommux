@@ -26,13 +26,11 @@ The daemon reads the header's options and submits the cell unchanged. The
 kernel interprets the header as IPython, so it may precede `%%bash` or another
 cell magic, and IPython history records it as written.
 
-## Apply Patch Transport
-
-A valid Apply Patch program in an outer triple-double-quoted Python literal may
-be converted into an equivalent Python `str` expression. The conversion is
-strictly limited to validated `*** Begin Patch` / `*** End Patch` programs.
-Its relationship to source fidelity and diagnostics is defined by the
-[Apply Patch Literal Transform Design](ipython-mcp-protected-multiline-string-design.md).
+No other text in the cell is rewritten. The daemon does not know the body's
+language, so it treats everything after the header as opaque: a string literal
+in Python, a heredoc in `%%bash`, and a cell forwarded to another kernel all
+arrive byte for byte. An execution keeps its lifecycle, output, displays, and
+the complete-output flag a later `wait` needs, not the source.
 
 ## Follow-up
 

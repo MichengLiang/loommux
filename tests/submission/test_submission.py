@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from loommux.session import IPythonSession
-from loommux.submission import CellHeader, CellHeaderError, prepare_run_cell, read_cell_header
+from loommux.submission import CellHeader, CellHeaderError, read_cell_header
 from loommux.submission.header import header_arguments
 
 
@@ -96,35 +96,17 @@ def test_invalid_header_is_an_error_value_not_a_process_exit(source: str, messag
         read_cell_header(source)
 
 
-def test_preparation_keeps_the_header_in_the_kernel_source() -> None:
-    source = "%%loommux --wait 2 --full-output\r\n%%bash\r\nprintf 'ok\\n'\r\n"
-
-    prepared = prepare_run_cell(source)
-
-    assert prepared.kernel_source == source
-    assert prepared.initial_wait_seconds == 2.0
-    assert prepared.full_output_requested is True
-
-
-def test_preparation_converts_an_apply_patch_literal_below_the_header() -> None:
-    source = '''%%loommux --full-output
-payload = r"""
-*** Begin Patch
-*** Add File: captured.txt
-+contents
-*** End Patch
-"""
-payload
-'''
-
-    prepared = prepare_run_cell(source)
-
-    assert prepared.kernel_source.startswith("%%loommux --full-output\npayload = ")
-    assert 'r"""' not in prepared.kernel_source
-    assert prepared.full_output_requested is True
-
-
-def test_run_cell_passes_the_unchanged_source_and_resolved_policy_to_submission() -> None:
+@pytest.mark.parametrize(
+    "source",
+    [
+        "%%loommux --wait 2 --full-output\nprint('kept')",
+        "%%loommux --wait 2 --full-output\r\n%%bash\r\nprintf 'ok\\n'\r\n",
+        # The daemon does not know the body's language, so no text in it is
+        # rewritten: a Python-looking string inside a heredoc is shell data.
+        '%%loommux --wait 2 --full-output\n%%bash\ncat > note.py <<\'EOF\'\ndoc = """\n*** Begin Patch\n*** Delete File: old.txt\n*** End Patch\n"""\nEOF\n',
+    ],
+)
+def test_run_cell_submits_the_cell_as_written_with_the_header_policy(source: str) -> None:
     class CapturingSession(IPythonSession):
         def __init__(self) -> None:
             super().__init__()
@@ -135,7 +117,6 @@ def test_run_cell_passes_the_unchanged_source_and_resolved_policy_to_submission(
             return {"ok": True, "status": "captured"}
 
     session = CapturingSession()
-    source = "%%loommux --wait 2 --full-output\nprint('kept')"
 
     assert session.run_cell(source)["status"] == "captured"
     assert session.calls == [(source, 2.0, True)]

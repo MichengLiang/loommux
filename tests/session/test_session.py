@@ -285,56 +285,12 @@ def test_invalid_header_fails_before_python_execution(session: IPythonSession) -
     assert "unrecognized arguments: --legacy-key=0.1" in response["message"]
 
 
-def test_apply_patch_literal_preserves_raw_value_without_archiving_request_source(session: IPythonSession) -> None:
-    source = """%%loommux --wait 2 --full-output
-name = "Ada"
-payload = f\"\"\"
-*** Begin Patch
-*** Update File: example.py
-@@
-+message = r\"\"\"
-+C:\\new\\temp {name}
-+\"\"\"
-*** End Patch
-\"\"\"
-"""
-
-    submitted = session.run_cell(source)
-    inspected = session.run_cell("payload")
-    record = session.executions[submitted["execution"]]
-
-    assert submitted["status"] == "completed"
-    assert "C:\\\\new\\\\temp {name}" in inspected["output_text"]
-    assert "*** Begin Patch" in inspected["output_text"]
-    for field in ("code", "author_source", "submitted_source", "apply_patch_transform", "initial_wait_seconds", "control_directives"):
-        assert not hasattr(record, field)
-
-
-def test_apply_patch_literal_is_a_function_argument_and_keeps_later_traceback_lines(session: IPythonSession) -> None:
-    source = """%%loommux --full-output
-received = None
-def capture(value):
-    global received
-    received = value
-capture(r\"\"\"
-*** Begin Patch
-*** Add File: captured.txt
-+inside = \"\"\"
-+quoted
-+\"\"\"
-*** End Patch
-\"\"\")
-raise RuntimeError("mapped")
-"""
-
-    failed = session.run_cell(source)
-    received = session.run_cell("received")
+def test_a_header_keeps_traceback_lines_as_written(session: IPythonSession) -> None:
+    failed = session.run_cell("%%loommux --full-output\nvalue = 1\nraise RuntimeError('here')\n")
 
     assert failed["status"] == "error"
-    # The header is line 1 of the cell IPython receives, so the raise is line 14.
-    assert "line 14" in failed["output_text"]
-    assert received["status"] == "completed"
-    assert "*** Begin Patch" in received["output_text"]
+    # The header is line 1 of the cell as written, so the raise is line 3.
+    assert "line 3" in failed["output_text"]
 
 
 def test_reset_preserves_records_and_sequence_and_reauthors_out_label(session: IPythonSession) -> None:

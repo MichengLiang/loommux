@@ -350,8 +350,8 @@ record, then the most recently accepted record. With neither, the tool returns
 
 ### Submitting A Cell
 
-`run_cell` accepts one `freeform` loommux IPython cell. Ordinary source and
-the resulting Python values of validated Apply Patch literals are available to
+`run_cell` accepts one `freeform` loommux IPython cell and submits it exactly
+as written. Its variables, imports, and other namespace state are available to
 later cells in the same selected logical resource.
 
 ```python
@@ -407,33 +407,6 @@ ends this cell with a one-line `ForwardedCellError` beneath the relayed
 traceback, and interrupting this cell interrupts it as well. Writing the
 receiving kernel's own name is the same as writing none. Relayed output is
 text; rich displays such as images stay in the target's execution record.
-
-### Apply Patch Literals
-
-Use an outer triple-double-quoted literal containing a valid Apply Patch
-program to pass patch text through a Python cell. The exact `*** Begin Patch`
-and `*** End Patch` markers, valid file-operation controls, and hunk lines are
-validated before loommux converts the literal into an equivalent Python `str`.
-The patch text remains part of the resulting value, including embedded triple
-quotes, backslashes, and braces.
-
-````python
-patch = f"""
-*** Begin Patch
-*** Update File: example.py
-@@
-+message = r"""
-+hello
-+"""
-*** End Patch
-"""
-````
-
-`patch` contains the complete Apply Patch program. The outer `r` and `f`
-prefixes do not apply raw-string or f-string interpretation to the converted
-patch text. Marker-shaped text with invalid patch grammar is ordinary Python
-source and is not converted. See [Apply Patch Literal Transform Design](docs/ipython-mcp-protected-multiline-string-design.md)
-for the full contract and acceptance rules.
 
 When the call returns while the cell is still running, use `wait`,
 `execution_status`, `read_output`, `search_output`,
@@ -571,13 +544,8 @@ loommux/
         terminal.py
             Removes terminal controls while preserving chunk boundaries.
     submission/
-        cell.py
-            Combines the header's observation policy and source transformation
-            into one prepared cell passed to the session.
         header.py
             Parses the %%loommux cell header for the daemon and the kernel.
-        apply_patch_literals.py
-            Converts valid Apply Patch literals before kernel submission.
     kernel_extension.py
         IPython extension every kernel loads: interprets the cell header and
         places the daemon client in the namespace as ``loommux``.

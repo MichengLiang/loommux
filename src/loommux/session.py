@@ -10,8 +10,7 @@ from typing import Any
 from loommux.execution import Execution
 from loommux.identity import KernelIdentity
 from loommux.kernel.session import KernelSession
-from loommux.submission.cell import prepare_run_cell
-from loommux.submission.header import CellHeaderError
+from loommux.submission.header import CellHeaderError, read_cell_header
 
 KERNEL_START_ATTEMPTS = 2
 OUTPUT_STREAMS = {"combined", "stdout", "stderr", "result", "traceback"}
@@ -81,21 +80,21 @@ class IPythonSession:
         return self.status()
 
     def run_cell(self, freeform: str, *, wait_seconds: float | None = None) -> dict[str, Any]:
-        """Submit one cell; ``wait_seconds`` overrides the header's wait.
+        """Submit one cell exactly as written; ``wait_seconds`` overrides the header's wait.
 
         A program states its wait as an argument, while the header still
         decides complete-output delivery and is validated either way.
         """
-        try:
-            prepared = prepare_run_cell(freeform)
-        except TypeError:
+        if not isinstance(freeform, str):
             return {"ok": False, "status": "invalid_code", "message": "freeform must be a string"}
+        try:
+            header = read_cell_header(freeform)
         except CellHeaderError as exc:
             return {"ok": False, "status": "invalid_cell_header", "message": f"invalid %%loommux header: {exc}"}
         return self._submit_python_cell(
-            prepared.kernel_source,
-            prepared.initial_wait_seconds if wait_seconds is None else wait_seconds,
-            prepared.full_output_requested,
+            freeform,
+            header.wait_seconds if wait_seconds is None else wait_seconds,
+            header.full_output,
         )
 
     def _submit_python_cell(self, source: str, timeout_seconds: float, full_output_requested: bool = False) -> dict[str, Any]:

@@ -258,6 +258,7 @@ needs a holder.
 | The adapter removes control lines by exact source ranges | Removed | Nothing is removed by the daemon |
 | `invalid_loommux_directive` | Renamed | `invalid_cell_header` |
 | Only the full-output flag survives submission, as private execution state | Kept | A later `wait` still needs it |
+| Apply Patch programs in a triple-quoted Python literal are converted to a plain `str` before submission, the one exception to source fidelity | Removed | The `%%apply_patch` cell magic receives a patch verbatim, so a patch no longer needs to be a Python string. The conversion ignored the body's language and rewrote matching text inside `%%bash` heredocs and forwarded cells |
 
 ## 10. Rejected Alternatives
 
