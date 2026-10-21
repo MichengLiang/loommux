@@ -25,7 +25,10 @@ def _no_real_stack_dump_handler(monkeypatch: pytest.MonkeyPatch) -> None:
     # run_entrypoint registers SIGUSR1 for the life of its process; in-process
     # tests must not leave that handler writing into pytest's captured stderr.
     # The subprocess test below exercises the real registration.
-    monkeypatch.setattr(faulthandler, "register", lambda *_args, **_kwargs: None)
+    # Windows has neither the signal nor faulthandler.register, and
+    # run_entrypoint registers nothing there.
+    if sys.platform != "win32":
+        monkeypatch.setattr(faulthandler, "register", lambda *_args, **_kwargs: None)
 
 
 def test_default_entrypoint_uses_content_stdio_transport() -> None:
