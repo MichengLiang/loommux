@@ -7,8 +7,31 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-21
+
 ### Added
 
+- The `connection` lease mode holds a lease for as long as its MCP session
+  keeps the standalone Streamable HTTP `GET` stream open, so a client such as
+  Claude Code keeps its kernel while it runs, however long it idles, and
+  releases it about a minute after it exits, without pinging. Select it with
+  `LOOMMUX_LEASE_MODE=connection`. Stdio and in-process sessions are connected
+  for the life of the server process.
+- Every tool result of a connection-mode session whose client never opens a
+  stream (`unbound`) or keeps calling after its stream is gone
+  (`stream_lost`) ends with a `Lease alert` block, the structured status
+  carries `lease_alert`, and the server logs one `lease alert` warning when a
+  lease enters such a standing. The lease falls back to the activity window
+  instead of being released.
+- `/api/resources` reports each lease's `standing`, `alert`, and
+  `grace_remaining_seconds`; `remaining_seconds` and `timeout_seconds` are
+  `null` while an open stream holds a connection lease.
+- `/api/lease-policy`, its `PUT`, `LeaseAwareClient`, and
+  `LOOMMUX_CONNECTION_GRACE_SECONDS` (default 60) carry the connection grace
+  period.
+- The resource console offers the `connection` mode and its grace, shows each
+  lease's standing and grace countdown, and keeps a lease-signal row that
+  turns red while any lease is in an alert standing.
 - A cell may begin with a `%%loommux [--kernel NAME] [--wait SECONDS] [--full-output]`
   header, written in ordinary IPython cell-magic syntax. Its options control
   that one cell; another cell magic such as `%%bash` may follow it, top-level
@@ -16,11 +39,11 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   A cell has one header: a second `%%loommux` line right after a header for
   this kernel is reported as a `UsageError`, so every option is read from the
   first line by both the daemon and the kernel.
-- `%%loommux --kernel build` runs the rest of the cell in the kernel named `build`,
-  opened on first use. Its output is relayed into the cell as it arrives, an
-  error there ends the cell with a one-line `ForwardedCellError` below the
-  relayed traceback, an interrupt is passed on, and a forward back into a busy
-  kernel fails at once with `busy`.
+- `%%loommux --kernel build` runs the rest of the cell in the kernel named
+  `build`, opened on first use. Its output is relayed into the cell as it
+  arrives, an error there ends the cell with a one-line `ForwardedCellError`
+  below the relayed traceback, an interrupt is passed on, and a forward back
+  into a busy kernel fails at once with `busy`.
 - Every kernel knows its resource (`LOOMMUX_KERNEL_ID`, `LOOMMUX_KERNEL_NAME`,
   and for an HTTP server `LOOMMUX_CONTROL_URL`) and holds `loommux`, a client
   of its daemon: `loommux.kernels()`, `loommux.self`, `loommux["lab"]` with
@@ -37,68 +60,47 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   status, `wait`, `output`, and `combined` (follow by character offset).
 - Help that IPython sends to a pager (`obj?`, `obj??`, `%%loommux?`) is part of
   the output, after the cell's other output, instead of being lost.
-- `scripts/stress.py` includes a cell that forwards to a shared named kernel.
-
-- Add the `connection` lease mode. A lease is held for as long as its MCP
-  session keeps the standalone Streamable HTTP `GET` stream open, so a client
-  such as Claude Code keeps its kernel while it runs, however long it idles,
-  and releases it about a minute after it exits, without pinging. Select it
-  with `LOOMMUX_LEASE_MODE=connection`. Stdio and in-process sessions are
-  connected for the life of the server process.
-- Append a `Lease alert` block to every tool result of a connection-mode
-  session whose client never opens a stream (`unbound`) or keeps calling
-  after its stream is gone (`stream_lost`), and add `lease_alert` to the
-  structured status. Such a lease falls back to the activity window instead
-  of being released.
-- Log one `lease alert` warning when a lease enters an alert standing.
-- Report each lease's `standing`, `alert`, and `grace_remaining_seconds` in
-  `/api/resources`; `remaining_seconds` and `timeout_seconds` are `null` while
-  an open stream holds a connection lease.
-- `/api/lease-policy`, its `PUT`, `LeaseAwareClient`, and
-  `LOOMMUX_CONNECTION_GRACE_SECONDS` (default 60) carry the connection grace
-  period of the `connection` lease mode.
-- The resource console offers the `connection` mode and its grace, shows each
-  lease's standing and grace countdown, and keeps a lease-signal row that
-  turns red while any lease is in an alert standing.
 - On Linux and macOS, `kill -USR1 <pid>` prints every thread's Python stack to
   a loommux server's stderr without stopping it, including while its event
   loop is frozen.
 - `scripts/stress.py` loads a private server with random, cancelled, and
-  disconnected tool calls, then requires every kernel process and file
-  descriptor to be released; CONTRIBUTING requires it for lifecycle,
-  concurrency, and output changes and for releases.
+  disconnected tool calls and a cell that forwards to a shared named kernel,
+  then requires every kernel process and file descriptor to be released;
+  CONTRIBUTING requires it for lifecycle, concurrency, and output changes and
+  for releases.
 
 ### Changed
 
-- `POST /api/resources/{id}/recycle` answers 404 for a missing resource, as
-  every other resource route does (it answered 409), and rejects a malformed
-  JSON body with 400 instead of reading it as `{}`. An empty body still means
-  no options.
 - **Breaking:** the `# loommux:` control comment is gone; it is an ordinary
   Python comment now. Write `%%loommux --wait 120 --full-output` as the first
   line instead. An invalid header returns `invalid_cell_header`, which replaces
   `invalid_loommux_directive`.
+- **Breaking:** a resource no longer has a `crashed` lifecycle. A registered
+  resource is `running` or `orphaned`. `/api/resources` reports the kernel
+  separately as `kernel_state` (`running`, `restarting`, or `stopped`) with a
+  `null` `kernel_pid` while no kernel runs; the console shows "restarting" or
+  "not running", and the `status` tool shows `kernel: restarting` during a
+  restart.
+- **Breaking:** `LeasePolicy` requires `connection_grace_seconds`, and
+  `LeaseAwareClient` requires a server whose `/api/lease-policy` publishes it;
+  pair client and server from the same release.
 - **Breaking:** the server factory given to `run_entrypoint` receives the
   control URL as a second argument (`None` for stdio).
+- `POST /api/resources/{id}/recycle` answers 404 for a missing resource, as
+  every other resource route does (it answered 409), and rejects a malformed
+  JSON body with 400 instead of reading it as `{}`. An empty body still means
+  no options.
 - The sweeper releases resources that no client lease reaches, directly or
   through holders, instead of resources without a lease of their own.
+- Kernels on Linux and macOS use ZMQ IPC sockets in their private runtime
+  directory instead of loopback TCP ports, so no other process can take a
+  kernel's port during startup, and kernels no longer log a "running over TCP
+  without encryption" warning each. Windows kernels keep TCP.
 - `import loommux` no longer imports the session, so loading the kernel
   extension costs each kernel about 4 ms instead of about 85 ms;
   `loommux.IPythonSession` and `loommux.__version__` resolve on first use.
 - loommux declares `ipython>=9.17.1` directly: the header is located with
   IPython's own cleanup transforms.
-- Kernels on Linux and macOS use ZMQ IPC sockets in their private runtime
-  directory instead of loopback TCP ports, so no other process can take a
-  kernel's port during startup, and kernels no longer log a "running over TCP
-  without encryption" warning each. Windows kernels keep TCP.
-- `LeasePolicy` requires `connection_grace_seconds`, and `LeaseAwareClient`
-  requires a server whose `/api/lease-policy` publishes it; pair client and
-  server from the same release.
-- A resource no longer has a `crashed` lifecycle. A registered resource is
-  `running` or `orphaned`. `/api/resources` reports the kernel separately as
-  `kernel_state` (`running`, `restarting`, or `stopped`) with a `null`
-  `kernel_pid` while no kernel runs; the console shows "restarting" or "not
-  running", and the `status` tool shows `kernel: restarting` during a restart.
 
 ### Fixed
 
@@ -292,7 +294,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Declared Pillow as a development dependency so rich presentation tests run
   in a clean CI environment.
 
-[Unreleased]: https://github.com/MichengLiang/loommux/compare/v0.1.15...HEAD
+[Unreleased]: https://github.com/MichengLiang/loommux/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/MichengLiang/loommux/compare/v0.1.15...v0.2.0
 [0.1.15]: https://github.com/MichengLiang/loommux/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/MichengLiang/loommux/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/MichengLiang/loommux/compare/v0.1.12...v0.1.13
