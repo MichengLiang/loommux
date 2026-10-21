@@ -22,9 +22,9 @@ from typing import Literal
 from IPython.core.error import UsageError
 from IPython.core.interactiveshell import InteractiveShell
 
+from loommux.cell_header import HEADER_HELP, HEADER_MAGIC, CellHeader, CellHeaderError, header_arguments, parse_header_arguments
 from loommux.daemon import Daemon, DaemonError, Job
 from loommux.identity import KernelIdentity
-from loommux.submission.header import HEADER_HELP, HEADER_MAGIC, CellHeader, CellHeaderError, header_arguments, parse_header_arguments
 
 # How long an interrupted forwarding cell keeps relaying while the target
 # reacts to the interrupt it passed on.

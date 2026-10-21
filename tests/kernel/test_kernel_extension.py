@@ -5,9 +5,9 @@ from typing import Any
 import pytest
 
 from loommux import kernel_extension
+from loommux.cell_header import CellHeader
 from loommux.daemon import DaemonError
 from loommux.kernel_extension import ForwardedCellError, ForwardedInterrupt, forward, remove_own_header
-from loommux.submission.header import CellHeader
 
 
 @pytest.mark.parametrize(

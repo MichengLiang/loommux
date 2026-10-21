@@ -543,9 +543,8 @@ loommux/
             Provides append-only streams, line ranges, clipping, and search.
         terminal.py
             Removes terminal controls while preserving chunk boundaries.
-    submission/
-        header.py
-            Parses the %%loommux cell header for the daemon and the kernel.
+    cell_header.py
+        Parses the %%loommux cell header for the daemon and the kernel.
     kernel_extension.py
         IPython extension every kernel loads: interprets the cell header and
         places the daemon client in the namespace as ``loommux``.

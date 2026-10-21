@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+from loommux.cell_header import CellHeader, CellHeaderError, header_arguments, read_cell_header
 from loommux.session import IPythonSession
-from loommux.submission import CellHeader, CellHeaderError, read_cell_header
-from loommux.submission.header import header_arguments
 
 
 @pytest.mark.parametrize(

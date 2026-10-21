@@ -7,10 +7,10 @@ import time
 from pathlib import Path
 from typing import Any
 
+from loommux.cell_header import CellHeaderError, read_cell_header
 from loommux.execution import Execution
 from loommux.identity import KernelIdentity
 from loommux.kernel.session import KernelSession
-from loommux.submission.header import CellHeaderError, read_cell_header
 
 KERNEL_START_ATTEMPTS = 2
 OUTPUT_STREAMS = {"combined", "stdout", "stderr", "result", "traceback"}

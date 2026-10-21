@@ -63,7 +63,7 @@ line IPython itself examines for a cell magic. It is recognized when it is
 remains IPython's help request for the magic.
 
 The rest of the line is split with POSIX shell-word rules and parsed by one
-`argparse` parser defined in `loommux.submission.header`:
+`argparse` parser defined in `loommux.cell_header`:
 
 - `--kernel NAME`: the kernel that interprets the cell, printable, at most
   256 characters (the same rule as `X-Loommux-Resource`);
