@@ -8,4 +8,4 @@ number can be measured again when a dependency changes.
 
 | Spike | Question | Outcome |
 |---|---|---|
-| [01-anyio-async-kernel](01-anyio-async-kernel/REPORT.md) | Can the daemon drive kernels with jupyter_client's async API under AnyIO, and what does it remove and cost? | Yes on Linux (asyncio and uvloop) and Windows (Proactor); found a thread-pool starvation in the current design and a Windows handle leak in jupyter_client |
+| [01-anyio-async-kernel](01-anyio-async-kernel/REPORT.md) | Can the daemon drive kernels with jupyter_client's async API under AnyIO, and what does it remove and cost? | Yes on Linux (asyncio and uvloop) and Windows (Proactor); found a thread-pool starvation in the current design and a Windows handle leak in jupyter_client (jupyter/jupyter_client#1147) |

@@ -155,8 +155,13 @@ directory; handles, threads, and children come from psutil.
   inheritable duplicate of the parent process handle (`DuplicateHandle`, line
   124) for every kernel, and nothing in jupyter_client closes either. Closing
   the two recorded handles after shutdown stops the growth. The leak predates
-  the migration and is not caused by it. No upstream issue reports it (searched
-  jupyter/jupyter_client issues and pull requests on 2026-10-22).
+  the migration and is not caused by it. Reported as
+  [jupyter/jupyter_client#1147](https://github.com/jupyter/jupyter_client/issues/1147)
+  with `issue_windows_handles.py` (as-is 154 → 224 → 265 → 305 handles over
+  60 kernels; fixed 154 → 184 → 185 → 185). The proposed fix closes the
+  parent-handle duplicate right after spawn, since the kernel watches its own
+  inherited copy; `issue_windows_parent_death.py` shows a kernel still exits
+  at once when its parent dies with `os._exit` after that early close.
 
 ### 3.5 uvloop (`SPIKE_UVLOOP=1 uv run --with uvloop python probe_lifecycle.py`)
 
@@ -232,8 +237,8 @@ iopub, and a task awaiting the kernel's exit through a pidfd
    (3.6) before the move; search and other whole-output scans off the loop.
    Design §11's discipline is rewritten around "the loop is the only thread".
 6. **Windows.** Keep kernel replacement for interrupts. Close the two launcher
-   handles after shutdown, independent of the migration, and report the leak
-   upstream.
+   handles after shutdown, independent of the migration, until
+   jupyter/jupyter_client#1147 is fixed upstream.
 7. **Use AnyIO's own primitives deliberately.** `anyio.Lock` checkpoints by
    default; `fast_acquire=True` gives that up and is not wanted here.
 
@@ -259,5 +264,7 @@ python probe_thread_pool.py b
 URL; the numbers above used `git archive 7a863e6 src` with `PYTHONPATH`
 pointing at the export. The Windows probes run from a Windows directory with
 `uv run --no-project --with jupyter_client --with ipykernel --with anyio --with psutil python probe_windows.py`
-(and `probe_windows_sync.py default|destroy|close`, without anyio). The probes
-here were run under `systemd-run --user --scope -p MemoryMax=…` caps.
+(and `probe_windows_sync.py default|destroy|close`,
+`issue_windows_handles.py as-is|close-after|fix`, and
+`issue_windows_parent_death.py`, without anyio). The Linux probes here were
+run under `systemd-run --user --scope -p MemoryMax=…` caps.
