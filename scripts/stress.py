@@ -64,6 +64,15 @@ SERVER_SETTINGS = {
     "LOOMMUX_ORPHAN_GRACE_SECONDS": "1",
 }
 CONSOLE_STALL_SECONDS = 8
+# httpx builds a transport for every proxy variable when a client is created,
+# before NO_PROXY is consulted, so a developer's ALL_PROXY=socks5h://... makes
+# even a loopback client (FastMCP's transport included) require the optional
+# socksio package. The script only talks to the server it starts on loopback.
+PROXY_ENVIRONMENT = tuple(
+    variant
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY")
+    for variant in (name, name.lower())
+)
 # After recycling every resource the server is back at its startup count (8 at
 # start, 7 after a 60 s run of 380 sessions). Event loops left to the garbage
 # collector cost three descriptors per kernel start or shutdown, 863 after a
@@ -93,6 +102,8 @@ def main() -> int:
     # The load abandons calls mid-flight on purpose; the MCP client then logs a
     # traceback for every message that reaches a stream it already closed.
     logging.getLogger("mcp.client.streamable_http").setLevel(logging.CRITICAL)
+    for name in PROXY_ENVIRONMENT:
+        os.environ.pop(name, None)
 
     options.report_dir.mkdir(parents=True, exist_ok=True)
     log_path = options.report_dir / f"server-{int(time.time())}.log"
@@ -139,8 +150,8 @@ def _run(server: subprocess.Popen[bytes], base: str, options: argparse.Namespace
         print(json.dumps(report, indent=2))
         return 3
 
-    httpx.post(f"{base}/api/resources/recycle-all", timeout=60, trust_env=False).raise_for_status()
-    _wait_for(lambda: not httpx.get(f"{base}/api/resources", timeout=10, trust_env=False).json()["resources"], 30)
+    httpx.post(f"{base}/api/resources/recycle-all", timeout=60).raise_for_status()
+    _wait_for(lambda: not httpx.get(f"{base}/api/resources", timeout=10).json()["resources"], 30)
     if sys.platform == "linux":
         _wait_for(lambda: not _children(server.pid), 15)
         time.sleep(2)
@@ -174,7 +185,7 @@ async def _load(base: str, options: argparse.Namespace, stats: Stats) -> bool:
 
     async def watchdog() -> None:
         nonlocal stalled
-        async with httpx.AsyncClient(base_url=base, trust_env=False) as http:
+        async with httpx.AsyncClient(base_url=base) as http:
             while time.monotonic() < deadline:
                 started = time.monotonic()
                 try:
@@ -242,7 +253,7 @@ def _free_port() -> int:
 def _wait_until_ready(base: str) -> None:
     def ready() -> bool:
         try:
-            return httpx.get(f"{base}/api/resources", timeout=1, trust_env=False).status_code == 200
+            return httpx.get(f"{base}/api/resources", timeout=1).status_code == 200
         except httpx.HTTPError:
             return False
 
