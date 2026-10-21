@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sys
 import threading
 import time
 from pathlib import Path
@@ -67,37 +66,40 @@ def test_text_since_matches_the_text_at_every_offset(join_after: int | None) -> 
     assert log.text == text
 
 
-def test_line_log_keeps_every_chunk_appended_while_another_thread_reads() -> None:
-    chunks = 50_000
+def test_line_log_keeps_a_chunk_appended_between_a_readers_join_and_clear() -> None:
+    # The unsafe window is the few bytecodes between a reader's join and its
+    # clearing of the queue. Racing threads into it needs about a million reads
+    # per hit, and each read joins the whole text, which a fair scheduler such as
+    # Windows' turns quadratic. Instead the reader stops inside the window and the
+    # writer appends there: with the lock it waits and its chunk lands after the
+    # clear; without the lock (verified with a lock-free `text`) it is lost every
+    # time.
+    log = LineLog()
+    log.append("a\n")
+    in_window = threading.Event()
+    appended = threading.Event()
 
-    def one_round() -> LineLog:
-        log = LineLog()
-        done = threading.Event()
+    class PendingThatOpensTheWindow(list[str]):
+        def clear(self) -> None:
+            in_window.set()
+            appended.wait(0.2)
+            super().clear()
 
-        def collector() -> None:
-            for _ in range(chunks):
-                log.append("a\n")
-            done.set()
+    log._pending = PendingThatOpensTheWindow(log._pending)
 
-        writer = threading.Thread(target=collector)
-        writer.start()
-        while not done.is_set():
-            _ = log.text
-        writer.join()
-        return log
+    def writer() -> None:
+        in_window.wait()
+        log.append("b\n")
+        appended.set()
 
-    # The unsafe window is one bytecode between a reader's join and its clearing
-    # of the queue. A 1 µs switch interval lets the writer land there in about one
-    # round in seven without the lock, so fifty rounds miss it about once in 3,000.
-    interval = sys.getswitchinterval()
-    sys.setswitchinterval(1e-6)
-    try:
-        logs = [one_round() for _ in range(50)]
-    finally:
-        sys.setswitchinterval(interval)
+    thread = threading.Thread(target=writer)
+    thread.start()
+    first = log.text
+    thread.join(timeout=5)
 
-    assert all(log.line_count == chunks for log in logs)
-    assert all(log.text == "a\n" * chunks for log in logs)
+    assert first == "a\n"
+    assert log.text == "a\nb\n"
+    assert log.line_count == 2
 
 
 def test_line_log_search_supports_context_and_query_modes() -> None:
