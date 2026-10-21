@@ -7,6 +7,20 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Changed
+
+- The cell header grammar moved from `loommux.submission.header` to
+  `loommux.cell_header`; the `loommux.submission` package is gone.
+
+### Removed
+
+- **Breaking:** the daemon no longer converts a triple-quoted Python literal
+  holding an Apply Patch program into a plain `str` before submission. Every
+  cell reaches the kernel exactly as written; pass patch text through a cell
+  magic, whose body IPython delivers verbatim. The conversion did not know the
+  body's language, so matching text inside a `%%bash` heredoc or a forwarded
+  cell was rewritten as well.
+
 ## [0.2.0] - 2026-10-21
 
 ### Added
