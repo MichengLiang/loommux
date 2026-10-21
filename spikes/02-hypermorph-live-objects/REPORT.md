@@ -231,7 +231,8 @@ answers `terminal`, `timeout` (with the current running state) or `closed`.
 ## 5. Gaps to send back to Hypermorph
 
 Following its CONTRIBUTING loop ("the example story bends where the SDK has a
-gap"):
+gap"). Sent as issue records: the first item is `Hypermorph#001`, the other
+three are `Hypermorph#002` (`playground/Hypermorph/docs/issues/`).
 
 - **State operations copy the whole state** (`objects/live.py:87`). Each
   `set`/`append`/`remove` is O(public state), so N operations in one
