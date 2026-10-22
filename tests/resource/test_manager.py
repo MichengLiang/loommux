@@ -419,6 +419,36 @@ def test_a_kernel_opened_while_its_home_retires_is_not_handed_out(tmp_path: Path
     asyncio.run(scenario())
 
 
+def test_renaming_numbers_a_taken_name_within_the_kernels_scope(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        manager = KernelResourceManager(tmp_path, "launch_cwd", session_factory=FakeSession)
+        generated = await _first_call(manager, LeaseClient("0123456789abcdef", "agent"))
+        report = await manager.get_or_create("report")
+        other = await manager.get_or_create("other")
+        mine = await manager.ensure_held("build", generated.resource_id)
+        theirs = await manager.ensure_held("build", other.resource_id)
+        sibling = await manager.ensure_held("lab", generated.resource_id)
+
+        assert (await manager.rename(generated.resource_id, "report")).name == "report-2"
+        # A renamed generated kernel counts as named, and is found by its new name.
+        assert generated.named is True
+        assert await manager.get_or_create("report-2") is generated
+        assert await manager.ensure_held("report-2", None) is generated
+        # Child kernel names are unique inside their home only.
+        assert (await manager.rename(theirs.resource_id, "tests")).name == "tests"
+        assert (await manager.rename(mine.resource_id, "tests")).name == "tests"
+        assert (await manager.rename(sibling.resource_id, "tests")).name == "tests-2"
+        assert await manager.ensure_held("tests", generated.resource_id) is mine
+        assert (await manager.rename(report.resource_id, "report")).name == "report"
+        with pytest.raises(ResourceRoutingError, match="kernel name must not exceed 256 characters"):
+            await manager.rename(report.resource_id, "x" * 257)
+        with pytest.raises(ResourceNotFoundError):
+            await manager.rename("missing", "anything")
+        await manager.stop()
+
+    asyncio.run(scenario())
+
+
 def test_program_operations_count_as_work_without_creating_a_lease(tmp_path: Path) -> None:
     async def scenario() -> None:
         manager = KernelResourceManager(tmp_path, "launch_cwd", session_factory=FakeSession)

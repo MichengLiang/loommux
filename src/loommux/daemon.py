@@ -26,6 +26,7 @@ that kernel's behalf.
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from loommux.identity import CONTROL_URL_ENV, KernelIdentity
@@ -88,6 +89,16 @@ class Daemon:
         if self.identity is None:
             raise DaemonError("this process is not a Loommux kernel")
         return Kernel(self, self.identity.kernel_id, self.identity.name)
+
+    def _adopt(self, kernel_id: str, name: str) -> None:
+        """Record that the kernel with ``kernel_id`` is now called ``name``.
+
+        Only this process's own identity is kept: it decides which cell
+        headers name this kernel. The name a session asked for when the kernel
+        was numbered stops counting once the kernel has a name of its own.
+        """
+        if self.identity is not None and self.identity.kernel_id == kernel_id:
+            self.identity = replace(self.identity, name=name, requested_name="")
 
     def close(self) -> None:
         """Close the HTTP connections; a later request opens new ones."""
@@ -163,6 +174,18 @@ class Kernel:
     def recycle(self, *, force: bool = False) -> str:
         """Retire the kernel resource; ``force`` also retires it while busy."""
         return self.daemon._request("POST", f"/api/resources/{self.id}/recycle", json={"force": force})["message"]
+
+    def rename(self, name: str) -> str:
+        """Rename the kernel and return the name it received.
+
+        A name another kernel of its scope already has is numbered
+        (``name-2``). Renaming the kernel that runs this takes effect for the
+        next cell header at once.
+        """
+        resource = self.daemon._request("POST", f"/api/resources/{self.id}/rename", json={"name": name})["resource"]
+        self.name = resource["name"]
+        self.daemon._adopt(self.id, self.name)
+        return self.name
 
     def __repr__(self) -> str:
         return f"<loommux kernel {self.name} {self.id[:8]}>"

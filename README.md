@@ -265,6 +265,7 @@ job = lab.run("train()", wait=5)
 job.wait(600)                 # its state; job.output() reads its combined output
 lab.restart()
 loommux["lab"].recycle(force=True)
+loommux.self.rename("report-cleanup")   # returns the name received; report-cleanup-2 if taken
 ```
 
 A kernel opened this way is a child kernel of the asking kernel's home: the

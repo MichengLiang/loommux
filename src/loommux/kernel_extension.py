@@ -14,6 +14,10 @@ reaches ``%%loommux``, which forwards the body there.
 has already moved the submitting session to the kernel it names. A kernel
 therefore treats ``--attach`` naming itself as its own header, and any other
 ``--attach`` as a mistake.
+
+Which names are this kernel's is read from the ``loommux`` client at every
+cell, not fixed at start: a kernel renamed with ``loommux.self.rename()`` must
+read the next header with its new name as its own.
 """
 
 from __future__ import annotations
@@ -29,7 +33,6 @@ from IPython.core.interactiveshell import InteractiveShell
 
 from loommux.cell_header import HEADER_HELP, HEADER_MAGIC, CellHeader, CellHeaderError, header_arguments, parse_header_arguments
 from loommux.daemon import Daemon, DaemonError, Job
-from loommux.identity import KernelIdentity
 
 # How long an interrupted forwarding cell keeps relaying while the target
 # reacts to the interrupt it passed on.
@@ -103,11 +106,20 @@ def forward(daemon: Daemon, header: CellHeader, body: str, write: Callable[[str]
 
     The forwarding cell ends as the forwarded one did: an error there raises
     here, and an interrupt here is passed down before it is raised.
+
+    A name that resolves to this very kernel is one it was given elsewhere,
+    for example by its main kernel through ``loommux[...].rename()``. The body
+    cannot run here (see the module docstring), so the kernel adopts the name
+    and asks for the cell again, which its header reader now reads as its own.
     """
     __tracebackhide__ = True
     assert header.kernel is not None
     try:
-        job = daemon[header.kernel].run(body, wait=0.05)
+        target = daemon[header.kernel]
+        if daemon.identity is not None and target.id == daemon.identity.kernel_id:
+            daemon._adopt(target.id, target.name)
+            raise UsageError(f"{header.kernel} is this kernel, renamed from elsewhere; it now reads that name as its own, so run the cell again")
+        job = target.run(body, wait=0.05)
     except DaemonError as exc:
         raise ForwardedCellError(header.kernel, exc.status or "DaemonError", str(exc)) from None
     try:
@@ -149,8 +161,19 @@ def _raise_for(kernel: str, state: dict[str, object]) -> None:
     raise ForwardedCellError(kernel, str(status), "")
 
 
-def _header_magic(line: str, cell: str, *, daemon: Daemon, own_names: Collection[str]) -> None:
+def _own_names(daemon: Daemon) -> frozenset[str]:
+    return frozenset() if daemon.identity is None else daemon.identity.names
+
+
+def _read_own_header(lines: list[str], *, daemon: Daemon) -> list[str]:
+    # The names are read per call; within one cell they cannot change, so
+    # IPython's repeated transforms of a cell still agree.
+    return remove_own_header(lines, _own_names(daemon))
+
+
+def _header_magic(line: str, cell: str, *, daemon: Daemon) -> None:
     __tracebackhide__ = True
+    own_names = _own_names(daemon)
     try:
         header = parse_header_arguments(line)
     except CellHeaderError as exc:
@@ -189,15 +212,13 @@ _installed: dict[int, tuple[Callable[[list[str]], list[str]], Daemon]] = {}
 def load_ipython_extension(ip: InteractiveShell) -> None:
     if id(ip) in _installed:
         return
-    identity = KernelIdentity.from_environ()
-    own_names = frozenset() if identity is None else identity.names
     daemon = Daemon()
-    transformer = functools.partial(remove_own_header, own_names=own_names)
+    transformer = functools.partial(_read_own_header, daemon=daemon)
     _installed[id(ip)] = (transformer, daemon)
     ip.input_transformers_cleanup.append(transformer)
     # Hidden from %who: it belongs to the kernel, not to the author's work.
     ip.push({"loommux": daemon}, interactive=False)
-    magic = functools.partial(_header_magic, daemon=daemon, own_names=own_names)
+    magic = functools.partial(_header_magic, daemon=daemon)
     functools.update_wrapper(magic, _header_magic)
     magic.__doc__ = HEADER_HELP
     # IPython reads ``%%loommux`` on a later line as a line magic whose name

@@ -157,6 +157,24 @@ def install_control_routes(
             return JSONResponse({"ok": False, "message": "source must be a string and wait_seconds a number"}, status_code=400)
         return await _session_call(request, lambda session: session.run_cell(source, wait_seconds=float(wait_seconds)))
 
+    @mcp.custom_route("/api/resources/{resource_id}/rename", methods=["POST"])
+    async def rename_resource(request: Request) -> Response:
+        """Rename a kernel; the response's resource carries the name it received."""
+        body, error = await _json_object(request)
+        if error is not None:
+            return error
+        name = body.get("name")
+        if not isinstance(name, str):
+            return JSONResponse({"ok": False, "message": "name must be a string"}, status_code=400)
+        selected = manager()
+        try:
+            resource = await selected.rename(request.path_params["resource_id"], name)
+        except ResourceRoutingError as exc:
+            return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
+        except ResourceNotFoundError as exc:
+            return JSONResponse({"ok": False, "message": str(exc)}, status_code=404)
+        return JSONResponse({"ok": True, "resource": await selected.snapshot_one(resource.resource_id)})
+
     @mcp.custom_route("/api/resources/{resource_id}/executions/{execution:int}", methods=["GET"])
     async def execution_status(request: Request) -> Response:
         execution = request.path_params["execution"]

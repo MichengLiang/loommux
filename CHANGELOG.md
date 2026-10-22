@@ -23,6 +23,12 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - A call that changes the session's main kernel ends with one
   `Kernel: NAME (...)` block, and structured results carry `binding`;
   `status` begins with the kernel's name.
+- `Kernel.rename(name)` and `POST /api/resources/{id}/rename` rename a kernel
+  and return the name it received, numbered when another main kernel, or a
+  child kernel of the same home, has it. `loommux.self.rename()` is one line
+  in any cell, and the kernel reads headers with its new name as its own from
+  the next cell; a kernel renamed from elsewhere adopts the name the first
+  time a header uses it.
 
 ### Changed
 

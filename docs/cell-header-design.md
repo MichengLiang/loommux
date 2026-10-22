@@ -195,6 +195,7 @@ Outside a kernel, `Daemon()` uses `LOOMMUX_CONTROL_URL` or
 | `loommux.kernels()` | the kernels of this home: its main kernel and child kernels, with name, id, state, scope, and home |
 | `loommux["build"]` | handle of this home's child kernel `build`, opened on first use; this kernel's and its main kernel's own names resolve to them |
 | `loommux.self` | handle of this kernel |
+| `kernel.rename(name)` | rename a kernel and return the name it received; renaming this kernel changes which header names are its own from the next cell |
 | `kernel.run(code, wait=10)` | submit `code`; returns a `Job` |
 | `kernel.interrupt()`, `kernel.restart()`, `kernel.recycle(force=False)` | control operations |
 | `job.wait(timeout)`, `job.status()`, `job.output(stream, lines)`, `job.follow(offset)`, `job.interrupt()` | follow one execution |

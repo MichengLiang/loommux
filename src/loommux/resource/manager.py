@@ -151,14 +151,16 @@ class KernelResourceManager:
             self._provisioning_by_key[key] = provisioning
         return provisioning
 
-    def _free_main_name_locked(self, name: str) -> str:
-        """``name``, or ``name-2``, ``name-3``... whichever no main kernel has.
+    def _free_name_locked(self, name: str, home: str | None) -> str:
+        """``name``, or ``name-2``, ``name-3``... whichever no kernel of this scope has.
 
         Kernels still starting count, so two sessions asking for one name at
         the same moment receive two names rather than one shared kernel.
+        The first kernel keeps the bare name, and the number counts how many
+        asked for it.
         """
         candidate, number = name, 1
-        while (key := resource_key(candidate, None)) in self._resources_by_key or key in self._provisioning_by_key:
+        while (key := resource_key(candidate, home)) in self._resources_by_key or key in self._provisioning_by_key:
             number += 1
             candidate = f"{name}-{number}"
         return candidate
@@ -218,7 +220,7 @@ class KernelResourceManager:
             # id shares the prefix; a provisioning task under it is this
             # session's own concurrent first call, which it joins.
             if resource_key(name, None) in self._resources_by_key:
-                name = self._free_main_name_locked(name)
+                name = self._free_name_locked(name, None)
             return self._claim_locked(name, None, False), _Choice(BindingKind.OPENED)
         key = resource_key(request.name, None)
         if request.mode is RequestMode.JOIN:
@@ -227,7 +229,7 @@ class KernelResourceManager:
         existing = self._resources_by_key.get(key)
         if existing is not None and not self._connected_locked(existing):
             return existing, _Choice(BindingKind.TAKEN_BACK)
-        name = self._free_main_name_locked(request.name)
+        name = self._free_name_locked(request.name, None)
         if name == request.name:
             return self._claim_locked(name, None, True), _Choice(BindingKind.OPENED)
         return self._claim_locked(name, None, True, request.name), _Choice(BindingKind.NUMBERED, request.name)
@@ -424,6 +426,30 @@ class KernelResourceManager:
                 (resource for resource in self._resources_by_id.values() if home_id in (resource.resource_id, resource.home)),
                 key=lambda resource: resource.created_at,
             )
+
+    async def rename(self, resource_id: str, name: str) -> KernelResource:
+        """Rename a kernel; a name another kernel of its scope has is numbered.
+
+        A main kernel's name is unique among main kernels and a child
+        kernel's inside its home. A renamed kernel counts as named from then
+        on, including a generated ``private-...`` one, so activity leases on it
+        use the named window. The kernel process keeps the name it started
+        with in its environment; the kernel learns the new one from the
+        response when it renamed itself, and otherwise the first time a header
+        uses it (``kernel_extension.forward``).
+        """
+        name = validate_kernel_name(name)
+        async with self._registry_lock:
+            resource = self._resources_by_id.get(resource_id)
+            if resource is None:
+                raise ResourceNotFoundError("resource was not found")
+            if name != resource.name:
+                if self._resources_by_key.get(resource.key) is resource:
+                    del self._resources_by_key[resource.key]
+                resource.name = self._free_name_locked(name, resource.home)
+                self._resources_by_key[resource.key] = resource
+            resource.named = True
+            return resource
 
     async def recycle(
         self,

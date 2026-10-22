@@ -270,6 +270,10 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
         会话一直连着，它的主 kernel 就一直在；会话离开后，主 kernel 从最后
         一次调用起再保留 24 小时，等新的会话按名字接回。
 
+        任务方向变了就改名：在做别的事的 cell 里顺手写一行
+        ``loommux.self.rename("新名字")``，返回实际得到的名字（已被占用时是
+        ``新名字-2``），之后的头就按新名字认它。
+
         ``%%loommux --attach 名字`` 随时把会话换到一台已有的主 kernel，放下手上
         这台；名字不存在时什么也不开，返回 ``kernel_not_found`` 并列出没有会话
         连着的主 kernel。

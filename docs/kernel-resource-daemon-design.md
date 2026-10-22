@@ -336,6 +336,7 @@ The Streamable HTTP application serves:
 | `GET` | `/api/resources/{id}` | One resource's snapshot. |
 | `POST` | `/api/resources/ensure` | Resolve `name` in the home of the kernel `holder`, opening a child kernel if needed; without a holder, resolve a main kernel by name or any kernel by id only. |
 | `POST` | `/api/resources/{id}/executions` | Submit `source` as one cell, waiting up to `wait_seconds`; refuses with `busy` instead of queueing. |
+| `POST` | `/api/resources/{id}/rename` | Rename to `name`, numbered when another kernel of its scope has it; the snapshot carries the name received. |
 | `GET` | `/api/resources/{id}/executions/{n}` | One execution's status. |
 | `POST` | `/api/resources/{id}/executions/{n}/wait` | Wait up to `timeout_seconds` for it to end. |
 | `GET` | `/api/resources/{id}/executions/{n}/output` | Read one stream (`stream`, `lines` as `start:stop`). |

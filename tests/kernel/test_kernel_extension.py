@@ -7,7 +7,8 @@ from IPython.core.error import UsageError
 
 from loommux import kernel_extension
 from loommux.cell_header import CellHeader
-from loommux.daemon import DaemonError
+from loommux.daemon import Daemon, DaemonError
+from loommux.identity import KernelIdentity
 from loommux.kernel_extension import ForwardedCellError, ForwardedInterrupt, forward, remove_own_header
 
 
@@ -103,6 +104,35 @@ def test_a_numbered_kernel_reads_the_name_its_session_asked_for_as_its_own(monke
     kernel_extension.unload_ipython_extension(shell)
 
 
+def test_a_kernel_reads_its_new_name_as_its_own_from_the_next_cell(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LOOMMUX_KERNEL_ID", "abc123")
+    monkeypatch.setenv("LOOMMUX_KERNEL_NAME", "lab-2")
+    monkeypatch.setenv("LOOMMUX_KERNEL_REQUESTED_NAME", "lab")
+    shell: Any = _Shell()
+    kernel_extension.load_ipython_extension(shell)
+    [transformer] = shell.input_transformers_cleanup
+
+    shell.namespace["loommux"]._adopt("abc123", "report")
+
+    assert transformer(["%%loommux --kernel report\n", "x\n"]) == ["\n", "x\n"]
+    # The name asked for at start and the old name are no longer this kernel's.
+    assert transformer(["%%loommux --kernel lab\n", "x\n"]) == ["%%loommux --kernel lab\n", "x\n"]
+    assert transformer(["%%loommux --kernel lab-2\n", "x\n"]) == ["%%loommux --kernel lab-2\n", "x\n"]
+    shell.namespace["loommux"]._adopt("someone-else", "other")
+    assert shell.namespace["loommux"].self.name == "report"
+    kernel_extension.unload_ipython_extension(shell)
+
+
+def test_a_forward_that_resolves_to_this_kernel_adopts_the_name_given_elsewhere() -> None:
+    daemon = _Daemon(_Job([]), identity=KernelIdentity("me-id", "old", None), target_id="me-id")
+
+    with pytest.raises(UsageError, match="renamed is this kernel, renamed from elsewhere"):
+        forward(daemon, CellHeader(kernel="renamed"), "body", print)
+
+    assert daemon.identity == KernelIdentity("me-id", "renamed", None)
+    assert daemon.bodies == []
+
+
 def test_attaching_from_inside_a_kernel_is_a_usage_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LOOMMUX_KERNEL_ID", "abc123")
     monkeypatch.setenv("LOOMMUX_KERNEL_NAME", "build")
@@ -143,13 +173,22 @@ class _Job:
 
 
 class _Daemon:
-    def __init__(self, job: _Job | None = None, refusal: DaemonError | None = None) -> None:
+    def __init__(self, job: _Job | None = None, refusal: DaemonError | None = None, identity: KernelIdentity | None = None, target_id: str = "target-id") -> None:
         self.job, self.refusal, self.bodies = job, refusal, []
+        self.identity, self.target_id = identity, target_id
+
+    def _adopt(self, kernel_id: str, name: str) -> None:
+        Daemon._adopt(self, kernel_id, name)  # type: ignore[arg-type]
 
     def __getitem__(self, name: str) -> Any:
         daemon = self
 
         class Target:
+            id = daemon.target_id
+
+            def __init__(self) -> None:
+                self.name = name
+
             def run(self, body: str, *, wait: float) -> _Job:
                 if daemon.refusal is not None:
                     raise daemon.refusal

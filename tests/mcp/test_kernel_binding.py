@@ -4,6 +4,7 @@ import asyncio
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
 from server_harness import reserve_port, running_server, wait_for_resource_count
 
@@ -79,4 +80,36 @@ def test_a_main_kernel_whose_session_left_waits_and_is_taken_back_by_name(tmp_pa
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     with running_server(reserve_port(), workspace, LOOMMUX_LEASE_MODE="connection", LOOMMUX_CONNECTION_GRACE_SECONDS="0.3", LOOMMUX_NAMED_TTL_SECONDS="60") as origin:
+        asyncio.run(scenario(origin))
+
+
+@pytest.mark.timeout(60)
+def test_a_kernel_renames_itself_in_one_line_and_learns_a_name_given_elsewhere(tmp_path: Path) -> None:
+    async def scenario(origin: str) -> None:
+        async with LeaseAwareClient(f"{origin}/mcp", "agent") as agent, LeaseAwareClient(f"{origin}/mcp", "other") as other:
+            await texts(other, "%%loommux --kernel taken\n1")
+            # B10: one line inside a cell that does other work.
+            renamed = await texts(agent, "work = 6 * 7\nprint(loommux.self.rename('report'), loommux.self.name)")
+            assert renamed[0] == "In [1]:\nreport report\n"
+            assert await texts(agent, "%%loommux --kernel report\nwork") == ["In [2]:\nOut[2]: 42\n"]
+            status = await agent.call_tool("status", {})
+            assert status.content[0].text.startswith("name: report\n")
+            assert await texts(agent, "print(loommux.self.rename('taken'))") == ["In [3]:\ntaken-2\n"]
+
+            # Renamed from its child kernel, the main kernel learns the name the
+            # first time a header uses it, and reads it as its own after.
+            await texts(agent, "%%loommux --kernel build\nloommux['taken-2'].rename('from-child')")
+            relearned = await texts(agent, "%%loommux --kernel from-child\nprint('never')")
+            assert relearned[0].startswith("In [5]:\nUsageError: from-child is this kernel, renamed from elsewhere")
+            assert await texts(agent, "%%loommux --kernel from-child\nprint(loommux.self.name)") == ["In [6]:\nfrom-child\n"]
+
+            async with httpx.AsyncClient(base_url=origin, timeout=5) as http:
+                assert (await http.post("/api/resources/missing/rename", json={"name": "x"})).status_code == 404
+                assert (await http.post("/api/resources/missing/rename", json={"name": 1})).status_code == 400
+                [main] = [r for r in (await http.get("/api/resources")).json()["resources"] if r["name"] == "from-child"]
+                assert (await http.post(f"/api/resources/{main['resource_id']}/rename", json={"name": "bad\tname"})).status_code == 400
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    with running_server(reserve_port(), workspace, LOOMMUX_LEASE_MODE="connection", LOOMMUX_CONNECTION_GRACE_SECONDS="0.3") as origin:
         asyncio.run(scenario(origin))
