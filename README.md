@@ -415,6 +415,37 @@ traceback, and interrupting this cell interrupts it as well. Writing the
 receiving kernel's own name is the same as writing none. Relayed output is
 text; rich displays such as images stay in the target's execution record.
 
+### Naming And Switching The Main Kernel
+
+Each MCP session works in one main kernel. On the session's first call,
+`--kernel NAME` names that kernel instead of forwarding, because no kernel has
+received a cell yet:
+
+```python
+%%loommux --kernel report-cleanup
+import pandas as pd
+```
+
+`report-cleanup` is opened, or taken back when it exists and no session is
+connected to it; while another session is, the new session gets
+`report-cleanup-2`, and the first cell still runs there. A phrase describing
+the task makes collisions rare. Later `--kernel` headers forward as described
+above. Without a name the first call opens `private-<session>`.
+
+`--attach NAME` moves the session to an existing main kernel at any time and
+releases its lease on the one it leaves:
+
+```python
+%%loommux --attach report-cleanup
+df.head()
+```
+
+A missing name returns `kernel_not_found`, listing the main kernels no session
+is connected to, and opens nothing. The call that changes the session's main
+kernel ends with one block such as `Kernel: report-cleanup (taken back; 12
+earlier executions)`, and `status` begins with the kernel's name. The rules and
+their reasons are in [Main Kernel Binding Design](docs/kernel-binding-design.md).
+
 When the call returns while the cell is still running, use `wait`,
 `execution_status`, `read_output`, `search_output`,
 `interrupt`, or `restart` to continue observing or controlling the

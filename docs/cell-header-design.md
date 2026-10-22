@@ -11,7 +11,7 @@ A Loommux cell may begin with one header line written in ordinary IPython
 cell-magic syntax:
 
 ```text
-%%loommux [--kernel NAME] [--wait SECONDS] [--full-output]
+%%loommux [--kernel NAME | --attach NAME] [--wait SECONDS] [--full-output]
 ```
 
 The header declares **which kernel interprets the rest of the cell**, in the
@@ -19,6 +19,12 @@ same sense that `%%bash` declares that Bash interprets it. Omitting the header,
 or omitting `--kernel`, means the kernel that received the cell. Its options
 declare how the submitting call observes this one cell: how long `run_cell`
 waits, and whether a terminal response carries the complete combined output.
+
+On an MCP session's first call no kernel has received anything yet, so a
+`--kernel` there chooses the session's main kernel, and `--attach` moves the
+session to another main kernel at any time. Both are owned by the
+[Main Kernel Binding Design](kernel-binding-design.md); this document keeps
+their grammar and how each reader treats them.
 
 The header is legal IPython. Loommux does not remove it before submission; the
 kernel interprets it, and IPython history keeps it.
@@ -67,6 +73,9 @@ The rest of the line is split with POSIX shell-word rules and parsed by one
 
 - `--kernel NAME`: the kernel that interprets the cell, printable, at most
   256 characters (the same rule as `X-Loommux-Resource`);
+- `--attach NAME`: the main kernel the submitting session works in from this
+  cell on, by the same rule; it cannot appear together with `--kernel`,
+  because both name where the cell runs;
 - `--wait SECONDS`: a positive finite number of seconds;
 - `--full-output`: a flag.
 
@@ -83,6 +92,7 @@ The header line serves two readers, and each takes its own part:
 | Reader | Reads | Why it must be this reader |
 | --- | --- | --- |
 | Daemon, in `run_cell` | `--wait`, `--full-output`, validity | They describe the MCP call, which the daemon answers before the kernel finishes |
+| Daemon, in `run_cell` | `--attach`, and `--kernel` on a session's first call | They choose the kernel the cell is submitted to, which is decided before any kernel sees it |
 | Kernel extension | `--kernel` | Only the interpreting kernel can route the body onward |
 
 Both readers import the same parser, so they cannot disagree about the
@@ -130,6 +140,11 @@ transformer is the only form that keeps the header free of restrictions.
 IPython may call transformers more than once for a cell (completeness checks
 transform it too), which is why the function is pure.
 
+`--attach` naming this kernel is dissolved the same way: by the time the cell
+arrives, the daemon has already moved the session here. A numbered main kernel
+(`lab-2`) also treats the name its session asked for (`lab`) as its own, since
+the session's first cell still says `--kernel lab`.
+
 ### 5.2 A header naming another kernel is a cell magic
 
 A header naming another kernel is left in place. IPython's own cell-magic
@@ -144,6 +159,11 @@ The extension registers a line magic under that exact name that raises
 `UsageError("%%loommux must be the first line of the cell")`. Lines before it
 have already run, as with any failing line magic; the daemon does not scan
 later lines, because a header-shaped line inside a string literal is data.
+
+`--attach` naming another kernel reaches the cell magic only in a cell that no
+session submitted, a forwarded one or one sent through the control plane, and
+raises a `UsageError` saying that only the daemon reads it. IPython reports a
+`UsageError` without failing the execution, so the message is the result.
 
 ## 6. Kernel Identity And The `loommux` Object
 
@@ -282,6 +302,8 @@ by name or any kernel by id, and open nothing; creation needs a home.
 | H5 | The header naming the kernel's own name behaves as the omitted name |
 | H6 | A misplaced header raises the first-line `UsageError`; `%%loommux?` shows the grammar |
 | H7 | IPython's raw input history keeps the header |
+| H8 | `--attach` parses, cannot be combined with `--kernel`, dissolves when it names the receiving kernel, and is a `UsageError` otherwise |
+| H9 | A numbered main kernel reads `--kernel` with its requested name as its own |
 | K1 | Kernels receive id, name, and control URL; a stdio daemon's kernels report that no control plane exists |
 | K2 | `loommux.kernels()`, `loommux.self`, interrupt, restart, and recycle work from inside a kernel over HTTP |
 | P1 | `loommux["build"].run()` opens a child kernel and its job waits, reports status, and reads output |

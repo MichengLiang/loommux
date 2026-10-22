@@ -23,6 +23,7 @@ from loommux.session import IPythonSession
         ("%%loommux --kernel build\nmake()", CellHeader(kernel="build")),
         ("%%loommux --wait 5 --kernel=build --full-output\nmake()", CellHeader(5.0, True, "build")),
         ("%%loommux --kernel 'my lab'\nmake()", CellHeader(kernel="my lab")),
+        ("%%loommux --attach 主kernel绑定设计 --wait 30\nmake()", CellHeader(30.0, attach="主kernel绑定设计")),
     ],
 )
 def test_header_on_the_first_line_resolves_the_observation_policy(source: str, header: CellHeader) -> None:
@@ -87,6 +88,9 @@ def test_header_arguments_recognize_the_magic_name_as_a_whole_word(line: str, ar
         ("%%loommux --kernel 'a\tb'\npass", "kernel name must contain printable characters only"),
         (f"%%loommux --kernel {'k' * 257}\npass", "kernel name must not exceed 256 characters"),
         ("%%loommux --help\npass", "unrecognized arguments: --help"),
+        # Both name where the cell runs; one header cannot say both.
+        ("%%loommux --kernel build --attach lab\npass", "argument --attach: not allowed with argument --kernel"),
+        ("%%loommux --attach\npass", "argument --attach: expected one argument"),
         ("%%loommux --wait '3\npass", "No closing quotation"),
     ],
 )

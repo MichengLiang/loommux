@@ -3,6 +3,8 @@
 from loommux.resource.connections import ConnectionRegistry, SessionPresence
 from loommux.resource.liveness import LeaseStanding, LeaseVerdict, assess_lease
 from loommux.resource.manager import (
+    Admission,
+    KernelNotFoundError,
     KernelResourceManager,
     ResourceBusyError,
     ResourceManagerError,
@@ -10,6 +12,8 @@ from loommux.resource.manager import (
     ResourceProvisionError,
 )
 from loommux.resource.model import (
+    Binding,
+    BindingKind,
     ClientLease,
     KernelRequest,
     KernelResource,
@@ -30,8 +34,12 @@ from loommux.resource.routing import (
 from loommux.resource.settings import ResourceServerSettings
 
 __all__ = [
+    "Admission",
+    "Binding",
+    "BindingKind",
     "ClientLease",
     "ConnectionRegistry",
+    "KernelNotFoundError",
     "KernelResource",
     "KernelResourceManager",
     "KernelRequest",

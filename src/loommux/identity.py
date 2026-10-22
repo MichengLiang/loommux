@@ -13,8 +13,9 @@ from dataclasses import dataclass
 
 KERNEL_ID_ENV = "LOOMMUX_KERNEL_ID"
 KERNEL_NAME_ENV = "LOOMMUX_KERNEL_NAME"
+KERNEL_REQUESTED_NAME_ENV = "LOOMMUX_KERNEL_REQUESTED_NAME"
 CONTROL_URL_ENV = "LOOMMUX_CONTROL_URL"
-IDENTITY_ENVIRONMENT = (KERNEL_ID_ENV, KERNEL_NAME_ENV, CONTROL_URL_ENV)
+IDENTITY_ENVIRONMENT = (KERNEL_ID_ENV, KERNEL_NAME_ENV, KERNEL_REQUESTED_NAME_ENV, CONTROL_URL_ENV)
 MAX_LABEL_LENGTH = 256
 
 _WILDCARD_HOSTS = {"", "0.0.0.0", "::", "[::]"}
@@ -39,19 +40,27 @@ class KernelIdentity:
 
     ``control_url`` is ``None`` for a daemon that serves no HTTP control
     plane, which is every stdio daemon.
+
+    ``requested_name`` is the name a session asked for when the kernel
+    received a numbered one instead (``lab`` for ``lab-2``). The session's
+    first cell still says ``--kernel lab``, and without it that cell would be
+    forwarded to a new child kernel called ``lab``.
     """
 
     kernel_id: str
     name: str
     control_url: str | None
+    requested_name: str = ""
 
     @property
     def names(self) -> frozenset[str]:
         """Every way a cell header may name this kernel."""
-        return frozenset({self.kernel_id, self.name} - {""})
+        return frozenset({self.kernel_id, self.name, self.requested_name} - {""})
 
     def environment(self) -> dict[str, str]:
         environment = {KERNEL_ID_ENV: self.kernel_id, KERNEL_NAME_ENV: self.name}
+        if self.requested_name:
+            environment[KERNEL_REQUESTED_NAME_ENV] = self.requested_name
         if self.control_url is not None:
             environment[CONTROL_URL_ENV] = self.control_url
         return environment
@@ -62,7 +71,7 @@ class KernelIdentity:
         kernel_id = values.get(KERNEL_ID_ENV)
         if not kernel_id:
             return None
-        return cls(kernel_id, values.get(KERNEL_NAME_ENV, ""), values.get(CONTROL_URL_ENV) or None)
+        return cls(kernel_id, values.get(KERNEL_NAME_ENV, ""), values.get(CONTROL_URL_ENV) or None, values.get(KERNEL_REQUESTED_NAME_ENV, ""))
 
 
 def loopback_control_url(host: str, port: int) -> str:

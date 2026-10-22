@@ -78,6 +78,22 @@ _LEASE_ALERT_CAUSES = {
 }
 
 
+def format_binding(binding: Mapping[str, Any]) -> str:
+    """Tell the session which main kernel it now works in, and how it got it."""
+    kind = str(binding.get("kind"))
+    notes = []
+    if kind == "numbered":
+        notes.append(f"opened; {binding.get('requested')} is in use by another session")
+    else:
+        notes.append(kind)
+    if kind in {"taken back", "attached"}:
+        count = _number(binding.get("executions"))
+        notes.append(f"{count} earlier execution{'' if count == 1 else 's'}")
+    if binding.get("released"):
+        notes.append(f"let go of {binding['released']}")
+    return f"Kernel: {binding.get('name')} ({'; '.join(notes)})"
+
+
 def format_lease_alert(alert: Mapping[str, Any]) -> str:
     """Tell the reader that a connection lease lost the signal it relies on."""
     standing = str(alert.get("standing", "unknown"))
@@ -156,7 +172,8 @@ def _python_status_surface(status: Mapping[str, Any]) -> str:
         if status.get("kernel_restarting") is True
         else "not_started"
     )
-    lines = [f"kernel: {state}"]
+    lines = [f"name: {status['kernel_name']}"] if status.get("kernel_name") else []
+    lines.append(f"kernel: {state}")
     if state == "busy":
         lines.append(f"current_execution: {_compact(status.get('current_execution'))}")
     else:

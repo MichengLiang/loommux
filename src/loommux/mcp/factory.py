@@ -11,6 +11,7 @@ from fastmcp import Context, FastMCP
 from fastmcp.server.http import StarletteWithLifespan
 from fastmcp.tools import ToolResult
 
+from loommux.cell_header import CellHeaderError, read_cell_header
 from loommux.host_workspace_config import WorkspaceConfigError
 from loommux.mcp.control import install_control_routes
 from loommux.mcp.lease_ping import install_lease_aware_ping_handler
@@ -18,9 +19,12 @@ from loommux.mcp.result import ResultMode, make_tool_result
 from loommux.mcp.stream_presence import StandaloneStreamPresence
 from loommux.resource import (
     ConnectionRegistry,
+    KernelNotFoundError,
+    KernelRequest,
     KernelResourceManager,
     LeasePolicy,
     LeasePolicyManager,
+    RequestMode,
     ResourceManagerError,
     ResourceRoutingError,
     connection_request,
@@ -35,6 +39,23 @@ from loommux.workspace_resolver import resolve_workspace_launch
 # tool declares its own ceiling. Tools that deliver an execution's full body opt in
 # to a higher host ceiling; loommux's own delivery policy is unchanged.
 _FULL_BODY_TOOL_META = {"anthropic/maxResultSizeChars": 200_000}
+
+
+def cell_request(freeform: str) -> KernelRequest | None:
+    """The main kernel a cell's header names, for the call that submits it.
+
+    An invalid header names nothing here; the session reports it without
+    allocating an execution.
+    """
+    try:
+        header = read_cell_header(freeform)
+    except CellHeaderError:
+        return None
+    if header.attach is not None:
+        return KernelRequest(header.attach, RequestMode.ATTACH)
+    if header.kernel is not None:
+        return KernelRequest(header.kernel, RequestMode.OPEN)
+    return None
 
 
 class _LoommuxMCP(FastMCP):
@@ -78,8 +99,16 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
         ctx: Context,
         operation: Callable[[IPythonSession], dict[str, Any]],
         *,
+        cell: KernelRequest | None = None,
         replaces_kernel: bool = False,
     ) -> ToolResult:
+        """Run ``operation`` in the main kernel of the calling session.
+
+        ``cell`` is what a submitted cell's header asks for. ``--attach``
+        always applies; ``--kernel`` chooses the main kernel only on a
+        session's first call and only without a connection header, which
+        settles the session's kernel before it says anything.
+        """
         selected_manager = manager
         if selected_manager is None:
             status = {
@@ -91,6 +120,8 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
         try:
             client = resolve_client(ctx)
             request = connection_request()
+            if cell is not None and (cell.mode is RequestMode.ATTACH or request is None):
+                request = cell
             request_context = ctx.request_context
             if request_context is not None and request_context.request is None:
                 # No HTTP request means stdio or an in-process client: the
@@ -111,8 +142,12 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
                 policy,
                 request=request,
                 replaces_kernel=replaces_kernel,
-            ) as resource:
-                status = await asyncio.to_thread(operation, resource.session)
+            ) as admission:
+                status = await asyncio.to_thread(operation, admission.resource.session)
+            if admission.binding is not None:
+                status = {**status, "binding": admission.binding.as_dict()}
+            if tool_name == "status":
+                status = {**status, "kernel_name": admission.resource.name}
             verdict = await selected_manager.client_verdict(client.client_id)
             if verdict is not None and verdict.standing.alert:
                 status = {
@@ -122,6 +157,12 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
                         "fallback_window_seconds": verdict.window_seconds,
                     },
                 }
+        except KernelNotFoundError as exc:
+            status = {
+                "ok": False,
+                "status": "kernel_not_found",
+                "message": str(exc),
+            }
         except (ResourceManagerError, ResourceRoutingError) as exc:
             status = {
                 "ok": False,
@@ -211,6 +252,25 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
         里都有 ``loommux`` 对象：``loommux.kernels()`` 列出这个家的 kernel，
         ``loommux["build"].run(code)`` 在后台提交并返回 job。
 
+        主 kernel
+        ---------
+
+        每个会话在一台主 kernel 里工作。会话的第一个 cell 用 ``--kernel 名字``
+        给它起名：名字是描述这次任务的一个短语，不带空格::
+
+            %%loommux --kernel 主kernel绑定设计
+            import pandas as pd
+
+        这个名字的主 kernel 存在而且没有会话连着时，就接回它，命名空间和
+        execution 编号都还在；正被别的会话连着时，得到 ``名字-2``，第一个 cell
+        照常在这台里执行。结果末尾的 ``Kernel:`` 一行写明实际的名字和来历，
+        ``status`` 第一行也是名字。第一次调用之后，``--kernel`` 只表示转发给
+        子 kernel。
+
+        ``%%loommux --attach 名字`` 随时把会话换到一台已有的主 kernel，放下手上
+        这台；名字不存在时什么也不开，返回 ``kernel_not_found`` 并列出没有会话
+        连着的主 kernel。
+
         图像展示
         --------
 
@@ -234,7 +294,7 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
             已接受 execution 的当前状态；完成的小输出直接进入模型内容，
             running 或 token 受限状态给出 ``execution`` 与省略原因。
         """
-        return await call("run_cell", ctx, lambda session: session.run_cell(freeform))
+        return await call("run_cell", ctx, lambda session: session.run_cell(freeform), cell=cell_request(freeform))
 
     @mcp.tool(output_schema=None)
     async def status(ctx: Context) -> ToolResult:

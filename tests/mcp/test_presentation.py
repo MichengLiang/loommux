@@ -4,7 +4,7 @@ import pytest
 from mcp.types import ImageContent, TextContent
 
 from loommux.execution.events import PresentationFailure, PresentationImage, PresentationText
-from loommux.mcp.presentation import format_output_token_limit_notice, format_tool_result_text
+from loommux.mcp.presentation import format_binding, format_output_token_limit_notice, format_tool_result_text
 from loommux.mcp.result import ImageDeliveryLimits, make_tool_result
 
 
@@ -96,6 +96,33 @@ def test_read_search_and_status_surfaces_are_output_oriented() -> None:
     assert format_tool_result_text("search_output", {"ok": True, "matched_lines": 0}) == "No matching output lines were found."
     assert format_tool_result_text("status", {"ok": True, "kernel_started": True, "busy": False, "recent_execution": 5, "workspace": "/tmp/ws", "workspace_resolution": "launch_cwd"}) == "kernel: idle\nrecent_execution: 5\nworkspace: /tmp/ws\nworkspace_resolution: launch_cwd"
     assert format_tool_result_text("status", {"ok": True, "kernel_started": False, "kernel_restarting": True, "busy": False, "recent_execution": 5}).startswith("kernel: restarting\n")
+    assert format_tool_result_text("status", {"ok": True, "kernel_name": "lab", "kernel_started": True, "busy": False, "recent_execution": 5}).startswith("name: lab\nkernel: idle\n")
+
+
+@pytest.mark.parametrize(
+    ("binding", "text"),
+    [
+        ({"name": "private-1a2b3c4d", "kind": "opened", "executions": 0}, "Kernel: private-1a2b3c4d (opened)"),
+        ({"name": "task-2", "kind": "numbered", "executions": 0, "requested": "task"}, "Kernel: task-2 (opened; task is in use by another session)"),
+        ({"name": "task", "kind": "taken back", "executions": 12}, "Kernel: task (taken back; 12 earlier executions)"),
+        ({"name": "task", "kind": "attached", "executions": 1, "released": "private-1a2b3c4d"}, "Kernel: task (attached; 1 earlier execution; let go of private-1a2b3c4d)"),
+    ],
+)
+def test_a_binding_change_names_the_kernel_and_how_it_was_chosen(binding: dict, text: str) -> None:
+    assert format_binding(binding) == text
+
+
+def test_the_binding_block_follows_the_output_and_precedes_a_lease_alert() -> None:
+    result = make_tool_result(
+        "run_cell",
+        {"ok": True, "status": "completed", "execution": 1, "output_text": "42\n", "binding": {"name": "lab", "kind": "opened", "executions": 0}, "lease_alert": {"standing": "unbound", "fallback_window_seconds": 30}},
+        "content",
+    )
+
+    texts = [block.text for block in result.content]
+    assert texts[0] == "In [1]:\n42\n"
+    assert texts[1] == "Kernel: lab (opened)"
+    assert texts[2].startswith("Lease alert (unbound)")
     assert format_tool_result_text("execution_status", {"ok": True, "execution": 5, "status": "completed", "output_total_lines": 2}).startswith("execution 5: completed")
 
 

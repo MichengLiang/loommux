@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from IPython.core.error import UsageError
 
 from loommux import kernel_extension
 from loommux.cell_header import CellHeader
@@ -27,6 +28,10 @@ from loommux.kernel_extension import ForwardedCellError, ForwardedInterrupt, for
         (["%%loommux --kernel build\n", "x\n"], ["%%loommux --kernel build\n", "x\n"]),
         (["%%loommux --wait 2\n", "%%loommux --kernel build\n", "x\n"], ["%%loommux --wait 2\n", "%%loommux --kernel build\n", "x\n"]),
         (["%%loommux --kernel build\n", "%%loommux --full-output\n", "x\n"], ["%%loommux --kernel build\n", "%%loommux --full-output\n", "x\n"]),
+        # The daemon already moved the session here, so attaching to this
+        # kernel is this kernel's header; any other is left for the magic.
+        (["%%loommux --attach me --wait 5\n", "x\n"], ["\n", "x\n"]),
+        (["%%loommux --attach elsewhere\n", "x\n"], ["%%loommux --attach elsewhere\n", "x\n"]),
     ],
 )
 def test_headers_naming_this_kernel_dissolve_and_keep_line_numbers(lines: list[str], transformed: list[str]) -> None:
@@ -82,6 +87,31 @@ def test_loading_twice_installs_once_and_unloading_removes_everything(monkeypatc
     assert shell.input_transformers_cleanup == []
     assert shell.magics == {"line": {}, "cell": {}}
     assert shell.namespace == {}
+
+
+def test_a_numbered_kernel_reads_the_name_its_session_asked_for_as_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LOOMMUX_KERNEL_ID", "abc123")
+    monkeypatch.setenv("LOOMMUX_KERNEL_NAME", "lab-2")
+    monkeypatch.setenv("LOOMMUX_KERNEL_REQUESTED_NAME", "lab")
+    shell: Any = _Shell()
+
+    kernel_extension.load_ipython_extension(shell)
+    [transformer] = shell.input_transformers_cleanup
+
+    assert transformer(["%%loommux --kernel lab\n", "x\n"]) == ["\n", "x\n"]
+    assert transformer(["%%loommux --kernel lab-2\n", "x\n"]) == ["\n", "x\n"]
+    kernel_extension.unload_ipython_extension(shell)
+
+
+def test_attaching_from_inside_a_kernel_is_a_usage_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LOOMMUX_KERNEL_ID", "abc123")
+    monkeypatch.setenv("LOOMMUX_KERNEL_NAME", "build")
+    shell: Any = _Shell()
+    kernel_extension.load_ipython_extension(shell)
+
+    with pytest.raises(UsageError, match="--attach lab moves an MCP session to another main kernel"):
+        shell.magics["cell"]["loommux"]("--attach lab", "x\n")
+    kernel_extension.unload_ipython_extension(shell)
 
 
 def test_unloading_keeps_a_loommux_name_the_author_rebound(monkeypatch: pytest.MonkeyPatch) -> None:

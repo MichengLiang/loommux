@@ -9,6 +9,11 @@ outer cell.
 
 A header naming another kernel stays for IPython's cell-magic transform and
 reaches ``%%loommux``, which forwards the body there.
+
+``--attach`` is the daemon's: by the time a cell reaches a kernel, the daemon
+has already moved the submitting session to the kernel it names. A kernel
+therefore treats ``--attach`` naming itself as its own header, and any other
+``--attach`` as a mistake.
 """
 
 from __future__ import annotations
@@ -53,7 +58,8 @@ def remove_own_header(lines: list[str], own_names: Collection[str] = ()) -> list
         header = parse_header_arguments(arguments)
     except CellHeaderError:
         return lines
-    if header.kernel is not None and header.kernel not in own_names:
+    target = header.attach if header.attach is not None else header.kernel
+    if target is not None and target not in own_names:
         return lines
     body = lines[1:]
     if body and header_arguments(body[0]) is not None:
@@ -149,6 +155,13 @@ def _header_magic(line: str, cell: str, *, daemon: Daemon, own_names: Collection
         header = parse_header_arguments(line)
     except CellHeaderError as exc:
         raise UsageError(f"invalid %%{HEADER_MAGIC} header: {exc}") from None
+    if header.attach is not None and header.attach not in own_names:
+        # Reached by a cell forwarded here or submitted through the control
+        # plane: no MCP session submitted it, so nothing can be moved.
+        raise UsageError(
+            f"--attach {header.attach} moves an MCP session to another main kernel, and loommux reads it only on the first line "
+            "of a cell a session submits, and this cell reached this kernel another way. Use --kernel to run it elsewhere"
+        )
     if header.kernel is None or header.kernel in own_names:
         # Reached by a header followed by another one, which the transformer
         # leaves in place, or by a direct run_cell_magic call. Either way the

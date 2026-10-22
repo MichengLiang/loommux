@@ -33,12 +33,15 @@ class CellHeader:
     """Which kernel interprets one cell, and how the submitting call observes it.
 
     ``kernel`` is ``None`` when the header names no kernel, which means the
-    kernel that received the cell.
+    kernel that received the cell. ``attach`` names the main kernel the
+    submitting MCP session works in from this cell on; only the daemon acts
+    on it, and the two are never both set.
     """
 
     wait_seconds: float = DEFAULT_INITIAL_WAIT_SECONDS
     full_output: bool = False
     kernel: str | None = None
+    attach: str | None = None
 
 
 class _HeaderParser(argparse.ArgumentParser):
@@ -69,7 +72,11 @@ def _kernel_name(value: str) -> str:
 # kernel named full-output), and argparse's prefix matching would quietly read
 # `--wai 5` as `--wait 5`; with neither, a slip of the pen is an error.
 _PARSER = _HeaderParser(prog=_HEADER_PREFIX, add_help=False, allow_abbrev=False)
-_PARSER.add_argument("--kernel", type=_kernel_name, metavar="NAME")
+# --kernel interprets this one cell elsewhere; --attach moves the session.
+# Both name where the cell runs, so one header cannot say both.
+_TARGET = _PARSER.add_mutually_exclusive_group()
+_TARGET.add_argument("--kernel", type=_kernel_name, metavar="NAME")
+_TARGET.add_argument("--attach", type=_kernel_name, metavar="NAME")
 _PARSER.add_argument("--wait", type=_positive_seconds, default=DEFAULT_INITIAL_WAIT_SECONDS, metavar="SECONDS")
 _PARSER.add_argument("--full-output", action="store_true")
 
@@ -94,7 +101,7 @@ def parse_header_arguments(arguments: str) -> CellHeader:
     except ValueError as exc:
         raise CellHeaderError(str(exc)) from exc
     options = _PARSER.parse_args(tokens)
-    return CellHeader(wait_seconds=options.wait, full_output=options.full_output, kernel=options.kernel)
+    return CellHeader(wait_seconds=options.wait, full_output=options.full_output, kernel=options.kernel, attach=options.attach)
 
 
 def first_cell_line(lines: Sequence[str]) -> str | None:
@@ -118,11 +125,16 @@ HEADER_HELP = f"""Declare which kernel interprets this cell and how it is observ
 
 Write it as the first line of a cell:
 
-    {_HEADER_PREFIX} [--kernel NAME] [--wait SECONDS] [--full-output]
+    {_HEADER_PREFIX} [--kernel NAME | --attach NAME] [--wait SECONDS] [--full-output]
 
 --kernel NAME    run the rest of the cell in the kernel with this name or id,
-                 opening a named kernel on first use; its output is relayed
-                 here and its errors end this cell. Omitted: this kernel.
+                 a child kernel of this home opened on first use; its output
+                 is relayed here and its errors end this cell. Omitted: this
+                 kernel. On an MCP session's first call it names the
+                 session's main kernel instead: opened, taken back from a
+                 session that left, or numbered (NAME-2) when NAME is in use.
+--attach NAME    the MCP session works in the existing main kernel NAME from
+                 this cell on, letting go of its current one
 --wait SECONDS   wait up to SECONDS for this cell before run_cell returns
                  (default {DEFAULT_INITIAL_WAIT_SECONDS:g}); an expired wait leaves the cell running
 --full-output    deliver the complete combined output when the cell ends

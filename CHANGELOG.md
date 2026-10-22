@@ -7,6 +7,23 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- An MCP session names its main kernel on its first call with
+  `%%loommux --kernel NAME`: NAME is opened, taken back from sessions that
+  left, or numbered (`NAME-2`) while another session is connected to it. The
+  first cell runs there, and the kernel reads the name it was asked for as its
+  own. Later `--kernel` headers forward as before.
+- `%%loommux --attach NAME` moves the session to an existing main kernel at
+  any time, whether or not other sessions work in it, and releases its lease
+  on the previous one. A missing name returns `kernel_not_found` listing the
+  main kernels no session is connected to, opens nothing, and allocates no
+  execution. Inside a kernel, `--attach` naming another kernel is a
+  `UsageError`.
+- A call that changes the session's main kernel ends with one
+  `Kernel: NAME (...)` block, and structured results carry `binding`;
+  `status` begins with the kernel's name.
+
 ### Changed
 
 - **Breaking:** a kernel opened by name from a kernel is a child kernel of

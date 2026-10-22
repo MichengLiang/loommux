@@ -6,6 +6,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, nullcontext
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from math import isfinite
 from pathlib import Path
@@ -17,10 +18,13 @@ from loommux.identity import KernelIdentity
 from loommux.resource.connections import ConnectionRegistry
 from loommux.resource.liveness import LeaseStanding, LeaseVerdict, assess_lease
 from loommux.resource.model import (
+    Binding,
+    BindingKind,
     ClientLease,
     KernelRequest,
     KernelResource,
     LeaseClient,
+    RequestMode,
     ResourceLifecycle,
     resource_key,
 )
@@ -46,6 +50,25 @@ class ResourceNotFoundError(ResourceManagerError):
 
 class ResourceBusyError(ResourceManagerError):
     """A non-forced control operation found active resource work."""
+
+
+class KernelNotFoundError(ResourceManagerError):
+    """A session asked to attach to a main kernel that does not exist."""
+
+
+@dataclass(frozen=True)
+class Admission:
+    """One admitted client operation: the main kernel it runs in, and the
+    change of the session's main kernel it made, if any."""
+
+    resource: KernelResource
+    binding: Binding | None
+
+
+@dataclass(frozen=True)
+class _Choice:
+    kind: BindingKind
+    requested: str | None = None
 
 
 class KernelResourceManager:
@@ -113,7 +136,7 @@ class KernelResourceManager:
             claim = self._claim_locked(name, home, named)
         return await _settled(claim)
 
-    def _claim_locked(self, name: str, home: str | None, named: bool) -> KernelResource | asyncio.Task[KernelResource]:
+    def _claim_locked(self, name: str, home: str | None, named: bool, requested: str = "") -> KernelResource | asyncio.Task[KernelResource]:
         """The registered kernel with this name in this home, or the task starting it."""
         key = resource_key(name, home)
         resource = self._resources_by_key.get(key)
@@ -122,7 +145,7 @@ class KernelResourceManager:
         provisioning = self._provisioning_by_key.get(key)
         if provisioning is None:
             provisioning = asyncio.create_task(
-                self._provision(name, home, named),
+                self._provision(name, home, named, requested),
                 name=f"loommux-provision-{key}",
             )
             self._provisioning_by_key[key] = provisioning
@@ -146,29 +169,73 @@ class KernelResourceManager:
         # same fact could disagree with the leases the sweep releases.
         return next((resource for resource in self._resources_by_id.values() if client_id in resource.client_leases), None)
 
-    async def _session_kernel(self, client: LeaseClient, request: KernelRequest | None) -> KernelResource:
-        """The main kernel this call's session works in, chosen on its first call.
+    def _main_locked(self, name: str) -> KernelResource | None:
+        """The main kernel with this name or resource id."""
+        by_id = self._resources_by_id.get(name)
+        if by_id is not None and by_id.home is None:
+            return by_id
+        return self._resources_by_key.get(resource_key(name, None))
+
+    def _connected_locked(self, resource: KernelResource) -> bool:
+        """Whether a session still working in ``resource`` is there.
+
+        A ``disconnected`` lease belongs to a session that left; under
+        activity and heartbeat leases departure is unobservable, so every
+        unexpired lease counts as connected.
+        """
+        now = monotonic()
+        for lease in resource.client_leases.values():
+            verdict = self._assess(resource, lease, now)
+            if verdict.standing is not LeaseStanding.DISCONNECTED and not verdict.expired(now):
+                return True
+        return False
+
+    async def _session_kernel(self, client: LeaseClient, request: KernelRequest | None) -> tuple[KernelResource, _Choice | None]:
+        """The main kernel this call runs in, and how it was chosen when it is new to the session.
 
         A session holding no lease is on its first call: either it never
         called, or the sweep released its lease and with it the binding.
+        ``--attach`` is honored on every call.
         """
         async with self._registry_lock:
             if self._stopping:
                 raise ResourceManagerError("resource manager is stopping")
             bound = self._bound_locked(client.client_id)
+            if request is not None and request.mode is RequestMode.ATTACH:
+                target = self._main_locked(request.name)
+                if target is None:
+                    raise KernelNotFoundError(self._missing_main_message_locked(request.name))
+                return target, None if target is bound else _Choice(BindingKind.ATTACHED)
             if bound is not None:
-                return bound
-            if request is not None:
-                claim = self._claim_locked(request.name, None, True)
-            else:
-                name = private_kernel_name(client)
-                # A registered kernel under this name is another session's,
-                # whose id shares the prefix; a provisioning task under it is
-                # this session's own concurrent first call, which it joins.
-                if resource_key(name, None) in self._resources_by_key:
-                    name = self._free_main_name_locked(name)
-                claim = self._claim_locked(name, None, False)
-        return await _settled(claim)
+                return bound, None
+            claim, choice = self._first_choice_locked(client, request)
+        return await _settled(claim), choice
+
+    def _first_choice_locked(self, client: LeaseClient, request: KernelRequest | None) -> tuple[KernelResource | asyncio.Task[KernelResource], _Choice]:
+        if request is None:
+            name = private_kernel_name(client)
+            # A registered kernel under this name is another session's, whose
+            # id shares the prefix; a provisioning task under it is this
+            # session's own concurrent first call, which it joins.
+            if resource_key(name, None) in self._resources_by_key:
+                name = self._free_main_name_locked(name)
+            return self._claim_locked(name, None, False), _Choice(BindingKind.OPENED)
+        key = resource_key(request.name, None)
+        if request.mode is RequestMode.JOIN:
+            known = key in self._resources_by_key or key in self._provisioning_by_key
+            return self._claim_locked(request.name, None, True), _Choice(BindingKind.ATTACHED if known else BindingKind.OPENED)
+        existing = self._resources_by_key.get(key)
+        if existing is not None and not self._connected_locked(existing):
+            return existing, _Choice(BindingKind.TAKEN_BACK)
+        name = self._free_main_name_locked(request.name)
+        if name == request.name:
+            return self._claim_locked(name, None, True), _Choice(BindingKind.OPENED)
+        return self._claim_locked(name, None, True, request.name), _Choice(BindingKind.NUMBERED, request.name)
+
+    def _missing_main_message_locked(self, name: str) -> str:
+        waiting = sorted(resource.name for resource in self._resources_by_id.values() if resource.home is None and not self._connected_locked(resource))
+        listing = ", ".join(waiting) if waiting else "none"
+        return f"no main kernel named {name!r}; main kernels no session is connected to: {listing}"
 
     async def get_by_id(self, resource_id: str) -> KernelResource | None:
         async with self._registry_lock:
@@ -244,11 +311,14 @@ class KernelResourceManager:
         *,
         request: KernelRequest | None = None,
         replaces_kernel: bool = False,
-    ) -> AsyncIterator[KernelResource]:
+    ) -> AsyncIterator[Admission]:
         """Admit one client operation on the main kernel its session works in.
 
         ``request`` names the main kernel to choose on the session's first
-        call; once the session holds a lease it works where that lease is.
+        call, or with ``--attach`` the one to switch to; otherwise the session
+        works where its lease is. Switching releases the session's lease on
+        its previous main kernel at once: the agent let go of it explicitly,
+        so the window kept for sessions that left does not apply.
 
         ``replaces_kernel`` marks an operation that may swap the session's
         kernel process, such as a restart. It then holds the resource's
@@ -259,7 +329,7 @@ class KernelResourceManager:
         the other and never shut down.
         """
         while True:
-            resource = await self._session_kernel(client, request)
+            resource, choice = await self._session_kernel(client, request)
             await self._recover_if_needed(resource)
             async with self._registry_lock:
                 # Recovery may suspend, and a resource retired meanwhile is no
@@ -272,16 +342,24 @@ class KernelResourceManager:
                 if self._resources_by_id.get(resource.resource_id) is not resource:
                     continue
                 bound = self._bound_locked(client.client_id)
-                if bound is not None and bound is not resource:
+                switching = request is not None and request.mode is RequestMode.ATTACH
+                if bound is not None and bound is not resource and not switching:
                     continue
+                released = None
+                if bound is not None and bound is not resource:
+                    del bound.client_leases[client.client_id]
+                    released = bound.name
                 if resource.lifecycle is ResourceLifecycle.ORPHANED:
                     resource.lifecycle = ResourceLifecycle.RUNNING
                     resource.orphaned_at = None
                 lease = resource.client_leases.get(client.client_id)
+                binding = None
                 if lease is None:
                     lease = ClientLease.create(client, policy)
                     resource.client_leases[client.client_id] = lease
                     self.connections.presence(client.client_id)
+                    if choice is not None:
+                        binding = Binding(resource.name, choice.kind, len(resource.session.executions), choice.requested, released)
                 resource.active_operations += 1
                 lease.active_operations += 1
                 self._record_request_locked(lease)
@@ -290,7 +368,7 @@ class KernelResourceManager:
             async with resource.lifecycle_lock if replaces_kernel else nullcontext():
                 if replaces_kernel:
                     await self._assert_registered(resource)
-                yield resource
+                yield Admission(resource, binding)
         finally:
             async with self._registry_lock:
                 resource.active_operations = max(
@@ -574,7 +652,7 @@ class KernelResourceManager:
     async def snapshot_one(self, resource_id: str) -> dict[str, Any]:
         return self._snapshot_resource(await self._require_resource(resource_id))
 
-    async def _provision(self, name: str, home: str | None, named: bool) -> KernelResource:
+    async def _provision(self, name: str, home: str | None, named: bool, requested: str = "") -> KernelResource:
         session = self._session_factory()
         # The id exists before the kernel does, so the kernel can be told who
         # it is when it starts.
@@ -585,7 +663,7 @@ class KernelResourceManager:
                 session.start_workspace,
                 self.workspace,
                 self.workspace_resolution,
-                identity=KernelIdentity(resource_id, name, self._control_url),
+                identity=KernelIdentity(resource_id, name, self._control_url, requested),
             )
             if not startup.get("ok"):
                 raise ResourceProvisionError(

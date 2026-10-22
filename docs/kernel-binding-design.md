@@ -258,6 +258,7 @@ lease alert:
 ```text
 Kernel: 主kernel绑定设计-2 (opened; 主kernel绑定设计 is in use by another session)
 Kernel: 主kernel绑定设计 (taken back; 12 earlier executions)
+Kernel: 主kernel绑定设计 (attached; 12 earlier executions; let go of private-1a2b3c4d)
 Kernel: private-1a2b3c4d (opened)
 ```
 

@@ -11,7 +11,7 @@ from fastmcp.tools import ToolResult
 from mcp.types import ImageContent, TextContent
 
 from loommux.execution.events import PresentationFailure, PresentationImage, PresentationText
-from loommux.mcp.presentation import format_execution_input, format_lease_alert, format_output_token_limit_notice, format_tool_result_text
+from loommux.mcp.presentation import format_binding, format_execution_input, format_lease_alert, format_output_token_limit_notice, format_tool_result_text
 
 ResultMode = Literal["content", "structured"]
 
@@ -42,6 +42,12 @@ def make_tool_result(
     content: str | list[TextContent | ImageContent] | None = _rich_execution_content(tool_name, status, raw_status.get("_presentation"), image_limits)
     if content is None:
         content = format_tool_result_text(tool_name, status)
+    binding = status.get("binding")
+    if isinstance(binding, Mapping):
+        # A block of its own keeps the execution's text exactly as before; it
+        # comes once, when the session's main kernel changes.
+        blocks = [TextContent(type="text", text=content)] if isinstance(content, str) else content
+        content = [*blocks, TextContent(type="text", text=format_binding(binding))]
     lease_alert = status.get("lease_alert")
     if isinstance(lease_alert, Mapping):
         # The alert closes every result of an affected session so that the
