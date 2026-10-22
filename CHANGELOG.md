@@ -7,10 +7,12 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-22
+
 ### Changed
 
-- The cell header grammar moved from `loommux.submission.header` to
-  `loommux.cell_header`; the `loommux.submission` package is gone.
+- **Breaking:** the cell header grammar moved from `loommux.submission.header`
+  to `loommux.cell_header`; the `loommux.submission` package is gone.
 
 ### Removed
 
@@ -308,7 +310,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Declared Pillow as a development dependency so rich presentation tests run
   in a clean CI environment.
 
-[Unreleased]: https://github.com/MichengLiang/loommux/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/MichengLiang/loommux/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/MichengLiang/loommux/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MichengLiang/loommux/compare/v0.1.15...v0.2.0
 [0.1.15]: https://github.com/MichengLiang/loommux/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/MichengLiang/loommux/compare/v0.1.13...v0.1.14
