@@ -168,6 +168,27 @@ def test_a_first_kernel_request_takes_back_a_main_kernel_whose_sessions_left(tmp
     asyncio.run(scenario())
 
 
+def test_two_sessions_taking_back_one_kernel_at_once_get_it_and_a_numbered_one(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        registry = ConnectionRegistry()
+        manager = KernelResourceManager(tmp_path, "launch_cwd", session_factory=FakeSession, connections=registry)
+        waiting = await manager.get_or_create("task")
+        # A kernel that must be recovered makes both calls suspend between
+        # choosing it and recording their lease.
+        waiting.session.kernel = None
+        first, second = LeaseClient("first", "first"), LeaseClient("second", "second")
+        for client in (first, second):
+            registry.stream_opened(client.client_id)
+        connection = LeasePolicy(LeaseMode.CONNECTION, 1, 30, 30, 10, 20, connection_grace_seconds=20)
+
+        admitted = await asyncio.gather(_admit(manager, first, open_("task"), connection), _admit(manager, second, open_("task"), connection))
+
+        assert sorted((a.resource.name, a.binding.kind) for a in admitted) == [("task", BindingKind.TAKEN_BACK), ("task-2", BindingKind.NUMBERED)]
+        await manager.stop()
+
+    asyncio.run(scenario())
+
+
 def test_attaching_switches_at_any_time_and_lets_go_of_the_previous_main_kernel(tmp_path: Path) -> None:
     async def scenario() -> None:
         manager = KernelResourceManager(tmp_path, "launch_cwd", session_factory=FakeSession)
@@ -440,6 +461,10 @@ def test_renaming_numbers_a_taken_name_within_the_kernels_scope(tmp_path: Path) 
         assert (await manager.rename(sibling.resource_id, "tests")).name == "tests-2"
         assert await manager.ensure_held("tests", generated.resource_id) is mine
         assert (await manager.rename(report.resource_id, "report")).name == "report"
+        # Inside a home the main kernel resolves first, so neither may take
+        # the other's name: it would hide that kernel from every lookup.
+        assert (await manager.rename(sibling.resource_id, "report-2")).name == "report-2-2"
+        assert (await manager.rename(generated.resource_id, "tests")).name == "tests-2"
         with pytest.raises(ResourceRoutingError, match="kernel name must not exceed 256 characters"):
             await manager.rename(report.resource_id, "x" * 257)
         with pytest.raises(ResourceNotFoundError):
@@ -570,8 +595,7 @@ def test_dead_kernel_is_recovered_inside_the_same_logical_resource(
         previous_pid = resource.kernel_pid
         resource.session.kernel = None
 
-        async with manager.operation(LeaseClient("client", "client"), policy(), request=join("recover"),
-        ) as admitted:
+        async with manager.operation(LeaseClient("client", "client"), policy(), request=join("recover")) as admitted:
             recovered = admitted.resource
             assert recovered.resource_id == resource_id
             assert recovered.kernel_pid != previous_pid
@@ -723,8 +747,7 @@ def test_observers_report_a_dead_kernel_without_changing_the_lifecycle(
         assert snapshot["lifecycle"] == "running"
         assert health["ok"] is False
         assert resource.lifecycle is ResourceLifecycle.RUNNING
-        async with manager.operation(LeaseClient("client", "client"), policy(), request=join("dead"),
-        ) as admitted:
+        async with manager.operation(LeaseClient("client", "client"), policy(), request=join("dead")) as admitted:
             recovered = admitted.resource
             assert recovered is resource
             assert recovered.kernel_pid is not None
@@ -809,9 +832,7 @@ def test_a_kernel_replacing_operation_holds_off_recovery(tmp_path: Path) -> None
         client = LeaseClient("client", "client")
 
         async def restart_tool() -> None:
-            async with manager.operation(client, policy(), request=join("replace"),
-                replaces_kernel=True,
-            ) as admitted:
+            async with manager.operation(client, policy(), request=join("replace"), replaces_kernel=True) as admitted:
                 resource = admitted.resource
                 await asyncio.to_thread(resource.session.restart)
 
@@ -866,5 +887,4 @@ def test_a_resource_retired_during_recovery_is_replaced_by_its_successor(
 
 async def _enter(manager: KernelResourceManager, key: str) -> KernelResource:
     async with manager.operation(LeaseClient("client", "client"), policy(), request=join(key)) as admitted:
-        resource = admitted.resource
-        return resource
+        return admitted.resource

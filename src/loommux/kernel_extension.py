@@ -108,16 +108,16 @@ def forward(daemon: Daemon, header: CellHeader, body: str, write: Callable[[str]
     here, and an interrupt here is passed down before it is raised.
 
     A name that resolves to this very kernel is one it was given elsewhere,
-    for example by its main kernel through ``loommux[...].rename()``. The body
-    cannot run here (see the module docstring), so the kernel adopts the name
-    and asks for the cell again, which its header reader now reads as its own.
+    for example by its main kernel through ``loommux[...].rename()``. Resolving
+    it taught the ``loommux`` client the name, but the body cannot run here
+    (see the module docstring), so the cell is asked for again, and the header
+    reader then reads it as this kernel's own.
     """
     __tracebackhide__ = True
     assert header.kernel is not None
     try:
         target = daemon[header.kernel]
         if daemon.identity is not None and target.id == daemon.identity.kernel_id:
-            daemon._adopt(target.id, target.name)
             raise UsageError(f"{header.kernel} is this kernel, renamed from elsewhere; it now reads that name as its own, so run the cell again")
         job = target.run(body, wait=0.05)
     except DaemonError as exc:

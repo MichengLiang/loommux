@@ -351,7 +351,7 @@ record, then the most recently accepted record. With neither, the tool returns
 | Tool | Purpose |
 | --- | --- |
 | `run_cell(freeform)` | Submit one loommux IPython cell to the persistent kernel and wait for its initial result. |
-| `status()` | Inspect the workspace, its authored source category, interpreter, kernel PID, busy state, and current or recent execution. |
+| `status()` | Inspect the main kernel's name, the workspace, its authored source category, interpreter, kernel PID, busy state, and current or recent execution. |
 | `execution_status(execution=None)` | Inspect lifecycle and diagnostic metadata without returning the full output body. |
 | `read_output(...)` | Read a selected execution stream, optionally by line range and with per-line clipping. |
 | `search_output(...)` | Search a selected output stream using literal text or regular expressions. |

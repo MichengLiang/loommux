@@ -38,9 +38,9 @@ exists. A session holding no lease is on its first call, and its main kernel
 is chosen then:
 
 - without a request, a main kernel named `private-<first 8 characters of the
-  MCP session ID>` is opened, so separate MCP sessions receive separate
-  namespaces, execution sequences, output histories, and kernel processes by
-  default;
+  MCP session ID>` is opened, numbered if another session's kernel already has
+  that name, so separate MCP sessions receive separate namespaces, execution
+  sequences, output histories, and kernel processes by default;
 - a URL-encoded `X-Loommux-Resource` header names a main kernel that every
   session configured with that name works in, opened by whichever arrives
   first. Each MCP session still receives an independent client lease; one
@@ -106,10 +106,11 @@ without yielding the event loop, freezing the whole server.
 `busy` is not a lifecycle state. It is derived from active control operations
 or a running IPython execution.
 
-Provisioning is deduplicated per resource address. Concurrent callers for one
-address await the same startup task; unrelated addresses may start kernels in
-parallel. Slow kernel readiness therefore does not hold the registry lock or
-serialize every resource.
+Provisioning is deduplicated per kernel key, a name within its scope (among
+main kernels, or inside one home). Concurrent callers for one key await the
+same startup task; unrelated kernels may start in parallel. Slow kernel
+readiness therefore does not hold the registry lock or serialize every
+resource.
 
 `restart` preserves the logical resource, lease set, execution records, and
 next execution number while replacing the kernel process and namespace.
@@ -425,7 +426,7 @@ than heartbeat interval.
 
 ```text
 src/loommux/resource/
-    model.py       resource, lease, address, and lifecycle values
+    model.py       resource, home, lease, request, binding, and lifecycle values
     policy.py      immutable policy generations
     connections.py per-session stream presence reported by the transport
     liveness.py    lease standing derived from renewal and presence facts

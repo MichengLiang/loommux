@@ -93,7 +93,6 @@ def test_shared_resource_tracks_client_leases_independently(
         policy = make_policy()
         async with manager.operation(make_client("first"), policy, request=request) as admitted:
             resource = admitted.resource
-            pass
         # Drive the first lease past its window directly. Sleeping for a
         # 30-ms lease makes this state-machine test scheduler-sensitive on
         # hosted Windows runners.
@@ -137,7 +136,6 @@ def test_protocol_renewal_keeps_the_lease_of_a_resource_whose_kernel_exited(
         client = make_client("connected")
         async with manager.operation(client, make_policy(), request=request) as admitted:
             resource = admitted.resource
-            pass
         resource.session.kernel = None
         previous_renewal = resource.client_leases[client.client_id].renewed_at
 
@@ -166,7 +164,6 @@ def test_health_observation_does_not_renew_the_client_lease(
         client = make_client("observed")
         async with manager.operation(client, make_policy(), request=request) as admitted:
             resource = admitted.resource
-            pass
         renewal = resource.client_leases[client.client_id].renewed_at
 
         health = await manager.health(resource.resource_id)
@@ -190,7 +187,6 @@ def test_idle_resource_is_reclaimed_after_last_lease_expires(
         )
         async with manager.operation(make_client("only"), make_policy(), request=make_request()) as admitted:
             resource = admitted.resource
-            pass
 
         await asyncio.sleep(0.04)
         assert await manager.sweep_once() == 1
@@ -246,7 +242,6 @@ def test_open_stream_holds_a_connection_lease_past_its_window_until_the_stream_d
         policy = make_policy(mode=LeaseMode.CONNECTION, grace=0.03)
         async with manager.operation(client, policy, request=make_request()) as admitted:
             resource = admitted.resource
-            pass
         lease = resource.client_leases[client.client_id]
         lease.renewed_at -= 3600
         lease.requested_at -= 3600
@@ -306,7 +301,6 @@ def test_connection_lease_without_a_stream_alerts_and_keeps_the_activity_window(
         policy = make_policy(mode=LeaseMode.CONNECTION, timeout=60, grace=0.03)
         async with manager.operation(client, policy, request=make_request()) as admitted:
             resource = admitted.resource
-            pass
 
         awaiting = await manager.client_verdict(client.client_id)
         registry.presence(client.client_id).first_seen_at -= 3600
@@ -335,7 +329,6 @@ def test_ping_after_the_stream_drops_proves_the_client_lost_only_its_stream(
         policy = make_policy(mode=LeaseMode.CONNECTION, timeout=60, grace=0.03)
         async with manager.operation(client, policy, request=make_request()) as admitted:
             resource = admitted.resource
-            pass
         resource.client_leases[client.client_id].requested_at -= 3600
         registry.stream_closed(client.client_id, now=monotonic() - 1)
 
@@ -377,7 +370,6 @@ def test_sweep_logs_each_entry_into_an_alert_once(tmp_path: Path, caplog) -> Non
         policy = make_policy(mode=LeaseMode.CONNECTION, timeout=60, grace=0.03)
         async with manager.operation(client, policy, request=make_request()) as admitted:
             resource = admitted.resource
-            pass
         registry.presence(client.client_id).first_seen_at -= 3600
 
         with caplog.at_level("WARNING", logger="loommux.resource.manager"):

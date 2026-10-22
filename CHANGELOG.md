@@ -27,8 +27,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   and return the name it received, numbered when another main kernel, or a
   child kernel of the same home, has it. `loommux.self.rename()` is one line
   in any cell, and the kernel reads headers with its new name as its own from
-  the next cell; a kernel renamed from elsewhere adopts the name the first
-  time a header uses it.
+  the next cell; a kernel renamed from elsewhere learns the name from the
+  next answer describing it, or from a header that uses it. A name another
+  kernel of the same home answers to is numbered, so none hides another.
 
 ### Changed
 

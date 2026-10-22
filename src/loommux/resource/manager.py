@@ -151,19 +151,33 @@ class KernelResourceManager:
             self._provisioning_by_key[key] = provisioning
         return provisioning
 
-    def _free_name_locked(self, name: str, home: str | None) -> str:
+    def _free_name_locked(self, name: str, home: str | None, reserved: frozenset[str] = frozenset()) -> str:
         """``name``, or ``name-2``, ``name-3``... whichever no kernel of this scope has.
 
         Kernels still starting count, so two sessions asking for one name at
         the same moment receive two names rather than one shared kernel.
         The first kernel keeps the bare name, and the number counts how many
-        asked for it.
+        asked for it. ``reserved`` adds names taken outside the scope's keys.
         """
         candidate, number = name, 1
-        while (key := resource_key(candidate, home)) in self._resources_by_key or key in self._provisioning_by_key:
+        while (key := resource_key(candidate, home)) in self._resources_by_key or key in self._provisioning_by_key or candidate in reserved:
             number += 1
             candidate = f"{name}-{number}"
         return candidate
+
+    def _home_names_locked(self, resource: KernelResource) -> frozenset[str]:
+        """Names in ``resource``'s home that another kernel there already answers to.
+
+        Inside a home the main kernel resolves before any child kernel, so a
+        child kernel named like its main kernel, or a main kernel named like
+        one of its child kernels, would hide the other from every name lookup.
+        """
+        home_id = resource.home or resource.resource_id
+        return frozenset(
+            other.name
+            for other in self._resources_by_id.values()
+            if other is not resource and home_id in (other.resource_id, other.home)
+        )
 
     def _bound_locked(self, client_id: str) -> KernelResource | None:
         # The lease is the binding. Child kernels hold no client leases, so at
@@ -347,6 +361,10 @@ class KernelResourceManager:
                 switching = request is not None and request.mode is RequestMode.ATTACH
                 if bound is not None and bound is not resource and not switching:
                     continue
+                if choice is not None and choice.kind is BindingKind.TAKEN_BACK and self._connected_locked(resource):
+                    # Another session took it back while this call recovered or
+                    # waited for the lock; choosing again numbers the name.
+                    continue
                 released = None
                 if bound is not None and bound is not resource:
                     del bound.client_leases[client.client_id]
@@ -446,7 +464,7 @@ class KernelResourceManager:
             if name != resource.name:
                 if self._resources_by_key.get(resource.key) is resource:
                     del self._resources_by_key[resource.key]
-                resource.name = self._free_name_locked(name, resource.home)
+                resource.name = self._free_name_locked(name, resource.home, self._home_names_locked(resource))
                 self._resources_by_key[resource.key] = resource
             resource.named = True
             return resource

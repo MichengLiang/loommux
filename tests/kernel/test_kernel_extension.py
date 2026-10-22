@@ -7,7 +7,7 @@ from IPython.core.error import UsageError
 
 from loommux import kernel_extension
 from loommux.cell_header import CellHeader
-from loommux.daemon import Daemon, DaemonError
+from loommux.daemon import DaemonError
 from loommux.identity import KernelIdentity
 from loommux.kernel_extension import ForwardedCellError, ForwardedInterrupt, forward, remove_own_header
 
@@ -112,24 +112,28 @@ def test_a_kernel_reads_its_new_name_as_its_own_from_the_next_cell(monkeypatch: 
     kernel_extension.load_ipython_extension(shell)
     [transformer] = shell.input_transformers_cleanup
 
-    shell.namespace["loommux"]._adopt("abc123", "report")
+    client = shell.namespace["loommux"]
+    # A listing that shows this kernel under the name it has keeps the
+    # requested one; an answer showing a new name replaces both.
+    client._learn({"resource_id": "abc123", "name": "lab-2"})
+    assert transformer(["%%loommux --kernel lab\n", "x\n"]) == ["\n", "x\n"]
+    client._learn({"resource_id": "abc123", "name": "report"})
 
     assert transformer(["%%loommux --kernel report\n", "x\n"]) == ["\n", "x\n"]
     # The name asked for at start and the old name are no longer this kernel's.
     assert transformer(["%%loommux --kernel lab\n", "x\n"]) == ["%%loommux --kernel lab\n", "x\n"]
     assert transformer(["%%loommux --kernel lab-2\n", "x\n"]) == ["%%loommux --kernel lab-2\n", "x\n"]
-    shell.namespace["loommux"]._adopt("someone-else", "other")
-    assert shell.namespace["loommux"].self.name == "report"
+    client._learn({"resource_id": "someone-else", "name": "other"})
+    assert client.self.name == "report"
     kernel_extension.unload_ipython_extension(shell)
 
 
-def test_a_forward_that_resolves_to_this_kernel_adopts_the_name_given_elsewhere() -> None:
+def test_a_forward_that_resolves_to_this_kernel_asks_for_the_cell_again() -> None:
     daemon = _Daemon(_Job([]), identity=KernelIdentity("me-id", "old", None), target_id="me-id")
 
     with pytest.raises(UsageError, match="renamed is this kernel, renamed from elsewhere"):
         forward(daemon, CellHeader(kernel="renamed"), "body", print)
 
-    assert daemon.identity == KernelIdentity("me-id", "renamed", None)
     assert daemon.bodies == []
 
 
@@ -176,9 +180,6 @@ class _Daemon:
     def __init__(self, job: _Job | None = None, refusal: DaemonError | None = None, identity: KernelIdentity | None = None, target_id: str = "target-id") -> None:
         self.job, self.refusal, self.bodies = job, refusal, []
         self.identity, self.target_id = identity, target_id
-
-    def _adopt(self, kernel_id: str, name: str) -> None:
-        Daemon._adopt(self, kernel_id, name)  # type: ignore[arg-type]
 
     def __getitem__(self, name: str) -> Any:
         daemon = self

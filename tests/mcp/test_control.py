@@ -13,7 +13,7 @@ def test_a_kernel_retired_right_after_it_resolves_is_not_found(tmp_path: Path, m
     monkeypatch.chdir(tmp_path)
 
     async def retired(self: KernelResourceManager, *args: object) -> KernelResource:
-        return KernelResource.create("gone", session=None)  # type: ignore[arg-type]
+        return KernelResource.create("gone", session=None)
 
     monkeypatch.setattr(KernelResourceManager, "ensure_held", retired)
     monkeypatch.setattr(KernelResourceManager, "rename", retired)

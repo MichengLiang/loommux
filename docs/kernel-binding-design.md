@@ -140,7 +140,9 @@ already know from file managers.
 
 Numbering considers main kernels that are still starting, so two sessions
 opening the same name at the same moment receive `NAME` and `NAME-2`, not one
-shared kernel.
+shared kernel. Taking back is decided again when the lease is recorded: of two
+sessions taking back one waiting kernel at the same moment, the second finds
+the first connected and is numbered.
 
 The kernel that receives the first cell still sees `--kernel NAME` in it while
 its own name is `NAME-2`. It is therefore told the requested name at start, and
@@ -201,8 +203,17 @@ name it received; a taken name is numbered as on the first call. It is one line
 in a cell that does other work, so changing a name never costs a call. A kernel
 knows its own current names at once, so the next header naming it is read as
 its own. A rename made from elsewhere, such as from its main kernel, reaches the
-kernel the first time a header uses the new name: the header is reported as
-naming this kernel and the kernel adopts the name.
+kernel the next time the daemon describes it to the kernel: a listing, a
+lookup, its status. A header using the new name before that is resolved by the
+daemon to this very kernel, which cannot run the body inside itself; the
+header is reported as naming this kernel, and the cell run again is the
+kernel's own.
+
+Inside a home the main kernel and the asking kernel resolve before child
+kernels, so a rename never gives a kernel a name another kernel of its home
+answers to: a child kernel named like its main kernel, or a main kernel named
+like one of its child kernels, would hide the other. Such a name is numbered
+too.
 
 A renamed `private-…` main kernel counts as named for the activity window
 below.

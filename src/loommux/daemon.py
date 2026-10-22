@@ -68,7 +68,7 @@ class Daemon:
         """The kernels of this kernel's home, or outside a kernel every kernel; oldest first."""
         params = None if self.identity is None else {"home": self.identity.kernel_id}
         resources = self._request("GET", "/api/resources", params=params)["resources"]
-        return Kernels(Kernel(self, resource["resource_id"], resource["name"], resource) for resource in resources)
+        return Kernels(self._handle(resource) for resource in resources)
 
     def __getitem__(self, name: str) -> Kernel:
         """The kernel with this name or id.
@@ -81,7 +81,7 @@ class Daemon:
         """
         holder = None if self.identity is None else self.identity.kernel_id
         resource = self._request("POST", "/api/resources/ensure", json={"name": name, "holder": holder})["resource"]
-        return Kernel(self, resource["resource_id"], resource["name"], resource)
+        return self._handle(resource)
 
     @property
     def self(self) -> Kernel:
@@ -90,15 +90,21 @@ class Daemon:
             raise DaemonError("this process is not a Loommux kernel")
         return Kernel(self, self.identity.kernel_id, self.identity.name)
 
-    def _adopt(self, kernel_id: str, name: str) -> None:
-        """Record that the kernel with ``kernel_id`` is now called ``name``.
+    def _handle(self, resource: dict[str, Any]) -> Kernel:
+        self._learn(resource)
+        return Kernel(self, resource["resource_id"], resource["name"], resource)
 
-        Only this process's own identity is kept: it decides which cell
-        headers name this kernel. The name a session asked for when the kernel
-        was numbered stops counting once the kernel has a name of its own.
+    def _learn(self, resource: dict[str, Any]) -> None:
+        """Take this kernel's current name from any daemon answer describing it.
+
+        The identity decides which cell headers name this kernel, and the
+        kernel may have been renamed elsewhere, by its main kernel or through
+        the control plane. Once its name differs from the one it started with,
+        the name a session asked for when it was numbered stops counting.
         """
-        if self.identity is not None and self.identity.kernel_id == kernel_id:
-            self.identity = replace(self.identity, name=name, requested_name="")
+        identity = self.identity
+        if identity is not None and resource["resource_id"] == identity.kernel_id and resource["name"] != identity.name:
+            self.identity = replace(identity, name=resource["name"], requested_name="")
 
     def close(self) -> None:
         """Close the HTTP connections; a later request opens new ones."""
@@ -149,7 +155,9 @@ class Kernel:
 
     def status(self) -> dict[str, Any]:
         """The daemon's current description of this kernel."""
-        return self.daemon._request("GET", f"/api/resources/{self.id}")["resource"]
+        resource = self.daemon._request("GET", f"/api/resources/{self.id}")["resource"]
+        self.daemon._learn(resource)
+        return resource
 
     def run(self, code: str, *, wait: float = 10.0) -> Job:
         """Submit ``code`` as one cell and wait up to ``wait`` seconds.
@@ -183,8 +191,8 @@ class Kernel:
         next cell header at once.
         """
         resource = self.daemon._request("POST", f"/api/resources/{self.id}/rename", json={"name": name})["resource"]
+        self.daemon._learn(resource)
         self.name = resource["name"]
-        self.daemon._adopt(self.id, self.name)
         return self.name
 
     def __repr__(self) -> str:

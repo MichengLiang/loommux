@@ -51,6 +51,8 @@ names the only rule it needs.
 | Ordinary work | `df.describe()` | none |
 | Wait longer, read everything | `%%loommux --wait 120 --full-output` then the code | the header is the first line |
 | Run elsewhere | `%%loommux --kernel build --wait 60` then `%%bash` and the command | `--kernel` names the kernel |
+| Name the session's main kernel, or take it back | first cell `%%loommux --kernel 任务名` | on a session's first call `--kernel` chooses its main kernel |
+| Move the session to another main kernel | `%%loommux --attach 任务名` | only the daemon reads `--attach` |
 | Manage kernels | `loommux.kernels()`, `loommux["build"].restart()` | `loommux` is a Python object |
 | Background work in another kernel | `job = loommux["build"].run(code)` | `run` returns a job handle |
 

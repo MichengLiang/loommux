@@ -310,7 +310,10 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
         状态范围
         --------
 
-        返回当前 IPython 工作台启动时解析的 workspace、其
+        第一行是这个会话主 kernel 的名字：上下文被压缩、记不清名字时，
+        在这里找回，之后用 ``--kernel`` 或 ``--attach`` 写它。
+
+        还返回当前 IPython 工作台启动时解析的 workspace、其
         ``workspace_resolution`` 来源
         类别、Python 解释器、kernel PID、kernel 是否已启动，以及 kernel 是否
         正忙。``workspace_resolution`` 只能是 ``launch_cwd`` 或
