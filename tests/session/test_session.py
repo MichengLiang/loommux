@@ -434,7 +434,7 @@ def test_help_that_ipython_sends_to_a_pager_is_part_of_the_output(session: IPyth
     header = session.run_cell("%%loommux?")
 
     assert builtin["output_text"].startswith("before\nSignature: len(obj, /)\n")
-    assert "%%loommux [--kernel NAME | --attach NAME] [--wait SECONDS] [--full-output]" in header["output_text"]
+    assert "%%loommux [--kernel NAME | --attach NAME [--create]] [--wait SECONDS] [--full-output]" in header["output_text"]
 
 
 def test_stream_read_search_and_invalid_inputs(session: IPythonSession) -> None:

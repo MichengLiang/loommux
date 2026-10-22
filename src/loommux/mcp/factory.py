@@ -42,20 +42,19 @@ _FULL_BODY_TOOL_META = {"anthropic/maxResultSizeChars": 200_000}
 
 
 def cell_request(freeform: str) -> KernelRequest | None:
-    """The main kernel a cell's header names, for the call that submits it.
+    """The main kernel a cell's header moves its session to, for the call that submits it.
 
-    An invalid header names nothing here; the session reports it without
-    allocating an execution.
+    ``--kernel`` is not a request: it forwards one cell from whichever main
+    kernel the session works in. An invalid header names nothing here; the
+    session reports it without allocating an execution.
     """
     try:
         header = read_cell_header(freeform)
     except CellHeaderError:
         return None
-    if header.attach is not None:
-        return KernelRequest(header.attach, RequestMode.ATTACH)
-    if header.kernel is not None:
-        return KernelRequest(header.kernel, RequestMode.OPEN)
-    return None
+    if header.attach is None:
+        return None
+    return KernelRequest(header.attach, RequestMode.ATTACH, create=header.create)
 
 
 class _LoommuxMCP(FastMCP):
@@ -104,10 +103,8 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
     ) -> ToolResult:
         """Run ``operation`` in the main kernel of the calling session.
 
-        ``cell`` is what a submitted cell's header asks for. ``--attach``
-        always applies; ``--kernel`` chooses the main kernel only on a
-        session's first call and only without a connection header, which
-        settles the session's kernel before it says anything.
+        ``cell`` is the ``--attach`` of a submitted cell's header, which
+        applies on every call and over a connection header.
         """
         selected_manager = manager
         if selected_manager is None:
@@ -119,9 +116,7 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
             return make_tool_result(tool_name, status, result_mode)
         try:
             client = resolve_client(ctx)
-            request = connection_request()
-            if cell is not None and (cell.mode is RequestMode.ATTACH or request is None):
-                request = cell
+            request = cell or connection_request()
             request_context = ctx.request_context
             if request_context is not None and request_context.request is None:
                 # No HTTP request means stdio or an in-process client: the

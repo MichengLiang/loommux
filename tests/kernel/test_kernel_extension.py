@@ -90,39 +90,22 @@ def test_loading_twice_installs_once_and_unloading_removes_everything(monkeypatc
     assert shell.namespace == {}
 
 
-def test_a_numbered_kernel_reads_the_name_its_session_asked_for_as_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("LOOMMUX_KERNEL_ID", "abc123")
-    monkeypatch.setenv("LOOMMUX_KERNEL_NAME", "lab-2")
-    monkeypatch.setenv("LOOMMUX_KERNEL_REQUESTED_NAME", "lab")
-    shell: Any = _Shell()
-
-    kernel_extension.load_ipython_extension(shell)
-    [transformer] = shell.input_transformers_cleanup
-
-    assert transformer(["%%loommux --kernel lab\n", "x\n"]) == ["\n", "x\n"]
-    assert transformer(["%%loommux --kernel lab-2\n", "x\n"]) == ["\n", "x\n"]
-    kernel_extension.unload_ipython_extension(shell)
-
-
 def test_a_kernel_reads_its_new_name_as_its_own_from_the_next_cell(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LOOMMUX_KERNEL_ID", "abc123")
-    monkeypatch.setenv("LOOMMUX_KERNEL_NAME", "lab-2")
-    monkeypatch.setenv("LOOMMUX_KERNEL_REQUESTED_NAME", "lab")
+    monkeypatch.setenv("LOOMMUX_KERNEL_NAME", "lab")
     shell: Any = _Shell()
     kernel_extension.load_ipython_extension(shell)
     [transformer] = shell.input_transformers_cleanup
 
     client = shell.namespace["loommux"]
-    # A listing that shows this kernel under the name it has keeps the
-    # requested one; an answer showing a new name replaces both.
-    client._learn({"resource_id": "abc123", "name": "lab-2"})
+    client._learn({"resource_id": "abc123", "name": "lab"})
     assert transformer(["%%loommux --kernel lab\n", "x\n"]) == ["\n", "x\n"]
+    assert transformer(["%%loommux --attach lab --create\n", "x\n"]) == ["\n", "x\n"]
     client._learn({"resource_id": "abc123", "name": "report"})
 
     assert transformer(["%%loommux --kernel report\n", "x\n"]) == ["\n", "x\n"]
-    # The name asked for at start and the old name are no longer this kernel's.
+    # The old name is no longer this kernel's.
     assert transformer(["%%loommux --kernel lab\n", "x\n"]) == ["%%loommux --kernel lab\n", "x\n"]
-    assert transformer(["%%loommux --kernel lab-2\n", "x\n"]) == ["%%loommux --kernel lab-2\n", "x\n"]
     client._learn({"resource_id": "someone-else", "name": "other"})
     assert client.self.name == "report"
     kernel_extension.unload_ipython_extension(shell)

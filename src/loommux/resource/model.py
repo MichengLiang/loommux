@@ -42,12 +42,10 @@ class RequestMode(StrEnum):
     """How a call asks for the main kernel its session works in."""
 
     # A connection header: every session configured with the name shares one
-    # main kernel, opened by whichever arrives first.
+    # main kernel, opened by whichever arrives first. Consulted only while the
+    # session has no main kernel.
     JOIN = "join"
-    # ``--kernel NAME`` on a session's first call: open NAME, take it back
-    # from sessions that left, or number it when one is still connected.
-    OPEN = "open"
-    # ``--attach NAME``: work in the existing main kernel NAME from now on.
+    # ``--attach NAME``: work in the main kernel NAME from now on, on any call.
     ATTACH = "attach"
 
 
@@ -55,20 +53,18 @@ class RequestMode(StrEnum):
 class KernelRequest:
     """The main kernel a call names.
 
-    JOIN and OPEN are consulted only while the session has no main kernel;
-    ATTACH on every call that carries it.
+    ``create`` opens ``name`` when no main kernel has it; a JOIN always may.
     """
 
     name: str
     mode: RequestMode
+    create: bool = False
 
 
 class BindingKind(StrEnum):
     """How a call chose the main kernel its session works in."""
 
     OPENED = "opened"
-    NUMBERED = "numbered"
-    TAKEN_BACK = "taken back"
     ATTACHED = "attached"
 
 
@@ -76,7 +72,6 @@ class BindingKind(StrEnum):
 class Binding:
     """A change of the main kernel a session works in, reported to that session.
 
-    ``requested`` is the name asked for when it differs from ``name``;
     ``executions`` counts the kernel's executions before this call;
     ``released`` names the main kernel the session let go of.
     """
@@ -84,11 +79,10 @@ class Binding:
     name: str
     kind: BindingKind
     executions: int
-    requested: str | None = None
     released: str | None = None
 
     def as_dict(self) -> dict[str, str | int | None]:
-        return {"name": self.name, "kind": self.kind.value, "executions": self.executions, "requested": self.requested, "released": self.released}
+        return {"name": self.name, "kind": self.kind.value, "executions": self.executions, "released": self.released}
 
 
 def resource_key(name: str, home: str | None) -> str:

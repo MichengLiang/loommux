@@ -23,29 +23,32 @@ def test_a_session_names_its_main_kernel_and_switches_to_another_by_attaching(tm
     async def scenario(origin: str) -> None:
         async with LeaseAwareClient(f"{origin}/mcp", "first") as first, LeaseAwareClient(f"{origin}/mcp", "second") as second:
             # B2, B11: the first cell names the main kernel and runs in it.
-            assert await texts(first, "%%loommux --kernel task\nvalue = 41\nvalue + 1") == ["In [1]:\nOut[1]: 42\n", "Kernel: task (opened)"]
-            # The same header later is the kernel's own, not a forward.
-            assert await texts(first, "%%loommux --kernel task\nprint(loommux.self.name)") == ["In [2]:\ntask\n"]
+            assert await texts(first, "%%loommux --attach task --create\nvalue = 41\nvalue + 1") == ["In [1]:\nOut[1]: 42\n", "Kernel: task (opened)"]
+            # Repeating the header changes nothing.
+            assert await texts(first, "%%loommux --attach task --create\nprint(loommux.self.name)") == ["In [2]:\ntask\n"]
             status = await first.call_tool("status", {})
             assert status.content[0].text.startswith("name: task\nkernel: idle\n")
 
-            # B4: task is connected, so the second session gets task-2, and
-            # its first cell runs there instead of being forwarded to a child.
-            numbered = await texts(second, "%%loommux --kernel task\nprint(loommux.self.name, globals().get('value'))")
-            assert numbered == ["In [1]:\ntask-2 None\n", "Kernel: task-2 (opened; task is in use by another session)"]
+            # B5: --kernel never chooses the main kernel, on a first call
+            # either: it forwards from the session's new private kernel.
+            forwarded_first = await texts(second, "%%loommux --kernel build\nprint(loommux.self.name)")
+            assert forwarded_first[0] == "In [1]:\nbuild\n"
+            private = forwarded_first[1].removeprefix("Kernel: ").removesuffix(" (opened)")
+            assert private.startswith("private-")
 
-            # B6: a missing name opens nothing and allocates no execution.
+            # B4: a missing name opens nothing and allocates no execution.
             missing = await texts(second, "%%loommux --attach gone\n1")
-            assert missing == ["kernel_not_found: no main kernel named 'gone'; main kernels no session is connected to: none"]
+            assert missing == [f"kernel_not_found: no main kernel named 'gone'; main kernels: {private}, task. Add --create to open it"]
 
-            # B5: attaching joins task and lets go of task-2.
+            # B3: attaching joins task while first is connected to it, and
+            # lets go of the private kernel.
             attached = await texts(second, "%%loommux --attach task\nprint(value)")
-            assert attached == ["In [3]:\n41\n", "Kernel: task (attached; 2 earlier executions; let go of task-2)"]
+            assert attached == ["In [3]:\n41\n", f"Kernel: task (attached; 2 earlier executions; let go of {private})"]
             assert await texts(second, "print(loommux.self.name)") == ["In [4]:\ntask\n"]
             [resource] = await wait_for_resource_count(origin, 1)
             assert (resource["name"], resource["lease_count"]) == ("task", 2)
 
-            # B7: --attach reaches a kernel only through a forward here. IPython
+            # B6: --attach reaches a kernel only through a forward here. IPython
             # reports a UsageError without failing the execution, as it does
             # for a misplaced header, so the relayed message is the result.
             forwarded = await texts(second, "%%loommux --kernel build\n%%loommux --attach task\nprint('never')")
@@ -64,7 +67,7 @@ def test_a_session_names_its_main_kernel_and_switches_to_another_by_attaching(tm
 def test_a_main_kernel_whose_session_left_waits_and_is_taken_back_by_name(tmp_path: Path) -> None:
     async def scenario(origin: str) -> None:
         async with LeaseAwareClient(f"{origin}/mcp", "first") as first:
-            assert await texts(first, "%%loommux --kernel task\nkept = 'still here'") == ["In [1]:", "Kernel: task (opened)"]
+            assert await texts(first, "%%loommux --attach task --create\nkept = 'still here'") == ["In [1]:", "Kernel: task (opened)"]
         # Past the reconnect grace the session has left: B9, its main kernel
         # waits for the named window and nothing alerts.
         await asyncio.sleep(0.8)
@@ -73,9 +76,9 @@ def test_a_main_kernel_whose_session_left_waits_and_is_taken_back_by_name(tmp_pa
         assert (resource["name"], lease["standing"], lease["alert"]) == ("task", "disconnected", False)
         assert 0 < lease["remaining_seconds"] <= 60
 
-        # B3: a new session names it on its first call and takes it back.
+        # A new host writes the same first cell and finds the kernel by name.
         async with LeaseAwareClient(f"{origin}/mcp", "second") as second:
-            assert await texts(second, "%%loommux --kernel task\nprint(kept)") == ["In [2]:\nstill here\n", "Kernel: task (taken back; 1 earlier execution)"]
+            assert await texts(second, "%%loommux --attach task --create\nprint(kept)") == ["In [2]:\nstill here\n", "Kernel: task (attached; 1 earlier execution)"]
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -87,7 +90,7 @@ def test_a_main_kernel_whose_session_left_waits_and_is_taken_back_by_name(tmp_pa
 def test_a_kernel_renames_itself_in_one_line_and_learns_a_name_given_elsewhere(tmp_path: Path) -> None:
     async def scenario(origin: str) -> None:
         async with LeaseAwareClient(f"{origin}/mcp", "agent") as agent, LeaseAwareClient(f"{origin}/mcp", "other") as other:
-            await texts(other, "%%loommux --kernel taken\n1")
+            await texts(other, "%%loommux --attach taken --create\n1")
             # B10: one line inside a cell that does other work.
             renamed = await texts(agent, "work = 6 * 7\nprint(loommux.self.rename('report'), loommux.self.name)")
             assert renamed[0] == "In [1]:\nreport report\n"

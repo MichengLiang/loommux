@@ -24,6 +24,7 @@ from loommux.session import IPythonSession
         ("%%loommux --wait 5 --kernel=build --full-output\nmake()", CellHeader(5.0, True, "build")),
         ("%%loommux --kernel 'my lab'\nmake()", CellHeader(kernel="my lab")),
         ("%%loommux --attach 主kernel绑定设计 --wait 30\nmake()", CellHeader(30.0, attach="主kernel绑定设计")),
+        ("%%loommux --attach 主kernel绑定设计 --create\nmake()", CellHeader(attach="主kernel绑定设计", create=True)),
     ],
 )
 def test_header_on_the_first_line_resolves_the_observation_policy(source: str, header: CellHeader) -> None:
@@ -91,6 +92,9 @@ def test_header_arguments_recognize_the_magic_name_as_a_whole_word(line: str, ar
         # Both name where the cell runs; one header cannot say both.
         ("%%loommux --kernel build --attach lab\npass", "argument --attach: not allowed with argument --kernel"),
         ("%%loommux --attach\npass", "argument --attach: expected one argument"),
+        # H9: creating is a switch on attach, never a way to name a kernel.
+        ("%%loommux --create\npass", "--create applies only to --attach NAME"),
+        ("%%loommux --kernel build --create\npass", "--create applies only to --attach NAME"),
         ("%%loommux --wait '3\npass", "No closing quotation"),
     ],
 )

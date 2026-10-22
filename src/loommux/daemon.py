@@ -99,12 +99,11 @@ class Daemon:
 
         The identity decides which cell headers name this kernel, and the
         kernel may have been renamed elsewhere, by its main kernel or through
-        the control plane. Once its name differs from the one it started with,
-        the name a session asked for when it was numbered stops counting.
+        the control plane.
         """
         identity = self.identity
         if identity is not None and resource["resource_id"] == identity.kernel_id and resource["name"] != identity.name:
-            self.identity = replace(identity, name=resource["name"], requested_name="")
+            self.identity = replace(identity, name=resource["name"])
 
     def close(self) -> None:
         """Close the HTTP connections; a later request opens new ones."""

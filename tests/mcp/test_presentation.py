@@ -103,8 +103,7 @@ def test_read_search_and_status_surfaces_are_output_oriented() -> None:
     ("binding", "text"),
     [
         ({"name": "private-1a2b3c4d", "kind": "opened", "executions": 0}, "Kernel: private-1a2b3c4d (opened)"),
-        ({"name": "task-2", "kind": "numbered", "executions": 0, "requested": "task"}, "Kernel: task-2 (opened; task is in use by another session)"),
-        ({"name": "task", "kind": "taken back", "executions": 12}, "Kernel: task (taken back; 12 earlier executions)"),
+        ({"name": "task", "kind": "attached", "executions": 12}, "Kernel: task (attached; 12 earlier executions)"),
         ({"name": "task", "kind": "attached", "executions": 1, "released": "private-1a2b3c4d"}, "Kernel: task (attached; 1 earlier execution; let go of private-1a2b3c4d)"),
     ],
 )

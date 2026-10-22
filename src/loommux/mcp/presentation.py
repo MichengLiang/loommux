@@ -81,12 +81,8 @@ _LEASE_ALERT_CAUSES = {
 def format_binding(binding: Mapping[str, Any]) -> str:
     """Tell the session which main kernel it now works in, and how it got it."""
     kind = str(binding.get("kind"))
-    notes = []
-    if kind == "numbered":
-        notes.append(f"opened; {binding.get('requested')} is in use by another session")
-    else:
-        notes.append(kind)
-    if kind in {"taken back", "attached"}:
+    notes = [kind]
+    if kind == "attached":
         count = _number(binding.get("executions"))
         notes.append(f"{count} earlier execution{'' if count == 1 else 's'}")
     if binding.get("released"):

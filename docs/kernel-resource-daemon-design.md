@@ -34,8 +34,9 @@ states what routing relies on.
 
 A session works in the main kernel that holds its client lease. Child kernels
 hold no client leases, so the lease is the binding and no separate table
-exists. A session holding no lease is on its first call, and its main kernel
-is chosen then:
+exists. A cell header `--attach NAME [--create]` moves a session to a main
+kernel on any call. A session holding no lease has no main kernel, and one is
+chosen on its next call:
 
 - without a request, a main kernel named `private-<first 8 characters of the
   MCP session ID>` is opened, numbered if another session's kernel already has

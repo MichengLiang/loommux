@@ -1,7 +1,6 @@
 import asyncio
 import threading
 from pathlib import Path
-from time import monotonic
 from typing import Any
 
 import pytest
@@ -9,7 +8,6 @@ import pytest
 from loommux.resource import (
     BindingKind,
     ClientLease,
-    ConnectionRegistry,
     KernelNotFoundError,
     KernelRequest,
     KernelResourceManager,
@@ -91,8 +89,8 @@ def join(name: str) -> KernelRequest:
     return KernelRequest(name, RequestMode.JOIN)
 
 
-def open_(name: str) -> KernelRequest:
-    return KernelRequest(name, RequestMode.OPEN)
+def create(name: str) -> KernelRequest:
+    return KernelRequest(name, RequestMode.ATTACH, create=True)
 
 
 def attach(name: str) -> KernelRequest:
@@ -124,66 +122,39 @@ async def _admit(manager: KernelResourceManager, client: LeaseClient, request: K
         return admitted
 
 
-def test_a_first_kernel_request_opens_or_numbers_and_the_kernel_knows_the_name_asked(tmp_path: Path) -> None:
+def test_attach_with_create_opens_a_missing_main_kernel_and_joins_an_existing_one(tmp_path: Path) -> None:
     async def scenario() -> None:
         FakeSession.identities = []
         manager = KernelResourceManager(tmp_path, "launch_cwd", session_factory=FakeSession)
 
-        first = await _admit(manager, LeaseClient("a", "a"), open_("task"))
-        later = await _admit(manager, LeaseClient("a", "a"), open_("task"))
-        second = await _admit(manager, LeaseClient("b", "b"), open_("task"))
-        third = await _admit(manager, LeaseClient("c", "c"), open_("task"))
+        first = await _admit(manager, LeaseClient("a", "a"), create("task"))
+        again = await _admit(manager, LeaseClient("a", "a"), create("task"))
+        first.resource.session.executions = {1: object()}
+        joined = await _admit(manager, LeaseClient("b", "b"), create("task"))
 
         assert (first.resource.name, first.binding.kind, first.binding.executions) == ("task", BindingKind.OPENED, 0)
-        # Once bound, the request is a forward for the kernel to perform.
-        assert later.resource is first.resource and later.binding is None
-        assert (second.resource.name, second.binding.kind, second.binding.requested) == ("task-2", BindingKind.NUMBERED, "task")
-        assert third.resource.name == "task-3"
-        assert [(identity.name, identity.requested_name) for identity in FakeSession.identities] == [("task", ""), ("task-2", "task"), ("task-3", "task")]
-        assert second.binding.as_dict() == {"name": "task-2", "kind": "numbered", "executions": 0, "requested": "task", "released": None}
+        # Repeating the first-cell header changes nothing.
+        assert again.resource is first.resource and again.binding is None
+        # The name is the key: another session's connection neither numbers
+        # the name nor keeps the second session out.
+        assert joined.resource is first.resource
+        assert joined.binding.as_dict() == {"name": "task", "kind": "attached", "executions": 1, "released": None}
+        assert set(first.resource.client_leases) == {"a", "b"}
+        assert [identity.name for identity in FakeSession.identities] == ["task"]
         await manager.stop()
 
     asyncio.run(scenario())
 
 
-def test_a_first_kernel_request_takes_back_a_main_kernel_whose_sessions_left(tmp_path: Path) -> None:
+def test_two_sessions_creating_one_name_at_once_share_one_kernel(tmp_path: Path) -> None:
     async def scenario() -> None:
-        registry = ConnectionRegistry()
-        manager = KernelResourceManager(tmp_path, "launch_cwd", session_factory=FakeSession, connections=registry)
-        connection = LeasePolicy(LeaseMode.CONNECTION, 1, 30, 30, 10, 20, connection_grace_seconds=20)
-        left = LeaseClient("left", "left")
-        registry.stream_opened(left.client_id)
-        task = (await _admit(manager, left, open_("task"), connection)).resource
-        task.session.executions = {1: object(), 2: object()}
-        # The session left long ago and sent nothing since: disconnected.
-        task.client_leases[left.client_id].requested_at -= 2000
-        registry.stream_closed(left.client_id, now=monotonic() - 1000)
+        manager = KernelResourceManager(tmp_path, "launch_cwd", session_factory=FakeSession)
 
-        returning = await _admit(manager, LeaseClient("returning", "returning"), open_("task"), connection)
+        admitted = await asyncio.gather(_admit(manager, LeaseClient("a", "a"), create("task")), _admit(manager, LeaseClient("b", "b"), create("task")))
 
-        assert returning.resource is task
-        assert (returning.binding.kind, returning.binding.executions) == (BindingKind.TAKEN_BACK, 2)
-        await manager.stop()
-
-    asyncio.run(scenario())
-
-
-def test_two_sessions_taking_back_one_kernel_at_once_get_it_and_a_numbered_one(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        registry = ConnectionRegistry()
-        manager = KernelResourceManager(tmp_path, "launch_cwd", session_factory=FakeSession, connections=registry)
-        waiting = await manager.get_or_create("task")
-        # A kernel that must be recovered makes both calls suspend between
-        # choosing it and recording their lease.
-        waiting.session.kernel = None
-        first, second = LeaseClient("first", "first"), LeaseClient("second", "second")
-        for client in (first, second):
-            registry.stream_opened(client.client_id)
-        connection = LeasePolicy(LeaseMode.CONNECTION, 1, 30, 30, 10, 20, connection_grace_seconds=20)
-
-        admitted = await asyncio.gather(_admit(manager, first, open_("task"), connection), _admit(manager, second, open_("task"), connection))
-
-        assert sorted((a.resource.name, a.binding.kind) for a in admitted) == [("task", BindingKind.TAKEN_BACK), ("task-2", BindingKind.NUMBERED)]
+        assert admitted[0].resource is admitted[1].resource
+        assert sorted(a.binding.kind for a in admitted) == [BindingKind.ATTACHED, BindingKind.OPENED]
+        assert len(await manager.list_resources()) == 1
         await manager.stop()
 
     asyncio.run(scenario())
@@ -193,7 +164,7 @@ def test_attaching_switches_at_any_time_and_lets_go_of_the_previous_main_kernel(
     async def scenario() -> None:
         manager = KernelResourceManager(tmp_path, "launch_cwd", session_factory=FakeSession)
         other = LeaseClient("other", "other")
-        target = (await _admit(manager, other, open_("target"))).resource
+        target = (await _admit(manager, other, create("target"))).resource
         client = LeaseClient("0123456789abcdef", "agent")
         accidental = (await _admit(manager, client)).resource
         child = await manager.ensure_held("build", accidental.resource_id)
@@ -217,14 +188,14 @@ def test_attaching_switches_at_any_time_and_lets_go_of_the_previous_main_kernel(
     asyncio.run(scenario())
 
 
-def test_attaching_to_a_missing_main_kernel_opens_nothing_and_lists_the_waiting_ones(tmp_path: Path) -> None:
+def test_attaching_to_a_missing_main_kernel_opens_nothing_and_lists_the_main_kernels(tmp_path: Path) -> None:
     async def scenario() -> None:
         manager = KernelResourceManager(tmp_path, "launch_cwd", session_factory=FakeSession)
-        connected = (await _admit(manager, LeaseClient("a", "a"), open_("connected"))).resource
+        connected = (await _admit(manager, LeaseClient("a", "a"), create("connected"))).resource
         waiting = await manager.get_or_create("waiting")
         child = await manager.ensure_held("build", connected.resource_id)
 
-        with pytest.raises(KernelNotFoundError, match="no main kernel named 'gone'; main kernels no session is connected to: waiting$"):
+        with pytest.raises(KernelNotFoundError, match="no main kernel named 'gone'; main kernels: connected, waiting. Add --create to open it$"):
             await _admit(manager, LeaseClient("b", "b"), attach("gone"))
         # Child kernels belong to their home and are no attach target.
         with pytest.raises(KernelNotFoundError):

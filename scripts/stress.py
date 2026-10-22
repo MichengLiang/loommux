@@ -52,14 +52,15 @@ CELLS = (
     "print('y' * 200_000)",
     "for i in range(2000): print(i)",
     "%%loommux --wait 0.3\nimport time; time.sleep(1.5); print('slept')",
-    # As a client's first cell this names its main kernel: opened, numbered
-    # while other sessions are connected, or taken back. Later it forwards to
-    # the home's child kernel: the follow endpoint, busy refusals between
-    # forwards, and child kernels retired with their home.
+    # Forwards to the home's child kernel: the follow endpoint, busy refusals
+    # between forwards, and child kernels retired with their home.
     "%%loommux --kernel stress-forward --wait 0.5\nimport time; time.sleep(0.2); print('forwarded')",
-    # Moves the session's lease between main kernels under load, or is
-    # refused with kernel_not_found when none by that name exists.
-    "%%loommux --attach stress-forward\nprint('attached')",
+    # Moves the session's lease between main kernels under load, opening the
+    # shared main kernel or joining it while it starts.
+    "%%loommux --attach stress-main --create\nprint('created')",
+    # The same move without --create, refused with kernel_not_found whenever
+    # the shared main kernel was retired.
+    "%%loommux --attach stress-main\nprint('attached')",
     "1 + 1",
     "raise ValueError('boom')",
 )
