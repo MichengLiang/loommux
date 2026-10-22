@@ -13,11 +13,10 @@ transport no longer behaves the way the mode relies on:
     The stream closed, no replacement arrived within the grace period, and
     the client sent a request after the close, so it is still alive.
 
-A stream that closes with no later request is an ordinary departure. The
-session's main kernel then waits for a session to take it back: the lease
-falls back to the named window without an alert. The window protects the
-person running loommux from kernels they forgot, which an unnamed kernel is as
-easily as a named one, so every main kernel waits the same window.
+A stream that closes with no later request is an ordinary departure: the
+lease is released when the grace ends, without an alert. How long the main
+kernel then waits is the kernel's own retention, which the resource manager
+records as it releases the lease; a departed session leaves nothing behind.
 """
 
 from __future__ import annotations
@@ -53,9 +52,8 @@ class LeaseVerdict:
     ``expires_at`` is ``None`` while an open stream holds the lease or while
     the grace period is still deciding; ``grace_ends_at`` marks that
     decision. ``window_seconds`` is the duration that governs the current
-    standing: the renewal window for renewable, alerting, and departed
-    leases, the grace while awaiting or reconnecting, and ``None`` while
-    connected.
+    standing: the renewal window for renewable and alerting leases, the grace
+    while awaiting, reconnecting, or departed, and ``None`` while connected.
     """
 
     standing: LeaseStanding
@@ -104,7 +102,7 @@ def assess_lease(
         return LeaseVerdict(LeaseStanding.RECONNECTING, None, grace, grace_ends_at)
     if lease.requested_at > presence.closed_at:
         return _renewal(LeaseStanding.STREAM_LOST, lease, window)
-    return _renewal(LeaseStanding.DISCONNECTED, lease, policy.named_activity_timeout_seconds)
+    return LeaseVerdict(LeaseStanding.DISCONNECTED, grace_ends_at, grace, grace_ends_at)
 
 
 def _renewal(standing: LeaseStanding, lease: ClientLease, window: float) -> LeaseVerdict:

@@ -252,9 +252,10 @@ class Kernels(list[Kernel]):
     def __repr__(self) -> str:
         if not self:
             return "no kernels"
-        rows = [("name", "id", "kernel", "busy", "pid", "executions", "leases", "scope", "home")]
+        rows = [("name", "id", "kernel", "busy", "pid", "executions", "leases", "kept", "scope", "home")]
         for kernel in self:
             snapshot = kernel.snapshot or {}
+            retention = snapshot.get("retention_remaining_seconds")
             rows.append(
                 (
                     kernel.name,
@@ -264,6 +265,7 @@ class Kernels(list[Kernel]):
                     str(snapshot.get("kernel_pid") or "-"),
                     str(snapshot.get("execution_count", "")),
                     str(snapshot.get("lease_count", "")),
+                    "-" if retention is None else f"{retention / 3600:.1f}h" if retention >= 3600 else f"{retention:g}s",
                     str(snapshot.get("scope", "")),
                     str(snapshot.get("home") or "-"),
                 )

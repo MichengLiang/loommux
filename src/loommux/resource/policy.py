@@ -29,9 +29,9 @@ DEFAULT_HEARTBEAT_TIMEOUT_SECONDS: float = 60
 # How long a connection lease waits for a standalone stream, either the first
 # one or a replacement after a drop, before deciding. The MCP TypeScript SDK
 # that Claude Code embeds retries a dropped stream twice, 1 s and then 1.5 s
-# apart, so a minute absorbs any reconnect with wide margin, and a closed host
-# is known to have left about a minute after it closed: its main kernel then
-# becomes one another session may take back.
+# apart, so a minute absorbs any reconnect with wide margin. It decides alerts
+# and when a departed session's lease is released; the main kernel's own
+# retention, not this grace, decides how long the kernel waits.
 DEFAULT_CONNECTION_GRACE_SECONDS: float = 60
 
 

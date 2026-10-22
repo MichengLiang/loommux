@@ -338,6 +338,8 @@ class KernelResourceManager:
                 released = None
                 if bound is not None and bound is not resource:
                     del bound.client_leases[client.client_id]
+                    # Letting go is explicit, so no retention outlives it.
+                    bound.retained_until = None
                     released = bound.name
                 if resource.lifecycle is ResourceLifecycle.ORPHANED:
                     resource.lifecycle = ResourceLifecycle.RUNNING
@@ -576,6 +578,8 @@ class KernelResourceManager:
                     self._report_alert_locked(resource, lease, verdict)
                     if lease.active_operations == 0 and verdict.expired(now):
                         del resource.client_leases[client_id]
+                        if verdict.standing is LeaseStanding.DISCONNECTED:
+                            self._retain_locked(resource, lease)
             self.connections.prune(
                 keep={
                     client_id
@@ -584,7 +588,7 @@ class KernelResourceManager:
                 }
             )
 
-            anchored = self._anchored_locked()
+            anchored = self._anchored_locked(now)
             closing: list[KernelResource] = []
             for resource in list(self._resources_by_id.values()):
                 if resource.resource_id in anchored:
@@ -605,9 +609,11 @@ class KernelResourceManager:
                     self._detach_locked(resource)
                     resource.lifecycle = ResourceLifecycle.CLOSING
                     resource.closing_reason = (
-                        "lease expired"
-                        if idle
-                        else "orphan grace expired"
+                        "orphan grace expired"
+                        if not idle
+                        else "retention ended"
+                        if resource.retained_until is not None
+                        else "lease expired"
                     )
                     closing.append(resource)
 
@@ -704,14 +710,25 @@ class KernelResourceManager:
         if self._resources_by_key.get(resource.key) is resource:
             self._resources_by_key.pop(resource.key, None)
 
-    def _anchored_locked(self) -> set[str]:
-        """Ids of main kernels a client lease holds, and of their child kernels.
+    def _anchored_locked(self, now: float) -> set[str]:
+        """Ids of main kernels a client lease or their retention holds, and of their child kernels.
 
         A child kernel of a retired main kernel keeps its home id, which no
         longer anchors anything, so it is released with its home.
         """
-        leased = {resource.resource_id for resource in self._resources_by_id.values() if resource.client_leases}
-        return leased | {resource.resource_id for resource in self._resources_by_id.values() if resource.home in leased}
+        held = {resource.resource_id for resource in self._resources_by_id.values() if resource.client_leases or (resource.retained_until is not None and now < resource.retained_until)}
+        return held | {resource.resource_id for resource in self._resources_by_id.values() if resource.home in held}
+
+    @staticmethod
+    def _retain_locked(resource: KernelResource, lease: ClientLease) -> None:
+        """Keep ``resource`` for the named window after the departed lease's last renewal.
+
+        A renewal is a request or the end of an operation the session waited
+        for, so a call still running when its host closed counts from when it
+        finished. Of several departures the latest decides.
+        """
+        until = lease.renewed_at + lease.policy.named_activity_timeout_seconds
+        resource.retained_until = until if resource.retained_until is None else max(resource.retained_until, until)
 
     @staticmethod
     def _renew_lease_locked(lease: ClientLease) -> None:
@@ -818,6 +835,13 @@ class KernelResourceManager:
             "recent_execution": session_status.get("recent_execution"),
             "execution_count": len(resource.session.executions),
             "lease_count": len(leases),
+            # Reported only while it is what keeps the kernel: a held kernel
+            # waits for nobody.
+            "retention_remaining_seconds": (
+                max(0, round(resource.retained_until - now, 1))
+                if resource.retained_until is not None and not resource.client_leases
+                else None
+            ),
             "leases": leases,
         }
 

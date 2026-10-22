@@ -214,7 +214,7 @@ lifetime. `assess_lease()` turns them into one standing:
 | `connected` | a stream is open, or the session is bound to the process | held, no expiry |
 | `awaiting_stream` | no stream yet, within grace of first sight | held while the grace runs |
 | `reconnecting` | stream closed, within grace of the close | held while the grace runs |
-| `disconnected` | closed, grace over, no request since the close | named window, no alert |
+| `disconnected` | closed, grace over, no request since the close | released, no alert; the main kernel records its retention |
 | `unbound` | no stream ever, grace over | alert; activity window |
 | `stream_lost` | closed, grace over, a request arrived after the close | alert; activity window |
 
@@ -224,18 +224,20 @@ own policy generation instead of being released, so a client whose behavior
 changed keeps working as it would under activity mode while the alert stays
 visible. A later stream returns the lease to `connected`.
 
-A `disconnected` lease belongs to a session that left in the ordinary way.
-It is kept for the named activity window after its last renewal, the same for
-every main kernel, so a later session can take the kernel back by name
-([Main Kernel Binding Design](kernel-binding-design.md) section 6). The window
-guards the person running loommux against forgotten kernels; they can retire
-any kernel from the console sooner.
+A `disconnected` lease belongs to a session that left in the ordinary way, and
+the sweep releases it. As it does, the main kernel records its own retention:
+the lease's last renewal plus the named activity window, or the later of that
+and a retention it already had. The kernel then waits for a session to attach
+to it by name ([Main Kernel Binding Design](kernel-binding-design.md)
+section 7). How long a kernel waits is a fact about the kernel, so it is stored
+once on the kernel rather than once per departed session. The window guards
+the person running loommux against forgotten kernels; they can retire any
+kernel from the console sooner.
 
 `connection_grace_seconds` defaults to 60. The MCP TypeScript SDK embedded in
 Claude Code retries a dropped stream twice, 1 s and then 1.5 s apart, so a
-minute absorbs a reconnect with wide margin, and a closed host is known to have
-left about a minute after it closed: its main kernel then counts as one no
-session is connected to.
+minute absorbs a reconnect with wide margin. The grace decides alerts and
+when a departed lease is released; it does not shape a kernel's lifetime.
 
 The registry forgets a session once it is disconnected and no lease refers
 to it. A forgotten session that later calls a tool is judged as never having
@@ -304,8 +306,10 @@ A sweep first removes leases whose standing is expired and whose client has
 no active operation. It then evaluates resources that are no longer
 anchored and forgets disconnected sessions that no lease refers to.
 
-A main kernel is anchored while a client lease holds it, and a child kernel
-exactly while its main kernel is anchored. A kernel that opens another kernel
+A main kernel is anchored while a client lease holds it or its retention has
+not ended, and a child kernel exactly while its main kernel is anchored. A
+session switching away with `--attach` clears the retention of the kernel it
+lets go of. A kernel that opens another kernel
 by name (`loommux["lab"]` in the kernel, `POST /api/resources/ensure` on the
 wire) opens a child kernel of its own home; a child kernel asking opens one in
 the same home, so a home has one level. The home is part of the resource from

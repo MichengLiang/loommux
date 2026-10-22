@@ -68,13 +68,12 @@ def test_a_main_kernel_whose_session_left_waits_and_is_taken_back_by_name(tmp_pa
     async def scenario(origin: str) -> None:
         async with LeaseAwareClient(f"{origin}/mcp", "first") as first:
             assert await texts(first, "%%loommux --attach task --create\nkept = 'still here'") == ["In [1]:", "Kernel: task (opened)"]
-        # Past the reconnect grace the session has left: B9, its main kernel
-        # waits for the named window and nothing alerts.
+        # Past the reconnect grace the session has left: B8, its lease is
+        # released without an alert and the kernel keeps its own retention.
         await asyncio.sleep(0.8)
         [resource] = await wait_for_resource_count(origin, 1)
-        [lease] = resource["leases"]
-        assert (resource["name"], lease["standing"], lease["alert"]) == ("task", "disconnected", False)
-        assert 0 < lease["remaining_seconds"] <= 60
+        assert (resource["name"], resource["lease_count"]) == ("task", 0)
+        assert 0 < resource["retention_remaining_seconds"] <= 60
 
         # A new host writes the same first cell and finds the kernel by name.
         async with LeaseAwareClient(f"{origin}/mcp", "second") as second:

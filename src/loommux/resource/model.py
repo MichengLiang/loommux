@@ -158,6 +158,11 @@ class KernelResource:
     ``named`` is false only for a main kernel whose name was generated for a
     session that asked for none, until it is renamed. Activity leases on such
     a kernel use the private window.
+
+    ``retained_until`` is the monotonic instant until which a main kernel no
+    lease holds is kept. It is recorded when a connection lease is released
+    because its session left: the kernel waits for a session, not the
+    session's lease, so one value replaces a lease kept per departure.
     """
 
     resource_id: str
@@ -170,6 +175,7 @@ class KernelResource:
     client_leases: dict[str, ClientLease] = field(default_factory=dict)
     active_operations: int = 0
     orphaned_at: float | None = None
+    retained_until: float | None = None
     closing_reason: str | None = None
     lifecycle_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 

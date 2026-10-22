@@ -261,32 +261,69 @@ def test_open_stream_holds_a_connection_lease_past_its_window_until_the_stream_d
     asyncio.run(scenario())
 
 
-def test_a_departed_sessions_main_kernel_waits_the_named_window_then_leaves(
+def test_a_departed_sessions_lease_goes_and_its_main_kernel_keeps_its_own_retention(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
         registry = ConnectionRegistry()
         manager = connection_manager(tmp_path, registry)
-        client = make_client("departed")
-        registry.stream_opened(client.client_id)
         policy = make_policy(mode=LeaseMode.CONNECTION, timeout=60, grace=0.03)
-        async with manager.operation(client, policy, request=make_request()) as admitted:
-            resource = admitted.resource
-        lease = resource.client_leases[client.client_id]
-        # The client sent nothing after its stream closed: it left.
-        lease.requested_at -= 3600
-        registry.stream_closed(client.client_id, now=monotonic() - 1)
+        departures = []
+        for client in (make_client("earlier"), make_client("later")):
+            registry.stream_opened(client.client_id)
+            async with manager.operation(client, policy, request=make_request()) as admitted:
+                resource = admitted.resource
+            lease = resource.client_leases[client.client_id]
+            # The client sent nothing after its stream closed: it left.
+            lease.requested_at -= 3600
+            registry.stream_closed(client.client_id, now=monotonic() - 1)
+            departures.append(lease)
+        departures[0].renewed_at -= 30
 
         assert await manager.sweep_once() == 0
         [snapshot] = await manager.snapshot()
-        assert snapshot["leases"][0]["standing"] == "disconnected"
-        assert snapshot["leases"][0]["alert"] is False
-        assert snapshot["leases"][0]["timeout_seconds"] == 60
-        assert 0 < snapshot["leases"][0]["remaining_seconds"] <= 60
+        # B8: no lease is left behind; the kernel records one retention, from
+        # the later of the two departed leases' last renewals.
+        assert (snapshot["lease_count"], snapshot["leases"]) == (0, [])
+        assert 30 < snapshot["retention_remaining_seconds"] <= 60
+        assert resource.retained_until == departures[1].renewed_at + 60
+        assert {"earlier", "later"}.isdisjoint(registry._sessions)
 
-        lease.renewed_at -= 3600
+        resource.retained_until -= 3600
         assert await manager.sweep_once() == 1
         assert resource.lifecycle is ResourceLifecycle.STOPPED
+        assert resource.closing_reason == "retention ended"
+
+    asyncio.run(scenario())
+
+
+def test_a_kernel_the_session_switched_away_from_keeps_no_retention(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        registry = ConnectionRegistry()
+        manager = connection_manager(tmp_path, registry)
+        policy = make_policy(mode=LeaseMode.CONNECTION, timeout=60, grace=0.03)
+        left, agent = make_client("left"), make_client("agent")
+        for client in (left, agent):
+            registry.stream_opened(client.client_id)
+        async with manager.operation(left, policy, request=make_request()) as admitted:
+            shared = admitted.resource
+        registry.stream_closed(left.client_id, now=monotonic() - 1)
+        shared.client_leases[left.client_id].requested_at -= 3600
+        assert await manager.sweep_once() == 0
+        assert shared.retained_until is not None
+
+        async with manager.operation(agent, policy, request=make_request()):
+            pass
+        async with manager.operation(agent, policy, request=KernelRequest("elsewhere", RequestMode.ATTACH, create=True)):
+            pass
+
+        # B9: letting go is explicit, so the earlier departure's retention goes too.
+        assert shared.retained_until is None
+        assert await manager.sweep_once() == 1
+        assert shared.lifecycle is ResourceLifecycle.STOPPED
+        await manager.stop()
 
     asyncio.run(scenario())
 
