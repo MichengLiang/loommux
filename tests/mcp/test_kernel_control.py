@@ -33,17 +33,21 @@ def test_a_kernel_knows_itself_and_manages_other_kernels_through_its_daemon(tmp_
             assert name.startswith("private-")
             assert f"True\nloommux daemon {origin} · this kernel {name}" in identity
 
+            # Inside a kernel the listing is its home; the other session's main
+            # kernel belongs to no home of this one.
             listing = await output(agent, "print(loommux.kernels())")
-            assert listing.splitlines()[0].split() == ["name", "id", "kernel", "busy", "pid", "executions", "leases", "holders"]
-            assert {row.split()[0] for row in listing.splitlines()[1:]} == {name, "lab"}
+            assert listing.splitlines()[0].split() == ["name", "id", "kernel", "busy", "pid", "executions", "leases", "scope", "home"]
+            assert [row.split()[0] for row in listing.splitlines()[1:]] == [name]
 
-            lab_status = await output(agent, "lab = loommux['lab']\nprint(lab.status()['name'], lab.status()['kernel_state'])")
-            assert lab_status == "lab running\n"
-            assert "restarted" in await output(agent, "print(lab.restart()['status'])")
+            # The person running loommux reaches every main kernel by name.
+            owner = Daemon(origin)
+            assert {kernel.name for kernel in owner.kernels()} == {name, "lab"}
+            lab_handle = owner["lab"]
+            assert (lab_handle.status()["name"], lab_handle.status()["kernel_state"]) == ("lab", "running")
+            assert lab_handle.restart()["status"] == "restarted"
             assert "NameError" in await output(lab, "kept_in_lab")
-
-            assert await output(agent, "print(lab.recycle(force=True))") == "recycled lab\n"
-            assert await output(agent, "print([k.name for k in loommux.kernels()] == [loommux.self.name])") == "True\n"
+            assert lab_handle.recycle(force=True) == "recycled lab"
+            owner.close()
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -55,8 +59,8 @@ def test_a_kernel_knows_itself_and_manages_other_kernels_through_its_daemon(tmp_
 def test_a_kernel_opens_runs_and_holds_kernels_that_leave_with_it(tmp_path: Path) -> None:
     async def scenario(origin: str) -> None:
         async with LeaseAwareClient(f"{origin}/mcp", "agent") as agent:
-            opened = await output(agent, "build = loommux['build']\nprint(build.name, build.snapshot['held_by'] == [loommux.self.name])")
-            assert opened == "build True\n"
+            opened = await output(agent, "build = loommux['build']\nprint(build.name, build.snapshot['scope'], build.snapshot['home'] == loommux.self.name)")
+            assert opened == "build child True\n"
 
             started = await output(agent, "job = build.run(\"import time\\nprint('a', flush=True)\\ntime.sleep(0.5)\\nprint('b')\\n6 * 7\", wait=0.05)\nprint(job.done, job)")
             assert started == "False <loommux job build #1 running>\n"
@@ -72,22 +76,23 @@ def test_a_kernel_opens_runs_and_holds_kernels_that_leave_with_it(tmp_path: Path
             )
             assert busy == "busy kernel is already executing code\ncompleted completed\n"
 
-            # The two named kernels hold each other (and the agent holds both,
-            # having opened each); only the agent's lease reaches them, so
-            # they must leave with it.
+            # A child kernel opening a kernel opens it in the same home, and a
+            # sibling's name resolves to the sibling: every kernel here leaves
+            # with the agent's main kernel.
             await output(agent, "build.run(\"loommux['cache']\")\nloommux['cache'].run(\"loommux['build']\")")
-            cycle = await output(agent, "print(sorted((k.name, tuple(k.snapshot['held_by'])) for k in loommux.kernels() if k.name != loommux.self.name))")
+            home = await output(agent, "print(sorted((k.name, k.snapshot['scope'], k.snapshot['home']) for k in loommux.kernels() if k.name != loommux.self.name))")
             agent_name = (await output(agent, "print(loommux.self.name)")).strip()
-            assert cycle == f"[('build', ('cache', '{agent_name}')), ('cache', ('build', '{agent_name}'))]\n"
+            assert home == f"[('build', 'child', '{agent_name}'), ('cache', 'child', '{agent_name}')]\n"
+            build_id = (await output(agent, "print(build.id)")).strip()
 
             outside = Daemon(origin)
-            assert outside["build"].name == "build"
+            assert outside[build_id].name == "build"
             with pytest.raises(DaemonError, match="only a kernel can open one"):
-                outside["elsewhere"]
+                outside["build"]
             outside.close()
             # A closed client opens new connections for its next request.
-            assert outside["build"].name == "build"
-            drive_from_outside(outside)
+            assert outside[agent_name].name == agent_name
+            drive_from_outside(outside, build_id)
 
         await wait_for_resource_count(origin, 0, timeout=10)
 
@@ -97,13 +102,13 @@ def test_a_kernel_opens_runs_and_holds_kernels_that_leave_with_it(tmp_path: Path
         asyncio.run(scenario(origin))
 
 
-def drive_from_outside(daemon: Daemon) -> None:
+def drive_from_outside(daemon: Daemon, build_id: str) -> None:
     """The whole client surface, from a process that is not a kernel."""
     assert repr(daemon) == f"loommux daemon {daemon.url}"
     with pytest.raises(DaemonError, match="not a Loommux kernel"):
         _ = daemon.self
-    assert repr(daemon.kernels()).splitlines()[0].split()[-1] == "holders"
-    build = daemon["build"]
+    assert repr(daemon.kernels()).splitlines()[0].split()[-2:] == ["scope", "home"]
+    build = daemon[build_id]
     assert repr(build) == f"<loommux kernel build {build.id[:8]}>"
     assert build.status()["name"] == "build"
 

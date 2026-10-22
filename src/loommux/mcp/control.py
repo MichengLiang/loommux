@@ -45,11 +45,16 @@ def install_control_routes(
         return HTMLResponse(CONSOLE_PATH.read_text(encoding="utf-8"))
 
     @mcp.custom_route("/api/resources", methods=["GET"])
-    async def list_resources(_: Request) -> Response:
+    async def list_resources(request: Request) -> Response:
+        """Every kernel, or with ``?home=<id>`` the kernels of that kernel's home."""
         selected = manager()
+        try:
+            resources = await selected.snapshot(home_of=request.query_params.get("home"))
+        except ResourceNotFoundError as exc:
+            return JSONResponse({"ok": False, "message": str(exc)}, status_code=404)
         return JSONResponse(
             {
-                "resources": await selected.snapshot(),
+                "resources": resources,
                 "policy": (await selected.policy_manager.current()).as_dict(),
             }
         )
@@ -243,7 +248,7 @@ def install_control_routes(
         return JSONResponse(
             {
                 "ok": True,
-                "message": f"recycled {resource.address.display_name}",
+                "message": f"recycled {resource.name}",
             }
         )
 

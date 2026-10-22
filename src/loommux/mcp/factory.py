@@ -23,7 +23,7 @@ from loommux.resource import (
     LeasePolicyManager,
     ResourceManagerError,
     ResourceRoutingError,
-    resolve_address,
+    connection_request,
     resolve_client,
     resolve_policy_generation,
 )
@@ -89,8 +89,8 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
             }
             return make_tool_result(tool_name, status, result_mode)
         try:
-            address = resolve_address(ctx)
             client = resolve_client(ctx)
+            request = connection_request()
             request_context = ctx.request_context
             if request_context is not None and request_context.request is None:
                 # No HTTP request means stdio or an in-process client: the
@@ -107,13 +107,13 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
                     f"server does not know lease policy generation {generation}"
                 )
             async with selected_manager.operation(
-                address,
                 client,
                 policy,
+                request=request,
                 replaces_kernel=replaces_kernel,
             ) as resource:
                 status = await asyncio.to_thread(operation, resource.session)
-            verdict = await selected_manager.client_verdict(address.key, client.client_id)
+            verdict = await selected_manager.client_verdict(client.client_id)
             if verdict is not None and verdict.standing.alert:
                 status = {
                     **status,
@@ -204,11 +204,12 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
             %%bash
             uv run pytest
 
-        名叫 ``build`` 的 kernel 不存在时首次使用就开出，它跟着当前 kernel
-        活、跟着它回收。它的输出实时转回这个 cell，它的错误也让这个 cell
-        以一行 ``ForwardedCellError`` 结束；中断这个 cell 会一并中断它。每个
-        kernel 里都有 ``loommux`` 对象：``loommux.kernels()`` 列出所有
-        kernel，``loommux["build"].run(code)`` 在后台提交并返回 job。
+        ``build`` 是这个会话主 kernel 名下的子 kernel，不存在时首次使用就开出，
+        跟着主 kernel 活、跟着它回收；名字只在这个家里有效，别的会话有自己的
+        ``build``。它的输出实时转回这个 cell，它的错误也让这个 cell 以一行
+        ``ForwardedCellError`` 结束；中断这个 cell 会一并中断它。每个 kernel
+        里都有 ``loommux`` 对象：``loommux.kernels()`` 列出这个家的 kernel，
+        ``loommux["build"].run(code)`` 在后台提交并返回 job。
 
         图像展示
         --------

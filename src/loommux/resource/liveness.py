@@ -74,7 +74,7 @@ def assess_lease(
     lease: ClientLease,
     presence: SessionPresence,
     *,
-    shared: bool,
+    named: bool,
     now: float,
 ) -> LeaseVerdict:
     """Derive the lease's standing from its renewal facts and its session.
@@ -83,7 +83,7 @@ def assess_lease(
     snapshot, and the tool-result alert all read one decision.
     """
     policy = lease.policy
-    window = policy.timeout_for(shared=shared)
+    window = policy.timeout_for(named=named)
     if policy.mode is not LeaseMode.CONNECTION:
         return _renewal(LeaseStanding.RENEWABLE, lease, window)
     if presence.connected:

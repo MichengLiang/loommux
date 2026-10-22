@@ -19,8 +19,9 @@ search retained output, interrupt the active cell, or restart the kernel.
 
 ## What It Provides
 
-- Session-private kernel resources by default and explicitly named shared
-  resources when clients need one collaborative namespace.
+- One main kernel per MCP session, private by default, shared by name when
+  clients need one collaborative namespace, and child kernels that belong to
+  it alone.
 - One persistent IPython session, execution sequence, and retained history per
   logical resource.
 - Activity, standard MCP-ping, or connection-bound leases with automatic
@@ -187,10 +188,13 @@ server's resident memory levelled off at 277 MB instead of growing past 600 MB.
 
 ## Kernel Resources And Client Leases
 
-An ordinary MCP connection selects a resource without changing the eight-tool
-surface. Without an additional header, its MCP Session ID addresses a private
-workbench. `X-Loommux-Resource` selects a named shared workbench; every
-participating MCP session still holds an independent lease.
+An ordinary MCP connection selects a kernel without changing the eight-tool
+surface. Each MCP session works in one main kernel: without an additional
+header, a private one named after its MCP Session ID; with
+`X-Loommux-Resource`, a named main kernel shared by every session configured
+with that name, where each participating session still holds an independent
+lease. Kernels that a kernel opens by name are child kernels of that home (see
+[Main Kernel Binding Design](docs/kernel-binding-design.md)).
 
 The server chooses how a lease proves that its client is still there with
 `LOOMMUX_LEASE_MODE`:
@@ -251,26 +255,29 @@ Every kernel knows which resource it is and where its daemon listens
 a client of that daemon as `loommux`:
 
 ```python
-loommux.kernels()             # every kernel: name, id, state, busy, pid, executions, leases
+loommux.kernels()             # this home: name, id, state, busy, pid, executions, leases, scope, home
 loommux.self                  # this kernel
-lab = loommux["lab"]          # by name or id; a new named kernel opens on first use
+lab = loommux["lab"]          # this home's child kernel, by name or id; opened on first use
 job = lab.run("train()", wait=5)
 job.wait(600)                 # its state; job.output() reads its combined output
 lab.restart()
 loommux["lab"].recycle(force=True)
 ```
 
-A kernel opened this way is held by the kernel that asked for it: it lives as
-long as its holder is held by a client lease, directly or through other
-holders, and is released after. A kernel already running a cell refuses
-`run()` with `DaemonError` whose `status` is `busy`; cells are never queued.
+A kernel opened this way is a child kernel of the asking kernel's home: the
+main kernel an MCP session works in. It lives as long as that main kernel holds
+a client lease and is released with it, and its name belongs to the home, so
+another session's kernels neither list nor reach it. A kernel already running a
+cell refuses `run()` with `DaemonError` whose `status` is `busy`; cells are
+never queued.
 
 The client speaks the HTTP control plane, so anything it does stays outside
 the daemon process. Outside a kernel, `loommux.daemon.Daemon()` connects to
-`LOOMMUX_CONTROL_URL` or `http://127.0.0.1:8801` and resolves existing kernels
-only, since nothing there can hold a new one. A stdio server has no HTTP
-control plane; its kernels still know who they are, and every request explains
-that no control plane exists.
+`LOOMMUX_CONTROL_URL` or `http://127.0.0.1:8801` and acts for the person
+running loommux: it lists every kernel and resolves a main kernel by name or
+any kernel by id, opening none, since nothing there can hold a new one. A
+stdio server has no HTTP control plane; its kernels still know who they are,
+and every request explains that no control plane exists.
 
 ## Workspace And Interpreter
 
@@ -400,8 +407,8 @@ for the grammar and its reasons.
 uv run pytest
 ```
 
-The kernel named `build` is opened on first use and held by the kernel that
-forwarded to it (see [Controlling Kernels From A Kernel](#controlling-kernels-from-a-kernel)).
+The kernel named `build` is this home's child kernel, opened on first use and
+retired with the main kernel (see [Controlling Kernels From A Kernel](#controlling-kernels-from-a-kernel)).
 Its combined output is relayed into this cell as it arrives; an error there
 ends this cell with a one-line `ForwardedCellError` beneath the relayed
 traceback, and interrupting this cell interrupts it as well. Writing the

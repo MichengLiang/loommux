@@ -9,7 +9,8 @@
 The connection choice does not change the eight tools, resource-local
 execution numbering, workspace resolution, text logs, image content order, or
 the default content-only policy. Stdio normally has one MCP participant; an
-HTTP server can supervise multiple private or named shared kernel resources.
+HTTP server can supervise the main kernels of many sessions, private or shared
+by name, and their child kernels.
 
 ## Install
 

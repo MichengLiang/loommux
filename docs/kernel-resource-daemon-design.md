@@ -23,33 +23,32 @@ leases. The kernel PID is only the current process carrying the namespace.
 This separation permits a kernel restart to replace a process without changing
 the resource ID or discarding retained execution records.
 
-## 2. Resource addressing
+## 2. Main kernels, child kernels, and sessions
 
-Every ordinary MCP tool call is routed before it reaches `IPythonSession`.
+Every ordinary MCP tool call is routed before it reaches `IPythonSession`. A
+resource is a **main kernel**, which MCP sessions work in, or a **child
+kernel**, which a kernel opened by name and which belongs to that kernel's main
+kernel, its home. [Main Kernel Binding Design](kernel-binding-design.md) owns
+how a session chooses, switches, and names its main kernel; this section
+states what routing relies on.
 
-### Session-private resource
+A session works in the main kernel that holds its client lease. Child kernels
+hold no client leases, so the lease is the binding and no separate table
+exists. A session holding no lease is on its first call, and its main kernel
+is chosen then:
 
-Without `X-Loommux-Resource`, the address is derived from the MCP session ID:
+- without a request, a main kernel named `private-<first 8 characters of the
+  MCP session ID>` is opened, so separate MCP sessions receive separate
+  namespaces, execution sequences, output histories, and kernel processes by
+  default;
+- a URL-encoded `X-Loommux-Resource` header names a main kernel that every
+  session configured with that name works in, opened by whichever arrives
+  first. Each MCP session still receives an independent client lease; one
+  participant expiring does not retire the shared kernel while another valid
+  lease remains.
 
-```text
-session:<MCP session ID>
-```
-
-Separate MCP sessions therefore receive separate namespaces, execution
-sequences, output histories, and kernel processes by default.
-
-### Named shared resource
-
-A client may send a URL-encoded `X-Loommux-Resource` header. Equal decoded
-names select the same logical resource:
-
-```text
-named:<decoded resource name>
-```
-
-Each MCP session still receives an independent client lease. One participant
-expiring does not retire the shared workbench while another valid lease
-remains. A resource name is an address, not an authentication credential.
+Main kernel names are unique among main kernels, and child kernel names only
+inside their home. A name is an address, not an authentication credential.
 
 `X-Loommux-Operator` supplies an optional URL-encoded display label for the
 participant.
@@ -295,15 +294,16 @@ A sweep first removes leases whose standing is expired and whose client has
 no active operation. It then evaluates resources that are no longer
 anchored and forgets disconnected sessions that no lease refers to.
 
-A resource is anchored when a client lease holds it, or when an anchored
-resource holds it. A kernel that opens another kernel by name (`loommux["lab"]`
-in the kernel, `POST /api/resources/ensure` on the wire) records itself as one
-of that resource's holders; the holder is recorded in the same locked step that
-registers a newly created resource, so no sweep can find it unheld in between.
-Anchoring is computed by reachability from leased resources, so kernels that
-hold each other are still released once no client reaches them. Only named
-shared resources are held: a private resource belongs to its MCP session. A
-holding edge disappears when either end is retired.
+A main kernel is anchored while a client lease holds it, and a child kernel
+exactly while its main kernel is anchored. A kernel that opens another kernel
+by name (`loommux["lab"]` in the kernel, `POST /api/resources/ensure` on the
+wire) opens a child kernel of its own home; a child kernel asking opens one in
+the same home, so a home has one level. The home is part of the resource from
+the moment it is registered, so no sweep can find a new child kernel without
+it, and it never changes, so the child kernels of a retired main kernel are
+released with it. Names resolve inside the asking kernel's home only, so two
+homes may each have their own `build`, and neither lists or reaches the
+other's.
 
 An idle unowned resource is reclaimed immediately. A resource whose cell is
 still running enters `orphaned`. This distinction matters because a loommux
@@ -315,8 +315,7 @@ kernel process group is terminated. This prevents an abandoned infinite cell
 from retaining a resource forever.
 
 A new valid operation arriving before retirement returns the resource to
-`running` and attaches a fresh client lease; a holder opening it again by name
-does the same without a lease.
+`running` and attaches a fresh client lease.
 
 ## 7. HTTP control plane
 
@@ -325,9 +324,9 @@ The Streamable HTTP application serves:
 | Method | Path | Meaning |
 | --- | --- | --- |
 | `GET` | `/` | Dependency-free resource console. |
-| `GET` | `/api/resources` | Resource, execution, kernel, and lease snapshots. |
+| `GET` | `/api/resources` | Resource, execution, kernel, and lease snapshots; `?home=<id>` limits them to that kernel's home. |
 | `GET` | `/api/resources/{id}` | One resource's snapshot. |
-| `POST` | `/api/resources/ensure` | Open a kernel by `name` for the kernel `holder`, creating a named resource if needed; without a holder, resolve existing kernels only. |
+| `POST` | `/api/resources/ensure` | Resolve `name` in the home of the kernel `holder`, opening a child kernel if needed; without a holder, resolve a main kernel by name or any kernel by id only. |
 | `POST` | `/api/resources/{id}/executions` | Submit `source` as one cell, waiting up to `wait_seconds`; refuses with `busy` instead of queueing. |
 | `GET` | `/api/resources/{id}/executions/{n}` | One execution's status. |
 | `POST` | `/api/resources/{id}/executions/{n}/wait` | Wait up to `timeout_seconds` for it to end. |
@@ -422,8 +421,8 @@ src/loommux/resource/
     connections.py per-session stream presence reported by the transport
     liveness.py    lease standing derived from renewal and presence facts
     settings.py    server-owned environment defaults
-    routing.py     MCP request identity to resource address
-    manager.py     provisioning, leases, recovery, sweeping, and retirement
+    routing.py     MCP request identity and the kernel a connection header names
+    manager.py     provisioning, session binding, homes, leases, recovery, sweeping, and retirement
 
 src/loommux/mcp/
     factory.py     eight-tool routing into selected resources

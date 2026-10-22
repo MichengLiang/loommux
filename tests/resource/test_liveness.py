@@ -39,7 +39,7 @@ def make_lease(
 
 
 @pytest.mark.parametrize(
-    ("mode", "shared", "window"),
+    ("mode", "named", "window"),
     [
         (LeaseMode.ACTIVITY, False, PRIVATE_WINDOW),
         (LeaseMode.ACTIVITY, True, NAMED_WINDOW),
@@ -49,12 +49,12 @@ def make_lease(
 )
 def test_renewable_leases_ignore_the_connection(
     mode: LeaseMode,
-    shared: bool,
+    named: bool,
     window: float,
 ) -> None:
     presence = SessionPresence(first_seen_at=900, open_streams=1)
 
-    verdict = assess_lease(make_lease(mode), presence, shared=shared, now=1000)
+    verdict = assess_lease(make_lease(mode), presence, named=named, now=1000)
 
     assert verdict.standing is LeaseStanding.RENEWABLE
     assert verdict.expires_at == 1000 + window
@@ -78,7 +78,7 @@ def test_open_stream_or_process_lifetime_holds_the_lease_indefinitely(
 ) -> None:
     lease = make_lease(LeaseMode.CONNECTION, renewed_at=0, requested_at=0)
 
-    verdict = assess_lease(lease, presence, shared=False, now=10 * PRIVATE_WINDOW)
+    verdict = assess_lease(lease, presence, named=False, now=10 * PRIVATE_WINDOW)
 
     assert verdict.standing is LeaseStanding.CONNECTED
     assert not verdict.standing.alert
@@ -90,8 +90,8 @@ def test_a_session_that_never_opens_a_stream_degrades_after_the_grace() -> None:
     lease = make_lease(LeaseMode.CONNECTION, renewed_at=1030, requested_at=1030)
     presence = SessionPresence(first_seen_at=1000)
 
-    awaiting = assess_lease(lease, presence, shared=False, now=1059)
-    unbound = assess_lease(lease, presence, shared=False, now=1060)
+    awaiting = assess_lease(lease, presence, named=False, now=1059)
+    unbound = assess_lease(lease, presence, named=False, now=1060)
 
     assert awaiting.standing is LeaseStanding.AWAITING_STREAM
     assert not awaiting.standing.alert
@@ -107,8 +107,8 @@ def test_a_dropped_stream_is_awaited_and_then_released_without_new_requests() ->
     lease = make_lease(LeaseMode.CONNECTION, renewed_at=1990, requested_at=1500)
     presence = SessionPresence(first_seen_at=1000, closed_at=2000)
 
-    reconnecting = assess_lease(lease, presence, shared=True, now=2030)
-    disconnected = assess_lease(lease, presence, shared=True, now=2060)
+    reconnecting = assess_lease(lease, presence, named=True, now=2030)
+    disconnected = assess_lease(lease, presence, named=True, now=2060)
 
     assert reconnecting.standing is LeaseStanding.RECONNECTING
     assert reconnecting.grace_remaining_seconds(2030) == 30
@@ -122,7 +122,7 @@ def test_a_request_after_the_drop_proves_the_client_lost_only_its_stream() -> No
     lease = make_lease(LeaseMode.CONNECTION, renewed_at=2010, requested_at=2010)
     presence = SessionPresence(first_seen_at=1000, closed_at=2000)
 
-    verdict = assess_lease(lease, presence, shared=False, now=2060)
+    verdict = assess_lease(lease, presence, named=False, now=2060)
 
     assert verdict.standing is LeaseStanding.STREAM_LOST
     assert verdict.standing.alert

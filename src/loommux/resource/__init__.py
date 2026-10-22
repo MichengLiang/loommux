@@ -11,9 +11,10 @@ from loommux.resource.manager import (
 )
 from loommux.resource.model import (
     ClientLease,
+    KernelRequest,
     KernelResource,
     LeaseClient,
-    ResourceAddress,
+    RequestMode,
     ResourceLifecycle,
 )
 from loommux.resource.policy import LeaseMode, LeasePolicy, LeasePolicyManager
@@ -22,8 +23,7 @@ from loommux.resource.routing import (
     OPERATOR_HEADER,
     RESOURCE_HEADER,
     ResourceRoutingError,
-    named_address,
-    resolve_address,
+    connection_request,
     resolve_client,
     resolve_policy_generation,
 )
@@ -34,6 +34,7 @@ __all__ = [
     "ConnectionRegistry",
     "KernelResource",
     "KernelResourceManager",
+    "KernelRequest",
     "LeaseClient",
     "LeaseMode",
     "LeasePolicy",
@@ -41,20 +42,19 @@ __all__ = [
     "LeaseStanding",
     "LeaseVerdict",
     "ResourceServerSettings",
-    "ResourceAddress",
     "ResourceBusyError",
     "ResourceLifecycle",
     "ResourceManagerError",
     "ResourceNotFoundError",
     "ResourceProvisionError",
     "ResourceRoutingError",
+    "RequestMode",
     "SessionPresence",
     "RESOURCE_HEADER",
     "OPERATOR_HEADER",
     "LEASE_POLICY_GENERATION_HEADER",
     "assess_lease",
-    "named_address",
-    "resolve_address",
+    "connection_request",
     "resolve_client",
     "resolve_policy_generation",
 ]

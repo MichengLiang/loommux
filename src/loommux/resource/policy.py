@@ -46,15 +46,17 @@ class LeasePolicy:
     heartbeat_timeout_seconds: float
     connection_grace_seconds: float
 
-    def timeout_for(self, *, shared: bool) -> float:
+    def timeout_for(self, *, named: bool) -> float:
         """Return the renewal window that expires an unrenewed lease.
 
+        ``named`` selects the named window for a main kernel a session chose
+        or renamed, and the private window for one whose name was generated.
         A connection lease is held by its open stream instead; it uses the
         activity window only after it has degraded to activity semantics.
         """
         if self.mode is LeaseMode.HEARTBEAT:
             return self.heartbeat_timeout_seconds
-        if shared:
+        if named:
             return self.named_activity_timeout_seconds
         return self.private_activity_timeout_seconds
 

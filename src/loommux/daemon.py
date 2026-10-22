@@ -5,14 +5,18 @@ daemon that started it::
 
     loommux.kernels()               # every kernel, one row each
     loommux.self                    # this kernel
-    build = loommux["build"]        # opened on first use, held by this kernel
+    build = loommux["build"]        # this home's child kernel, opened on first use
     job = build.run("make()", wait=5)
     job.wait(600); job.output()
 
+Inside a kernel the client sees its home: the main kernel an MCP session works
+in and the child kernels opened from it. Kernels of other homes stay out of its
+listing and its names, so two homes may each have their own ``build``.
 Outside a kernel, ``Daemon()`` connects to ``LOOMMUX_CONTROL_URL`` or to
-``http://127.0.0.1:8801``. The client speaks the daemon's HTTP control plane,
-so a mistake made through it stays in the calling process and can never stop
-the daemon's event loop.
+``http://127.0.0.1:8801`` and acts for the person running loommux: it lists
+every kernel. The client speaks the daemon's HTTP control plane, so a mistake
+made through it stays in the calling process and can never stop the daemon's
+event loop.
 
 A kernel's identity is its environment, which its child processes inherit:
 a script started from a kernel acts as that kernel, holding what it opens on
@@ -60,16 +64,19 @@ class Daemon:
         self._http: httpx.Client | None = None
 
     def kernels(self) -> Kernels:
-        """Every kernel the daemon has registered, oldest first."""
-        resources = self._request("GET", "/api/resources")["resources"]
+        """The kernels of this kernel's home, or outside a kernel every kernel; oldest first."""
+        params = None if self.identity is None else {"home": self.identity.kernel_id}
+        resources = self._request("GET", "/api/resources", params=params)["resources"]
         return Kernels(Kernel(self, resource["resource_id"], resource["name"], resource) for resource in resources)
 
     def __getitem__(self, name: str) -> Kernel:
-        """The kernel with this name or id, opened if it does not exist yet.
+        """The kernel with this name or id.
 
-        Inside a kernel, a named kernel obtained this way is held by this
-        one: it lives as long as this kernel does, and is released after.
-        Outside a kernel nothing can hold it, so only existing kernels resolve.
+        Inside a kernel the name is this home's child kernel, opened on first
+        use and retired with the home's main kernel; this kernel's and the
+        main kernel's own names resolve to them. Outside a kernel nothing could
+        hold a new kernel, so only a main kernel by name, or any kernel by id,
+        resolves.
         """
         holder = None if self.identity is None else self.identity.kernel_id
         resource = self._request("POST", "/api/resources/ensure", json={"name": name, "holder": holder})["resource"]
@@ -215,7 +222,7 @@ class Kernels(list[Kernel]):
     def __repr__(self) -> str:
         if not self:
             return "no kernels"
-        rows = [("name", "id", "kernel", "busy", "pid", "executions", "leases", "holders")]
+        rows = [("name", "id", "kernel", "busy", "pid", "executions", "leases", "scope", "home")]
         for kernel in self:
             snapshot = kernel.snapshot or {}
             rows.append(
@@ -227,7 +234,8 @@ class Kernels(list[Kernel]):
                     str(snapshot.get("kernel_pid") or "-"),
                     str(snapshot.get("execution_count", "")),
                     str(snapshot.get("lease_count", "")),
-                    ", ".join(snapshot.get("held_by", ())) or "-",
+                    str(snapshot.get("scope", "")),
+                    str(snapshot.get("home") or "-"),
                 )
             )
         widths = [max(len(row[column]) for row in rows) for column in range(len(rows[0]))]

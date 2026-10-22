@@ -172,8 +172,8 @@ Outside a kernel, `Daemon()` uses `LOOMMUX_CONTROL_URL` or
 
 | Expression | Meaning |
 | --- | --- |
-| `loommux.kernels()` | every registered kernel, with name, id, state, and holders |
-| `loommux["build"]` | handle of kernel `build`; created on first use, held by this kernel |
+| `loommux.kernels()` | the kernels of this home: its main kernel and child kernels, with name, id, state, scope, and home |
+| `loommux["build"]` | handle of this home's child kernel `build`, opened on first use; this kernel's and its main kernel's own names resolve to them |
 | `loommux.self` | handle of this kernel |
 | `kernel.run(code, wait=10)` | submit `code`; returns a `Job` |
 | `kernel.interrupt()`, `kernel.restart()`, `kernel.recycle(force=False)` | control operations |
@@ -198,8 +198,8 @@ kernel has it, and no special "daemon kernel" is needed.
 
 `%%loommux --kernel build` in kernel A:
 
-1. resolves `build`, creating a named kernel resource if none is registered,
-   and records A as one of its holders (section 8);
+1. resolves `build` in A's home, opening a child kernel if none is registered
+   (section 8);
 2. submits the body unchanged to `build`;
 3. relays `build`'s combined output into A's cell as it arrives, by character
    offset into the append-only combined log, until the execution ends; each
@@ -232,21 +232,20 @@ Consequences that the implementation must preserve:
   and the relay never interleaves another kernel's output, so a label would only
   cost tokens.
 
-## 8. Holding
+## 8. Homes
 
-A kernel opened by another kernel lives as long as its opener. Each resource
-records the ids of the resources that hold it. A resource is **anchored** when
-a client lease holds it, or when an anchored resource holds it. The sweeper
-computes anchoring by reachability from leased resources, so a holding cycle
-with no leased member is released like any other unanchored resource. An
-unanchored resource follows today's leaseless path: it is recycled when idle,
-and orphaned with a grace period when work is still running.
+A kernel opened by another kernel is a child kernel of the opener's main
+kernel, its home, and lives as long as that main kernel holds a client lease
+([Main Kernel Binding Design](kernel-binding-design.md) section 3.2). A child
+kernel opening a kernel opens it in the same home. Names resolve inside the
+home, so forwarding to `build` reaches this home's `build`, never another
+session's. An unanchored child kernel follows the leaseless path: it is
+recycled when idle, and orphaned with a grace period when work is still
+running.
 
-A holding edge disappears when either end is retired. Snapshots list a
-resource's holders by name, and the console shows them.
-
-Handles obtained outside any kernel address existing kernels only; creation
-needs a holder.
+Snapshots name a resource's scope (`main` or `child`) and its home, and the
+console shows them. Handles obtained outside any kernel resolve a main kernel
+by name or any kernel by id, and open nothing; creation needs a home.
 
 ## 9. Reversed Decisions
 
@@ -285,8 +284,8 @@ needs a holder.
 | H7 | IPython's raw input history keeps the header |
 | K1 | Kernels receive id, name, and control URL; a stdio daemon's kernels report that no control plane exists |
 | K2 | `loommux.kernels()`, `loommux.self`, interrupt, restart, and recycle work from inside a kernel over HTTP |
-| P1 | `loommux["build"].run()` creates a held kernel and its job waits, reports status, and reads output |
-| P2 | A held kernel is released after its holder is released, including a two-kernel holding cycle |
+| P1 | `loommux["build"].run()` opens a child kernel and its job waits, reports status, and reads output |
+| P2 | A child kernel is released with its main kernel, including one opened from another child kernel |
 | F1 | `%%loommux --kernel build` relays output, ends in the target's state, and shows a one-line error |
 | F2 | Interrupting the forwarding cell interrupts the target |
 | F3 | Forwarding back into the busy origin fails with `busy` instead of hanging |

@@ -18,13 +18,14 @@ from loommux.resource.connections import ConnectionRegistry
 from loommux.resource.liveness import LeaseStanding, LeaseVerdict, assess_lease
 from loommux.resource.model import (
     ClientLease,
+    KernelRequest,
     KernelResource,
     LeaseClient,
-    ResourceAddress,
     ResourceLifecycle,
+    resource_key,
 )
 from loommux.resource.policy import LeasePolicy, LeasePolicyManager
-from loommux.resource.routing import named_address
+from loommux.resource.routing import private_kernel_name, validate_kernel_name
 from loommux.session import IPythonSession
 
 SessionFactory = Callable[[], IPythonSession]
@@ -50,9 +51,9 @@ class ResourceBusyError(ResourceManagerError):
 class KernelResourceManager:
     """Own many independently provisioned IPython workbenches.
 
-    A provisioning task is registered per address before kernel startup begins.
-    Concurrent callers for the same address await that task, while unrelated
-    addresses remain free to provision in parallel.
+    A provisioning task is registered per kernel key before kernel startup
+    begins. Concurrent callers for the same key await that task, while
+    unrelated kernels remain free to provision in parallel.
     """
 
     def __init__(
@@ -99,63 +100,120 @@ class KernelResourceManager:
                 name="loommux-resource-sweeper",
             )
 
-    async def get_or_create(self, address: ResourceAddress, *, holder_id: str | None = None) -> KernelResource:
-        """Return the resource at ``address``, provisioning it if absent.
+    async def get_or_create(self, name: str, *, home: str | None = None, named: bool = True) -> KernelResource:
+        """Return the kernel called ``name`` in ``home``, provisioning it if absent.
 
-        ``holder_id`` is recorded in the same locked step that registers a new
-        resource. Returning first would leave a suspension point in which the
-        sweeper finds the new resource leaseless, unheld, and idle, and
-        retires it before its opener ever holds it.
+        ``home`` is ``None`` for a main kernel. A child kernel carries its home
+        from the moment it is registered, so no sweep can find it unanchored
+        while its main kernel is anchored.
         """
         async with self._registry_lock:
             if self._stopping:
                 raise ResourceManagerError("resource manager is stopping")
-            resource = self._resources_by_key.get(address.key)
-            if resource is not None:
-                return resource
+            claim = self._claim_locked(name, home, named)
+        return await _settled(claim)
 
-            provisioning = self._provisioning_by_key.get(address.key)
-            if provisioning is None:
-                provisioning = asyncio.create_task(
-                    self._provision(address, holder_id),
-                    name=f"loommux-provision-{address.key}",
-                )
-                self._provisioning_by_key[address.key] = provisioning
+    def _claim_locked(self, name: str, home: str | None, named: bool) -> KernelResource | asyncio.Task[KernelResource]:
+        """The registered kernel with this name in this home, or the task starting it."""
+        key = resource_key(name, home)
+        resource = self._resources_by_key.get(key)
+        if resource is not None:
+            return resource
+        provisioning = self._provisioning_by_key.get(key)
+        if provisioning is None:
+            provisioning = asyncio.create_task(
+                self._provision(name, home, named),
+                name=f"loommux-provision-{key}",
+            )
+            self._provisioning_by_key[key] = provisioning
+        return provisioning
 
-        return await asyncio.shield(provisioning)
+    def _free_main_name_locked(self, name: str) -> str:
+        """``name``, or ``name-2``, ``name-3``... whichever no main kernel has.
+
+        Kernels still starting count, so two sessions asking for one name at
+        the same moment receive two names rather than one shared kernel.
+        """
+        candidate, number = name, 1
+        while (key := resource_key(candidate, None)) in self._resources_by_key or key in self._provisioning_by_key:
+            number += 1
+            candidate = f"{name}-{number}"
+        return candidate
+
+    def _bound_locked(self, client_id: str) -> KernelResource | None:
+        # The lease is the binding. Child kernels hold no client leases, so at
+        # most one main kernel holds this session's; a second record of the
+        # same fact could disagree with the leases the sweep releases.
+        return next((resource for resource in self._resources_by_id.values() if client_id in resource.client_leases), None)
+
+    async def _session_kernel(self, client: LeaseClient, request: KernelRequest | None) -> KernelResource:
+        """The main kernel this call's session works in, chosen on its first call.
+
+        A session holding no lease is on its first call: either it never
+        called, or the sweep released its lease and with it the binding.
+        """
+        async with self._registry_lock:
+            if self._stopping:
+                raise ResourceManagerError("resource manager is stopping")
+            bound = self._bound_locked(client.client_id)
+            if bound is not None:
+                return bound
+            if request is not None:
+                claim = self._claim_locked(request.name, None, True)
+            else:
+                name = private_kernel_name(client)
+                # A registered kernel under this name is another session's,
+                # whose id shares the prefix; a provisioning task under it is
+                # this session's own concurrent first call, which it joins.
+                if resource_key(name, None) in self._resources_by_key:
+                    name = self._free_main_name_locked(name)
+                claim = self._claim_locked(name, None, False)
+        return await _settled(claim)
 
     async def get_by_id(self, resource_id: str) -> KernelResource | None:
         async with self._registry_lock:
             return self._resources_by_id.get(resource_id)
 
     async def ensure_held(self, name: str, holder_id: str | None) -> KernelResource:
-        """Return the kernel a kernel asks for by name, recording who holds it.
+        """Return the kernel that ``holder_id``'s kernel names, opening a child kernel.
 
-        A registered resource is matched by name or id. Otherwise a named
-        shared resource is created, which needs a holder: with no lease of its
-        own, only its holder keeps it anchored. A private resource belongs to
-        its MCP session and is never held by another kernel.
+        Inside a kernel, names resolve in its home: the home's main kernel and
+        the asking kernel by their own name or id, otherwise a child kernel of
+        the home, opened on first use. A child kernel asking for a kernel opens
+        it in the same home, so homes have one level.
+
+        Without a holder the caller is not a kernel and nothing could anchor a
+        new kernel, so only a main kernel by name, or any kernel by id,
+        resolves.
         """
-        address = named_address(name)
+        name = validate_kernel_name(name)
         async with self._registry_lock:
-            holder = None if holder_id is None else self._resources_by_id.get(holder_id)
-            if holder_id is not None and holder is None:
+            if holder_id is None:
+                existing = self._resources_by_id.get(name) or self._resources_by_key.get(resource_key(name, None))
+                if existing is None:
+                    raise ResourceNotFoundError(f"no main kernel named {name!r} and no kernel with that id; only a kernel can open one")
+                return existing
+            holder = self._resources_by_id.get(holder_id)
+            if holder is None:
                 raise ResourceNotFoundError("holder resource was not found")
-            existing = self._resources_by_key.get(address.key) or next(
-                (resource for resource in self._resources_by_id.values() if name in (resource.resource_id, resource.address.display_name)),
+            home_id = holder.home or holder.resource_id
+            for candidate in (holder, self._resources_by_id.get(home_id)):
+                if candidate is not None and name in (candidate.resource_id, candidate.name):
+                    return candidate
+            existing = self._resources_by_key.get(resource_key(name, home_id)) or next(
+                (resource for resource in self._resources_by_id.values() if resource.home == home_id and resource.resource_id == name),
                 None,
             )
             if existing is not None:
-                self._hold_locked(existing, holder)
                 return existing
-        if holder is None:
-            raise ResourceNotFoundError(f"no kernel named {name!r}; only a kernel can open one")
-        resource = await self.get_or_create(address, holder_id=holder.resource_id)
+            if self._stopping:
+                raise ResourceManagerError("resource manager is stopping")
+            claim = self._claim_locked(name, home_id, True)
+        resource = await _settled(claim)
         async with self._registry_lock:
-            if self._resources_by_id.get(holder.resource_id) is not holder:
-                # The holder retired while the kernel started; nothing anchors it.
+            if home_id not in self._resources_by_id:
+                # The home retired while the kernel started; nothing anchors it.
                 raise ResourceNotFoundError("holder resource was not found")
-            self._hold_locked(resource, holder)
         return resource
 
     @asynccontextmanager
@@ -181,13 +239,16 @@ class KernelResourceManager:
     @asynccontextmanager
     async def operation(
         self,
-        address: ResourceAddress,
         client: LeaseClient,
         policy: LeasePolicy,
         *,
+        request: KernelRequest | None = None,
         replaces_kernel: bool = False,
     ) -> AsyncIterator[KernelResource]:
-        """Admit one client operation on the resource at ``address``.
+        """Admit one client operation on the main kernel its session works in.
+
+        ``request`` names the main kernel to choose on the session's first
+        call; once the session holds a lease it works where that lease is.
 
         ``replaces_kernel`` marks an operation that may swap the session's
         kernel process, such as a restart. It then holds the resource's
@@ -198,15 +259,20 @@ class KernelResourceManager:
         the other and never shut down.
         """
         while True:
-            resource = await self.get_or_create(address)
+            resource = await self._session_kernel(client, request)
             await self._recover_if_needed(resource)
             async with self._registry_lock:
                 # Recovery may suspend, and a resource retired meanwhile is no
                 # longer registered. The retry cannot spin without yielding:
                 # with no suspension nothing could have retired it, and a
-                # retired address makes get_or_create return its successor or
-                # await a new provisioning task.
-                if self._resources_by_key.get(address.key) is not resource:
+                # retired kernel makes the next choice return the session's
+                # successor or await a new provisioning task. A concurrent
+                # first call of the same session may also have bound it to
+                # another kernel meanwhile; the next choice returns that one.
+                if self._resources_by_id.get(resource.resource_id) is not resource:
+                    continue
+                bound = self._bound_locked(client.client_id)
+                if bound is not None and bound is not resource:
                     continue
                 if resource.lifecycle is ResourceLifecycle.ORPHANED:
                     resource.lifecycle = ResourceLifecycle.RUNNING
@@ -242,34 +308,42 @@ class KernelResourceManager:
 
     async def renew_client_lease(
         self,
-        address_key: str,
         client_id: str,
     ) -> bool:
         async with self._registry_lock:
-            resource = self._resources_by_key.get(address_key)
-            lease = None if resource is None else resource.client_leases.get(client_id)
-            if lease is None:
+            resource = self._bound_locked(client_id)
+            if resource is None:
                 return False
-            self._record_request_locked(lease)
+            self._record_request_locked(resource.client_leases[client_id])
             return True
 
     async def client_verdict(
         self,
-        address_key: str,
         client_id: str,
     ) -> LeaseVerdict | None:
         """Judge one client's lease without renewing it."""
         async with self._registry_lock:
-            resource = self._resources_by_key.get(address_key)
-            lease = None if resource is None else resource.client_leases.get(client_id)
-            if resource is None or lease is None:
+            resource = self._bound_locked(client_id)
+            if resource is None:
                 return None
-            return self._assess(resource, lease, monotonic())
+            return self._assess(resource, resource.client_leases[client_id], monotonic())
 
     async def list_resources(self) -> list[KernelResource]:
         async with self._registry_lock:
             return sorted(
                 self._resources_by_id.values(),
+                key=lambda resource: resource.created_at,
+            )
+
+    async def list_home(self, resource_id: str) -> list[KernelResource]:
+        """The kernels of ``resource_id``'s home: its main kernel and child kernels, oldest first."""
+        async with self._registry_lock:
+            member = self._resources_by_id.get(resource_id)
+            if member is None:
+                raise ResourceNotFoundError("resource was not found")
+            home_id = member.home or member.resource_id
+            return sorted(
+                (resource for resource in self._resources_by_id.values() if home_id in (resource.resource_id, resource.home)),
                 key=lambda resource: resource.created_at,
             )
 
@@ -423,7 +497,7 @@ class KernelResourceManager:
             for resource in list(self._resources_by_id.values()):
                 if resource.resource_id in anchored:
                     if resource.lifecycle is ResourceLifecycle.ORPHANED:
-                        # A holder opened it again by name during the grace.
+                        # A session's lease anchored it again during the grace.
                         resource.lifecycle = ResourceLifecycle.RUNNING
                         resource.orphaned_at = None
                     continue
@@ -492,36 +566,36 @@ class KernelResourceManager:
             await asyncio.to_thread(resource.session.close)
             resource.lifecycle = ResourceLifecycle.STOPPED
 
-    async def snapshot(self) -> list[dict[str, Any]]:
-        resources = await self.list_resources()
+    async def snapshot(self, *, home_of: str | None = None) -> list[dict[str, Any]]:
+        """Every kernel, or with ``home_of`` only the kernels of that kernel's home."""
+        resources = await (self.list_resources() if home_of is None else self.list_home(home_of))
         return [self._snapshot_resource(resource) for resource in resources]
 
     async def snapshot_one(self, resource_id: str) -> dict[str, Any]:
         return self._snapshot_resource(await self._require_resource(resource_id))
 
-    async def _provision(self, address: ResourceAddress, holder_id: str | None = None) -> KernelResource:
+    async def _provision(self, name: str, home: str | None, named: bool) -> KernelResource:
         session = self._session_factory()
         # The id exists before the kernel does, so the kernel can be told who
         # it is when it starts.
         resource_id = uuid4().hex
+        key = resource_key(name, home)
         try:
             startup = await asyncio.to_thread(
                 session.start_workspace,
                 self.workspace,
                 self.workspace_resolution,
-                identity=KernelIdentity(resource_id, address.display_name, self._control_url),
+                identity=KernelIdentity(resource_id, name, self._control_url),
             )
             if not startup.get("ok"):
                 raise ResourceProvisionError(
                     str(startup.get("message", "IPython session failed to start"))
                 )
-            resource = KernelResource.create(address, session, resource_id=resource_id)
+            resource = KernelResource.create(name, session, home=home, named=named, resource_id=resource_id)
             async with self._registry_lock:
                 if self._stopping:
                     raise ResourceManagerError("resource manager is stopping")
-                if holder_id in self._resources_by_id:
-                    resource.held_by.add(holder_id)
-                self._resources_by_key[address.key] = resource
+                self._resources_by_key[key] = resource
                 self._resources_by_id[resource.resource_id] = resource
             return resource
         except BaseException:
@@ -529,44 +603,23 @@ class KernelResourceManager:
             raise
         finally:
             async with self._registry_lock:
-                current = self._provisioning_by_key.get(address.key)
+                current = self._provisioning_by_key.get(key)
                 if current is asyncio.current_task():
-                    self._provisioning_by_key.pop(address.key, None)
+                    self._provisioning_by_key.pop(key, None)
 
     def _detach_locked(self, resource: KernelResource) -> None:
         self._resources_by_id.pop(resource.resource_id, None)
-        if self._resources_by_key.get(resource.address.key) is resource:
-            self._resources_by_key.pop(resource.address.key, None)
-        for held in self._resources_by_id.values():
-            held.held_by.discard(resource.resource_id)
-
-    @staticmethod
-    def _hold_locked(resource: KernelResource, holder: KernelResource | None) -> None:
-        if holder is None or holder is resource or not resource.address.shared:
-            return
-        resource.held_by.add(holder.resource_id)
-        if resource.lifecycle is ResourceLifecycle.ORPHANED:
-            resource.lifecycle = ResourceLifecycle.RUNNING
-            resource.orphaned_at = None
+        if self._resources_by_key.get(resource.key) is resource:
+            self._resources_by_key.pop(resource.key, None)
 
     def _anchored_locked(self) -> set[str]:
-        """Ids of resources a client lease holds, directly or through holders.
+        """Ids of main kernels a client lease holds, and of their child kernels.
 
-        Reachability rather than "has a holder" decides, so two kernels that
-        hold each other after every client has left are released as well.
+        A child kernel of a retired main kernel keeps its home id, which no
+        longer anchors anything, so it is released with its home.
         """
-        holds: dict[str, list[str]] = {}
-        for resource in self._resources_by_id.values():
-            for holder_id in resource.held_by:
-                holds.setdefault(holder_id, []).append(resource.resource_id)
-        frontier = [resource.resource_id for resource in self._resources_by_id.values() if resource.client_leases]
-        anchored = set(frontier)
-        while frontier:
-            for held_id in holds.get(frontier.pop(), ()):
-                if held_id not in anchored:
-                    anchored.add(held_id)
-                    frontier.append(held_id)
-        return anchored
+        leased = {resource.resource_id for resource in self._resources_by_id.values() if resource.client_leases}
+        return leased | {resource.resource_id for resource in self._resources_by_id.values() if resource.home in leased}
 
     @staticmethod
     def _renew_lease_locked(lease: ClientLease) -> None:
@@ -592,7 +645,7 @@ class KernelResourceManager:
             logger.warning(
                 "lease alert: %s on %s is %s; the client does not keep open the standalone GET stream this connection lease relies on, so it falls back to the %g-second activity window",
                 lease.client.display_name,
-                resource.address.display_name,
+                resource.name,
                 alert.value,
                 verdict.window_seconds,
             )
@@ -606,7 +659,7 @@ class KernelResourceManager:
         return assess_lease(
             lease,
             self.connections.presence(lease.client.client_id),
-            shared=resource.address.shared,
+            named=resource.named,
             now=now,
         )
 
@@ -653,10 +706,10 @@ class KernelResourceManager:
             )
         return {
             "resource_id": resource.resource_id,
-            "key": resource.address.key,
-            "name": resource.address.display_name,
-            "scope": resource.address.scope,
-            "shared": resource.address.shared,
+            "name": resource.name,
+            "scope": "main" if resource.home is None else "child",
+            "home": None if resource.home is None else self._home_name(resource.home),
+            "named": resource.named,
             "lifecycle": resource.lifecycle.value,
             "created_at": resource.created_at.isoformat(),
             "active_operations": resource.active_operations,
@@ -674,9 +727,14 @@ class KernelResourceManager:
             "execution_count": len(resource.session.executions),
             "lease_count": len(leases),
             "leases": leases,
-            "held_by": sorted(
-                holder.address.display_name
-                for holder_id in resource.held_by
-                if (holder := self._resources_by_id.get(holder_id)) is not None
-            ),
         }
+
+    def _home_name(self, home_id: str) -> str | None:
+        home = self._resources_by_id.get(home_id)
+        return None if home is None else home.name
+
+
+async def _settled(claim: KernelResource | asyncio.Task[KernelResource]) -> KernelResource:
+    # Shielded so that a caller cancelled while waiting does not cancel a
+    # start other callers of the same kernel are waiting for too.
+    return claim if isinstance(claim, KernelResource) else await asyncio.shield(claim)

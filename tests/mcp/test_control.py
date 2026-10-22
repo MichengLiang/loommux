@@ -61,7 +61,7 @@ def test_console_reads_the_connection_lease_contract() -> None:
 
     assert '<option value="connection">connection</option>' in console
     assert 'id="grace"' in console
-    for field in ("connection_grace_seconds", "l.standing", "l.alert", "l.grace_remaining_seconds", "r.kernel_state", "r.held_by", 'id="signal"'):
+    for field in ("connection_grace_seconds", "l.standing", "l.alert", "l.grace_remaining_seconds", "r.kernel_state", "r.home", 'id="signal"'):
         assert field in console
 
 
@@ -112,7 +112,7 @@ def test_program_routes_validate_requests_before_reaching_a_kernel(
         "follow params": 400,
         "follow target": 404,
     }
-    assert responses["no holder"].json()["message"] == "no kernel named 'lab'; only a kernel can open one"
+    assert responses["no holder"].json()["message"] == "no main kernel named 'lab' and no kernel with that id; only a kernel can open one"
 
 
 def test_http_control_plane_rejects_invalid_policy(

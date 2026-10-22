@@ -7,7 +7,7 @@ from collections.abc import Callable
 import mcp.types as mcp_types
 from fastmcp import Context, FastMCP
 
-from loommux.resource import KernelResourceManager, resolve_address, resolve_client
+from loommux.resource import KernelResourceManager, resolve_client
 
 
 def install_lease_aware_ping_handler(
@@ -36,9 +36,8 @@ def install_lease_aware_ping_handler(
             return result
         request_context = low_level_server.request_context
         ctx = Context(mcp, session=request_context.session)
-        address = resolve_address(ctx)
         client = resolve_client(ctx)
-        await manager.renew_client_lease(address.key, client.client_id)
+        await manager.renew_client_lease(client.client_id)
         return result
 
     low_level_server.request_handlers[mcp_types.PingRequest] = (

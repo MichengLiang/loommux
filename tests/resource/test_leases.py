@@ -4,11 +4,12 @@ from time import monotonic
 from typing import Any
 
 from loommux.resource import (
+    KernelRequest,
     KernelResourceManager,
     LeaseClient,
     LeaseMode,
     LeasePolicy,
-    ResourceAddress,
+    RequestMode,
     ResourceLifecycle,
 )
 from loommux.resource.connections import ConnectionRegistry
@@ -70,13 +71,8 @@ def make_policy(
     )
 
 
-def make_address() -> ResourceAddress:
-    return ResourceAddress(
-        key="named:shared",
-        display_name="shared",
-        scope="named_shared",
-        shared=True,
-    )
+def make_request() -> KernelRequest:
+    return KernelRequest("shared", RequestMode.JOIN)
 
 
 def make_client(client_id: str) -> LeaseClient:
@@ -93,15 +89,15 @@ def test_shared_resource_tracks_client_leases_independently(
             session_factory=FakeSession,
             sweep_interval_seconds=60,
         )
-        address = make_address()
+        request = make_request()
         policy = make_policy()
-        async with manager.operation(address, make_client("first"), policy) as resource:
+        async with manager.operation(make_client("first"), policy, request=request) as resource:
             pass
         # Drive the first lease past its window directly. Sleeping for a
         # 30-ms lease makes this state-machine test scheduler-sensitive on
         # hosted Windows runners.
         resource.client_leases["first"].renewed_at -= 3600
-        async with manager.operation(address, make_client("second"), policy):
+        async with manager.operation(make_client("second"), policy, request=request):
             pass
 
         assert await manager.sweep_once() == 0
@@ -121,7 +117,7 @@ def test_protocol_renewal_does_not_create_a_resource(tmp_path: Path) -> None:
             session_factory=FakeSession,
         )
 
-        assert not await manager.renew_client_lease("named:missing", "client")
+        assert not await manager.renew_client_lease("client")
         assert await manager.snapshot() == []
 
     asyncio.run(scenario())
@@ -136,16 +132,16 @@ def test_protocol_renewal_keeps_the_lease_of_a_resource_whose_kernel_exited(
             "launch_cwd",
             session_factory=FakeSession,
         )
-        address = make_address()
+        request = make_request()
         client = make_client("connected")
-        async with manager.operation(address, client, make_policy()) as resource:
+        async with manager.operation(client, make_policy(), request=request) as resource:
             pass
         resource.session.kernel = None
         previous_renewal = resource.client_leases[client.client_id].renewed_at
 
         await asyncio.sleep(0.01)
 
-        assert await manager.renew_client_lease(address.key, client.client_id)
+        assert await manager.renew_client_lease(client.client_id)
         assert (
             resource.client_leases[client.client_id].renewed_at
             > previous_renewal
@@ -164,9 +160,9 @@ def test_health_observation_does_not_renew_the_client_lease(
             "launch_cwd",
             session_factory=FakeSession,
         )
-        address = make_address()
+        request = make_request()
         client = make_client("observed")
-        async with manager.operation(address, client, make_policy()) as resource:
+        async with manager.operation(client, make_policy(), request=request) as resource:
             pass
         renewal = resource.client_leases[client.client_id].renewed_at
 
@@ -189,11 +185,7 @@ def test_idle_resource_is_reclaimed_after_last_lease_expires(
             session_factory=FakeSession,
             orphan_grace_seconds=1,
         )
-        async with manager.operation(
-            make_address(),
-            make_client("only"),
-            make_policy(),
-        ) as resource:
+        async with manager.operation(make_client("only"), make_policy(), request=make_request()) as resource:
             pass
 
         await asyncio.sleep(0.04)
@@ -214,11 +206,7 @@ def test_running_orphan_receives_grace_before_forced_reclamation(
             session_factory=FakeSession,
             orphan_grace_seconds=0.03,
         )
-        async with manager.operation(
-            make_address(),
-            make_client("only"),
-            make_policy(),
-        ) as resource:
+        async with manager.operation(make_client("only"), make_policy(), request=make_request()) as resource:
             resource.session.current_execution = 1
 
         await asyncio.sleep(0.04)
@@ -251,7 +239,7 @@ def test_open_stream_holds_a_connection_lease_until_the_stream_departs(
         client = make_client("streaming")
         registry.stream_opened(client.client_id)
         policy = make_policy(mode=LeaseMode.CONNECTION, grace=0.03)
-        async with manager.operation(make_address(), client, policy) as resource:
+        async with manager.operation(client, policy, request=make_request()) as resource:
             pass
         lease = resource.client_leases[client.client_id]
         lease.renewed_at -= 3600
@@ -280,10 +268,10 @@ def test_connection_lease_without_a_stream_alerts_and_keeps_the_activity_window(
         manager = connection_manager(tmp_path, registry)
         client = make_client("streamless")
         policy = make_policy(mode=LeaseMode.CONNECTION, timeout=60, grace=0.03)
-        async with manager.operation(make_address(), client, policy) as resource:
+        async with manager.operation(client, policy, request=make_request()) as resource:
             pass
 
-        awaiting = await manager.client_verdict(resource.address.key, client.client_id)
+        awaiting = await manager.client_verdict(client.client_id)
         registry.presence(client.client_id).first_seen_at -= 3600
 
         assert awaiting is not None
@@ -293,7 +281,7 @@ def test_connection_lease_without_a_stream_alerts_and_keeps_the_activity_window(
         assert snapshot["leases"][0]["standing"] == "unbound"
         assert snapshot["leases"][0]["alert"] is True
         assert snapshot["leases"][0]["timeout_seconds"] == 60
-        assert await manager.client_verdict("named:missing", client.client_id) is None
+        assert await manager.client_verdict("missing") is None
         await manager.stop()
 
     asyncio.run(scenario())
@@ -308,13 +296,13 @@ def test_ping_after_the_stream_drops_proves_the_client_lost_only_its_stream(
         client = make_client("pinging")
         registry.stream_opened(client.client_id)
         policy = make_policy(mode=LeaseMode.CONNECTION, timeout=60, grace=0.03)
-        async with manager.operation(make_address(), client, policy) as resource:
+        async with manager.operation(client, policy, request=make_request()) as resource:
             pass
         resource.client_leases[client.client_id].requested_at -= 3600
         registry.stream_closed(client.client_id, now=monotonic() - 1)
 
-        assert await manager.renew_client_lease(resource.address.key, client.client_id)
-        verdict = await manager.client_verdict(resource.address.key, client.client_id)
+        assert await manager.renew_client_lease(client.client_id)
+        verdict = await manager.client_verdict(client.client_id)
 
         assert verdict is not None
         assert verdict.standing is LeaseStanding.STREAM_LOST
@@ -349,7 +337,7 @@ def test_sweep_logs_each_entry_into_an_alert_once(tmp_path: Path, caplog) -> Non
         manager = connection_manager(tmp_path, registry)
         client = make_client("streamless")
         policy = make_policy(mode=LeaseMode.CONNECTION, timeout=60, grace=0.03)
-        async with manager.operation(make_address(), client, policy) as resource:
+        async with manager.operation(client, policy, request=make_request()) as resource:
             pass
         registry.presence(client.client_id).first_seen_at -= 3600
 

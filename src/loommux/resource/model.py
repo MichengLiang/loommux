@@ -1,4 +1,9 @@
-"""Describe logical IPython resources and their participating clients."""
+"""Describe logical IPython resources and their participating clients.
+
+A resource is a main kernel, which MCP sessions work in, or a child kernel,
+which a kernel opened by name; ``docs/kernel-binding-design.md`` owns the
+rules that relate them.
+"""
 
 from __future__ import annotations
 
@@ -33,14 +38,26 @@ class ResourceLifecycle(StrEnum):
     STOPPED = "stopped"
 
 
-@dataclass(frozen=True)
-class ResourceAddress:
-    """A transport-neutral address for a private or named shared resource."""
+class RequestMode(StrEnum):
+    """How a call asks for the main kernel its session works in."""
 
-    key: str
-    display_name: str
-    scope: str
-    shared: bool
+    # A connection header: every session configured with the name shares one
+    # main kernel, opened by whichever arrives first.
+    JOIN = "join"
+
+
+@dataclass(frozen=True)
+class KernelRequest:
+    """The main kernel a call names, consulted while its session has none."""
+
+    name: str
+    mode: RequestMode
+
+
+def resource_key(name: str, home: str | None) -> str:
+    """The registry key of a kernel: main kernel names are unique among main
+    kernels, child kernel names only inside their home."""
+    return f"main:{name}" if home is None else f"child:{home}:{name}"
 
 
 @dataclass(frozen=True)
@@ -99,37 +116,55 @@ class ClientLease:
 
 @dataclass
 class KernelResource:
-    """A stable logical workbench whose kernel process may be replaced."""
+    """A stable logical workbench whose kernel process may be replaced.
+
+    ``home`` is ``None`` for a main kernel and the main kernel's resource id
+    for a child kernel; it never changes, so a child kernel stays one while
+    its main kernel is being retired. A main kernel holds the client leases of
+    the sessions working in it, and a child kernel holds none: it is anchored
+    exactly when its main kernel is.
+
+    ``named`` is false only for a main kernel whose name was generated for a
+    session that asked for none, until it is renamed. Activity leases on such
+    a kernel use the private window.
+    """
 
     resource_id: str
-    address: ResourceAddress
+    name: str
     session: IPythonSession
     created_at: datetime
+    home: str | None = None
+    named: bool = True
     lifecycle: ResourceLifecycle = ResourceLifecycle.RUNNING
     client_leases: dict[str, ClientLease] = field(default_factory=dict)
     active_operations: int = 0
     orphaned_at: float | None = None
     closing_reason: str | None = None
-    # Ids of the resources whose kernels opened this one by name; any one of
-    # them that is anchored keeps it anchored (see the manager's sweep).
-    held_by: set[str] = field(default_factory=set)
     lifecycle_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
     @classmethod
     def create(
         cls,
-        address: ResourceAddress,
+        name: str,
         session: IPythonSession,
         *,
+        home: str | None = None,
+        named: bool = True,
         resource_id: str | None = None,
         now: datetime | None = None,
     ) -> KernelResource:
         return cls(
             resource_id=uuid4().hex if resource_id is None else resource_id,
-            address=address,
+            name=name,
             session=session,
             created_at=datetime.now(UTC) if now is None else now,
+            home=home,
+            named=named,
         )
+
+    @property
+    def key(self) -> str:
+        return resource_key(self.name, self.home)
 
     @property
     def kernel_pid(self) -> int | None:

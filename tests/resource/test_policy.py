@@ -35,8 +35,8 @@ def test_policy_updates_are_versioned_and_idempotent() -> None:
         assert unchanged is first
         assert second.generation == 2
         assert await manager.generation(1) is first
-        assert second.timeout_for(shared=False) == 50
-        assert second.timeout_for(shared=True) == 50
+        assert second.timeout_for(named=False) == 50
+        assert second.timeout_for(named=True) == 50
 
     asyncio.run(scenario())
 

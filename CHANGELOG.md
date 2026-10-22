@@ -7,6 +7,30 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** a kernel opened by name from a kernel is a child kernel of
+  that kernel's main kernel, its home, instead of a globally named kernel held
+  by every kernel that opened it. Names resolve inside the asking kernel's
+  home, so two sessions that both open `build` get two kernels, and a child
+  kernel opening a kernel opens it in the same home. A child kernel lives
+  exactly as long as its main kernel holds a client lease.
+- **Breaking:** inside a kernel, `loommux.kernels()` lists its home only;
+  outside a kernel, `Daemon()` lists every kernel and resolves a main kernel by
+  name or any kernel by id. `GET /api/resources?home=<id>` lists one home.
+- **Breaking:** resource snapshots report `scope` (`main` or `child`), `home`,
+  and `named` instead of `key`, `shared`, and `held_by`; the console shows the
+  home, and the `Kernels` table its scope and home columns.
+- A session works in the main kernel that holds its lease, so the lease is
+  its binding. A generated `private-<session>` name that another session's
+  kernel already has is numbered instead of shared.
+
+### Removed
+
+- **Breaking:** `ResourceAddress`, `resolve_address`, and `named_address`
+  from `loommux.resource`; `KernelRequest` and `connection_request` describe
+  what a call asks for, and `LeasePolicy.timeout_for` takes `named=`.
+
 ## [0.3.0] - 2026-10-22
 
 ### Changed
