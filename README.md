@@ -203,13 +203,14 @@ The server chooses how a lease proves that its client is still there with
 | --- | --- | --- |
 | `activity` (default) | tool calls keep arriving within 80 minutes (24 hours for named main kernels) | any client |
 | `heartbeat` | the client pings within 60 seconds | clients that ping on their own, such as `LeaseAwareClient` |
-| `connection` | the session keeps its standalone Streamable HTTP `GET` stream open, and 24 hours after it left; stdio sessions for the life of the process | clients that hold that stream while they run, such as Claude Code |
+| `connection` | the session keeps its standalone Streamable HTTP `GET` stream open; stdio sessions for the life of the process | clients that hold that stream while they run, such as Claude Code |
 
 A connection lease survives any amount of idleness. About a minute after the
 client exits (`LOOMMUX_CONNECTION_GRACE_SECONDS`, default 60), the session
-counts as gone, and its main kernel waits for the named window
-(`LOOMMUX_NAMED_TTL_SECONDS`, 24 hours) after its last call, so a new session
-can take it back by name; the console can retire it at any time. If a session
+counts as gone and its lease is released. The main kernel then keeps itself
+for the named window (`LOOMMUX_NAMED_TTL_SECONDS`, 24 hours) after the last
+call, so a new session can attach to it by name; the console shows how long it
+has left and can retire it at any time. If a session
 calls tools without that stream, or keeps calling after it
 closed, the lease falls back to the activity window and raises an alert:
 every tool result of that session ends with a `Lease alert` block, and the
@@ -421,34 +422,35 @@ text; rich displays such as images stay in the target's execution record.
 
 ### Naming And Switching The Main Kernel
 
-Each MCP session works in one main kernel. On the session's first call,
-`--kernel NAME` names that kernel instead of forwarding, because no kernel has
-received a cell yet:
+Each MCP session works in one main kernel. `--attach NAME --create` names it:
+the session works in the main kernel `NAME` from this cell on, which is opened
+when it does not exist and found by name when it does, whoever else works in
+it. A phrase describing the task makes a good name, and the same first cell
+returns to the kernel after the host was closed:
 
 ```python
-%%loommux --kernel report-cleanup
+%%loommux --attach report-cleanup --create
 import pandas as pd
 ```
 
-`report-cleanup` is opened, or taken back when it exists and no session is
-connected to it; while another session is, the new session gets
-`report-cleanup-2`, and the first cell still runs there. A phrase describing
-the task makes collisions rare. Later `--kernel` headers forward as described
-above. Without a name the first call opens `private-<session>`.
-
-`--attach NAME` moves the session to an existing main kernel at any time and
-releases its lease on the one it leaves:
+Without `--attach`, a session's first call opens `private-<session>`, and
+`--kernel` always forwards as described above. `--attach NAME` alone moves the
+session to an existing main kernel at any time, for example after a first cell
+that ran before the agent remembered its kernel, and releases its lease on the
+one it leaves:
 
 ```python
 %%loommux --attach report-cleanup
 df.head()
 ```
 
-A missing name returns `kernel_not_found`, listing the main kernels no session
-is connected to, and opens nothing. The call that changes the session's main
-kernel ends with one block such as `Kernel: report-cleanup (taken back; 12
-earlier executions)`, and `status` begins with the kernel's name. The rules and
-their reasons are in [Main Kernel Binding Design](docs/kernel-binding-design.md).
+Without `--create` a missing name returns `kernel_not_found`, listing the main
+kernels, and opens nothing. The call that changes the session's main kernel ends
+with one block such as `Kernel: report-cleanup (attached; 12 earlier
+executions)`, and `status` begins with the kernel's name. A kernel renames
+itself with `loommux.self.rename("new-name")`. The rules, and the terminal
+multiplexers and notebook servers they come from, are in
+[Main Kernel Binding Design](docs/kernel-binding-design.md).
 
 When the call returns while the cell is still running, use `wait`,
 `execution_status`, `read_output`, `search_output`,

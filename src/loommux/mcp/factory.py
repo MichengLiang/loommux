@@ -250,28 +250,18 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
         主 kernel
         ---------
 
-        每个会话在一台主 kernel 里工作。会话的第一个 cell 用 ``--kernel 名字``
-        给它起名：名字是描述这次任务的一个短语，不带空格::
+        会话在一台主 kernel 里工作。第一个 cell 用 ``--attach 名字 --create``
+        给它起名，名字是描述这次任务的一个短语，不带空格::
 
-            %%loommux --kernel 主kernel绑定设计
+            %%loommux --attach 主kernel绑定设计 --create
             import pandas as pd
 
-        这个名字的主 kernel 存在而且没有会话连着时，就接回它，命名空间和
-        execution 编号都还在；正被别的会话连着时，得到 ``名字-2``，第一个 cell
-        照常在这台里执行。结果末尾的 ``Kernel:`` 一行写明实际的名字和来历，
-        ``status`` 第一行也是名字。第一次调用之后，``--kernel`` 只表示转发给
-        子 kernel。
-
-        会话一直连着，它的主 kernel 就一直在；会话离开后，主 kernel 从最后
-        一次调用起再保留 24 小时，等新的会话按名字接回。
-
-        任务方向变了就改名：在做别的事的 cell 里顺手写一行
-        ``loommux.self.rename("新名字")``，返回实际得到的名字（已被占用时是
-        ``新名字-2``），之后的头就按新名字认它。
-
-        ``%%loommux --attach 名字`` 随时把会话换到一台已有的主 kernel，放下手上
-        这台；名字不存在时什么也不开，返回 ``kernel_not_found`` 并列出没有会话
-        连着的主 kernel。
+        没有就开出，有就进去，命名空间与 execution 编号都还在；换了宿主之后
+        第一个 cell 照样这样写。不带 ``--create`` 时名字不存在返回
+        ``kernel_not_found``。``--attach 名字`` 随时把会话换过去，放下手上那台。
+        结果末尾的 ``Kernel:`` 一行写明名字与来历，``status`` 第一行也是名字。
+        有会话连着主 kernel 就一直在，没有时从最后一次调用起保留 24 小时。
+        任务变了，在任意 cell 里顺手写 ``loommux.self.rename("新名字")``。
 
         图像展示
         --------
@@ -306,7 +296,7 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
         --------
 
         第一行是这个会话主 kernel 的名字：上下文被压缩、记不清名字时，
-        在这里找回，之后用 ``--kernel`` 或 ``--attach`` 写它。
+        在这里找回，之后用 ``--attach 名字`` 回到它。
 
         还返回当前 IPython 工作台启动时解析的 workspace、其
         ``workspace_resolution`` 来源

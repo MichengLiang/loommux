@@ -9,20 +9,20 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
-- An MCP session names its main kernel on its first call with
-  `%%loommux --kernel NAME`: NAME is opened, taken back from sessions that
-  left, or numbered (`NAME-2`) while another session is connected to it. The
-  first cell runs there, and the kernel reads the name it was asked for as its
-  own. Later `--kernel` headers forward as before.
-- `%%loommux --attach NAME` moves the session to an existing main kernel at
-  any time, whether or not other sessions work in it, and releases its lease
-  on the previous one. A missing name returns `kernel_not_found` listing the
-  main kernels no session is connected to, opens nothing, and allocates no
-  execution. Inside a kernel, `--attach` naming another kernel is a
-  `UsageError`.
+- `%%loommux --attach NAME [--create]` chooses the main kernel an MCP session
+  works in, on any call: NAME is found by name or id whoever else works in it,
+  or opened with `--create`; without `--create` a missing name returns
+  `kernel_not_found` listing the main kernels, opens nothing, and allocates no
+  execution. Repeating it changes nothing, and switching releases the
+  session's lease on the previous main kernel. The same first cell,
+  `%%loommux --attach NAME --create`, names a new kernel and returns to it
+  from a later host. Inside a kernel, `--attach` naming another kernel is a
+  `UsageError`; `--create` without `--attach` is a header error. `--kernel`
+  still forwards one cell, on every call.
 - A call that changes the session's main kernel ends with one
-  `Kernel: NAME (...)` block, and structured results carry `binding`;
-  `status` begins with the kernel's name.
+  `Kernel: NAME (opened)` or `Kernel: NAME (attached; N earlier executions)`
+  block, and structured results carry `binding`; `status` begins with the
+  kernel's name.
 - `Kernel.rename(name)` and `POST /api/resources/{id}/rename` rename a kernel
   and return the name it received, numbered when another main kernel, or a
   child kernel of the same home, has it. `loommux.self.rename()` is one line
@@ -30,13 +30,19 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   the next cell; a kernel renamed from elsewhere learns the name from the
   next answer describing it, or from a header that uses it. A name another
   kernel of the same home answers to is numbered, so none hides another.
+- A main kernel records its own retention. Snapshots report
+  `retention_remaining_seconds` while it is what keeps the kernel, the console
+  shows it as 保留, and the `Kernels` table as its `kept` column.
 
 ### Changed
 
-- A connection lease whose session left (stream closed, grace over, nothing
-  sent since) is no longer released: it falls back to the named activity
-  window (`LOOMMUX_NAMED_TTL_SECONDS`, 24 hours) after its last renewal,
-  without an alert, so the main kernel waits for a session to take it back.
+- A main kernel whose connection-lease sessions all left is no longer retired
+  about a minute later. The departed lease is still released when the
+  reconnect grace ends, and the kernel then keeps itself for the named window
+  (`LOOMMUX_NAMED_TTL_SECONDS`, 24 hours) after that lease's last renewal; it
+  is retired when the window ends, busy or not (a running cell gets the orphan
+  grace). Switching away with `--attach` clears it. Activity and heartbeat
+  leases are unchanged.
 - **Breaking:** a kernel opened by name from a kernel is a child kernel of
   that kernel's main kernel, its home, instead of a globally named kernel held
   by every kernel that opened it. Names resolve inside the asking kernel's
