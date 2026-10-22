@@ -574,6 +574,7 @@ does not depend on its transport consumer.
 The current public contract is documented in [Coding Agent Control Plane
 Design](docs/coding-agent-control-plane-design.md).
 Focused references cover the [cell header](docs/cell-header-design.md),
+[main kernel binding](docs/kernel-binding-design.md),
 [freeform cell input](docs/ipython-mcp-freeform-run-cell-design.md),
 [complete-output control](docs/ipython-mcp-full-output-directive-design.md),
 [workspace configuration](docs/workspace-configuration.md), and the
