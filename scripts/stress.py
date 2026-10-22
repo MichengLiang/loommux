@@ -5,8 +5,9 @@ Run from the repository root::
     uv run python scripts/stress.py --seconds 180
 
 The script starts its own HTTP server on a free loopback port, in a temporary
-workspace, with a 0.2 s sweep and 1 s connection and orphan grace so that
-leases expire, resources are orphaned, and kernels are retired continuously.
+workspace, with a 0.2 s sweep, 1 s connection and orphan grace, and a 1 s
+named window, which departed sessions' main kernels wait in, so that leases
+expire, resources are orphaned, and kernels are retired continuously.
 Private and shared clients then call random tools, cancel calls midway, and
 disconnect at random while a watchdog polls the console.
 
@@ -51,9 +52,14 @@ CELLS = (
     "print('y' * 200_000)",
     "for i in range(2000): print(i)",
     "%%loommux --wait 0.3\nimport time; time.sleep(1.5); print('slept')",
-    # Every client forwards to one named kernel: holding by many kernels at
-    # once, the follow endpoint, and busy refusals between forwards.
+    # As a client's first cell this names its main kernel: opened, numbered
+    # while other sessions are connected, or taken back. Later it forwards to
+    # the home's child kernel: the follow endpoint, busy refusals between
+    # forwards, and child kernels retired with their home.
     "%%loommux --kernel stress-forward --wait 0.5\nimport time; time.sleep(0.2); print('forwarded')",
+    # Moves the session's lease between main kernels under load, or is
+    # refused with kernel_not_found when none by that name exists.
+    "%%loommux --attach stress-forward\nprint('attached')",
     "1 + 1",
     "raise ValueError('boom')",
 )
@@ -61,6 +67,7 @@ SERVER_SETTINGS = {
     "LOOMMUX_LEASE_MODE": "connection",
     "LOOMMUX_SWEEP_INTERVAL_SECONDS": "0.2",
     "LOOMMUX_CONNECTION_GRACE_SECONDS": "1",
+    "LOOMMUX_NAMED_TTL_SECONDS": "1",
     "LOOMMUX_ORPHAN_GRACE_SECONDS": "1",
 }
 CONSOLE_STALL_SECONDS = 8

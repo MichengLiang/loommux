@@ -235,7 +235,7 @@ def connection_manager(tmp_path: Path, registry: ConnectionRegistry) -> KernelRe
     )
 
 
-def test_open_stream_holds_a_connection_lease_until_the_stream_departs(
+def test_open_stream_holds_a_connection_lease_past_its_window_until_the_stream_departs(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
@@ -262,6 +262,36 @@ def test_open_stream_holds_a_connection_lease_until_the_stream_departs(
         assert await manager.sweep_once() == 1
         assert resource.lifecycle is ResourceLifecycle.STOPPED
         assert client.client_id not in registry
+
+    asyncio.run(scenario())
+
+
+def test_a_departed_sessions_main_kernel_waits_the_named_window_then_leaves(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        registry = ConnectionRegistry()
+        manager = connection_manager(tmp_path, registry)
+        client = make_client("departed")
+        registry.stream_opened(client.client_id)
+        policy = make_policy(mode=LeaseMode.CONNECTION, timeout=60, grace=0.03)
+        async with manager.operation(client, policy, request=make_request()) as admitted:
+            resource = admitted.resource
+        lease = resource.client_leases[client.client_id]
+        # The client sent nothing after its stream closed: it left.
+        lease.requested_at -= 3600
+        registry.stream_closed(client.client_id, now=monotonic() - 1)
+
+        assert await manager.sweep_once() == 0
+        [snapshot] = await manager.snapshot()
+        assert snapshot["leases"][0]["standing"] == "disconnected"
+        assert snapshot["leases"][0]["alert"] is False
+        assert snapshot["leases"][0]["timeout_seconds"] == 60
+        assert 0 < snapshot["leases"][0]["remaining_seconds"] <= 60
+
+        lease.renewed_at -= 3600
+        assert await manager.sweep_once() == 1
+        assert resource.lifecycle is ResourceLifecycle.STOPPED
 
     asyncio.run(scenario())
 

@@ -217,9 +217,12 @@ below.
 A connection lease is held while the session's stream is open. After the
 stream closes and the one-minute reconnect grace passes, the lease falls back to
 the named activity window, 24 hours by default
-(`LOOMMUX_NAMED_TTL_SECONDS`), counted from the session's last request, and
-raises no alert. Any call by any session renews its own lease, so a main kernel
-is retired 24 hours after the last call of the last session that used it.
+(`LOOMMUX_NAMED_TTL_SECONDS`), counted from the lease's last renewal, and
+raises no alert. A renewal is a request, or the end of an operation the
+session was waiting for, so a computation left running when the host closed
+is kept for a day after it finished, when its result is there to come back
+to. Any call by any session renews its own lease, so a main kernel is retired
+24 hours after the last call of the last session that used it.
 
 The window protects the person running loommux from kernels they forgot, not
 the agent. Hosts are closed by that person, who knows which kernels they want
@@ -296,7 +299,7 @@ compacted.
 | B6 | `--attach` to a missing name opens nothing, allocates no execution, and lists the main kernels waiting to be taken back |
 | B7 | `--attach` naming another kernel inside a kernel is a `UsageError`; with `--kernel` in one header it is a header error |
 | B8 | Two homes each open `build`; they are different kernels, and neither home lists the other's |
-| B9 | A connection lease whose stream closed keeps its main kernel for the named window after the last request, without an alert |
+| B9 | A connection lease whose stream closed keeps its main kernel for the named window after its last renewal, without an alert |
 | B10 | `loommux.self.rename()` renames, numbers a taken name, and the next header with the new name is the kernel's own |
 | B11 | A binding change ends the result with one `Kernel:` block; `status` shows the name |
 | B12 | `scripts/stress.py` passes |

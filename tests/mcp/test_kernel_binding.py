@@ -57,3 +57,26 @@ def test_a_session_names_its_main_kernel_and_switches_to_another_by_attaching(tm
     workspace.mkdir()
     with running_server(reserve_port(), workspace, LOOMMUX_LEASE_MODE="connection", LOOMMUX_CONNECTION_GRACE_SECONDS="0.3") as origin:
         asyncio.run(scenario(origin))
+
+
+@pytest.mark.timeout(60)
+def test_a_main_kernel_whose_session_left_waits_and_is_taken_back_by_name(tmp_path: Path) -> None:
+    async def scenario(origin: str) -> None:
+        async with LeaseAwareClient(f"{origin}/mcp", "first") as first:
+            assert await texts(first, "%%loommux --kernel task\nkept = 'still here'") == ["In [1]:", "Kernel: task (opened)"]
+        # Past the reconnect grace the session has left: B9, its main kernel
+        # waits for the named window and nothing alerts.
+        await asyncio.sleep(0.8)
+        [resource] = await wait_for_resource_count(origin, 1)
+        [lease] = resource["leases"]
+        assert (resource["name"], lease["standing"], lease["alert"]) == ("task", "disconnected", False)
+        assert 0 < lease["remaining_seconds"] <= 60
+
+        # B3: a new session names it on its first call and takes it back.
+        async with LeaseAwareClient(f"{origin}/mcp", "second") as second:
+            assert await texts(second, "%%loommux --kernel task\nprint(kept)") == ["In [2]:\nstill here\n", "Kernel: task (taken back; 1 earlier execution)"]
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    with running_server(reserve_port(), workspace, LOOMMUX_LEASE_MODE="connection", LOOMMUX_CONNECTION_GRACE_SECONDS="0.3", LOOMMUX_NAMED_TTL_SECONDS="60") as origin:
+        asyncio.run(scenario(origin))

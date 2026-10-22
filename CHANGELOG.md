@@ -26,6 +26,10 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Changed
 
+- A connection lease whose session left (stream closed, grace over, nothing
+  sent since) is no longer released: it falls back to the named activity
+  window (`LOOMMUX_NAMED_TTL_SECONDS`, 24 hours) after its last renewal,
+  without an alert, so the main kernel waits for a session to take it back.
 - **Breaking:** a kernel opened by name from a kernel is a child kernel of
   that kernel's main kernel, its home, instead of a globally named kernel held
   by every kernel that opened it. Names resolve inside the asking kernel's

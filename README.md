@@ -201,13 +201,16 @@ The server chooses how a lease proves that its client is still there with
 
 | Mode | The lease holds while | Fits |
 | --- | --- | --- |
-| `activity` (default) | tool calls keep arriving within 80 minutes (24 hours for named resources) | any client |
+| `activity` (default) | tool calls keep arriving within 80 minutes (24 hours for named main kernels) | any client |
 | `heartbeat` | the client pings within 60 seconds | clients that ping on their own, such as `LeaseAwareClient` |
-| `connection` | the session keeps its standalone Streamable HTTP `GET` stream open; stdio sessions for the life of the process | clients that hold that stream while they run, such as Claude Code |
+| `connection` | the session keeps its standalone Streamable HTTP `GET` stream open, and 24 hours after it left; stdio sessions for the life of the process | clients that hold that stream while they run, such as Claude Code |
 
-A connection lease survives any amount of idleness and is released about a
-minute after the client exits (`LOOMMUX_CONNECTION_GRACE_SECONDS`, default
-60). If a session calls tools without that stream, or keeps calling after it
+A connection lease survives any amount of idleness. About a minute after the
+client exits (`LOOMMUX_CONNECTION_GRACE_SECONDS`, default 60), the session
+counts as gone, and its main kernel waits for the named window
+(`LOOMMUX_NAMED_TTL_SECONDS`, 24 hours) after its last call, so a new session
+can take it back by name; the console can retire it at any time. If a session
+calls tools without that stream, or keeps calling after it
 closed, the lease falls back to the activity window and raises an alert:
 every tool result of that session ends with a `Lease alert` block, and the
 console at `/` turns its lease-signal row red. For Claude Code over HTTP:

@@ -103,19 +103,26 @@ def test_a_session_that_never_opens_a_stream_degrades_after_the_grace() -> None:
     assert unbound.window_seconds == PRIVATE_WINDOW
 
 
-def test_a_dropped_stream_is_awaited_and_then_released_without_new_requests() -> None:
+@pytest.mark.parametrize("named", [False, True])
+def test_a_departed_session_leaves_its_main_kernel_waiting_the_named_window(named: bool) -> None:
     lease = make_lease(LeaseMode.CONNECTION, renewed_at=1990, requested_at=1500)
     presence = SessionPresence(first_seen_at=1000, closed_at=2000)
 
-    reconnecting = assess_lease(lease, presence, named=True, now=2030)
-    disconnected = assess_lease(lease, presence, named=True, now=2060)
+    reconnecting = assess_lease(lease, presence, named=named, now=2030)
+    disconnected = assess_lease(lease, presence, named=named, now=2060)
 
     assert reconnecting.standing is LeaseStanding.RECONNECTING
     assert reconnecting.grace_remaining_seconds(2030) == 30
     assert not reconnecting.expired(2059)
+    # Every main kernel waits the same window, counted from the lease's last
+    # renewal, and the departure is ordinary, so nothing alerts.
     assert disconnected.standing is LeaseStanding.DISCONNECTED
     assert not disconnected.standing.alert
-    assert disconnected.expired(2060)
+    assert disconnected.window_seconds == NAMED_WINDOW
+    assert disconnected.expires_at == 1990 + NAMED_WINDOW
+    assert disconnected.grace_remaining_seconds(2060) is None
+    assert not disconnected.expired(1990 + NAMED_WINDOW - 1)
+    assert disconnected.expired(1990 + NAMED_WINDOW)
 
 
 def test_a_request_after_the_drop_proves_the_client_lost_only_its_stream() -> None:

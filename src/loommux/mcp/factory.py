@@ -267,6 +267,9 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
         ``status`` 第一行也是名字。第一次调用之后，``--kernel`` 只表示转发给
         子 kernel。
 
+        会话一直连着，它的主 kernel 就一直在；会话离开后，主 kernel 从最后
+        一次调用起再保留 24 小时，等新的会话按名字接回。
+
         ``%%loommux --attach 名字`` 随时把会话换到一台已有的主 kernel，放下手上
         这台；名字不存在时什么也不开，返回 ``kernel_not_found`` 并列出没有会话
         连着的主 kernel。

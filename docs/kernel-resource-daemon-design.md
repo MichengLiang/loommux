@@ -212,7 +212,7 @@ lifetime. `assess_lease()` turns them into one standing:
 | `connected` | a stream is open, or the session is bound to the process | held, no expiry |
 | `awaiting_stream` | no stream yet, within grace of first sight | held while the grace runs |
 | `reconnecting` | stream closed, within grace of the close | held while the grace runs |
-| `disconnected` | closed, grace over, no request since the close | released |
+| `disconnected` | closed, grace over, no request since the close | named window, no alert |
 | `unbound` | no stream ever, grace over | alert; activity window |
 | `stream_lost` | closed, grace over, a request arrived after the close | alert; activity window |
 
@@ -222,10 +222,18 @@ own policy generation instead of being released, so a client whose behavior
 changed keeps working as it would under activity mode while the alert stays
 visible. A later stream returns the lease to `connected`.
 
+A `disconnected` lease belongs to a session that left in the ordinary way.
+It is kept for the named activity window after its last renewal, the same for
+every main kernel, so a later session can take the kernel back by name
+([Main Kernel Binding Design](kernel-binding-design.md) section 6). The window
+guards the person running loommux against forgotten kernels; they can retire
+any kernel from the console sooner.
+
 `connection_grace_seconds` defaults to 60. The MCP TypeScript SDK embedded in
 Claude Code retries a dropped stream twice, 1 s and then 1.5 s apart, so a
-minute absorbs a reconnect with wide margin while a closed host still
-releases its kernel within about one sweep after that minute.
+minute absorbs a reconnect with wide margin, and a closed host is known to have
+left about a minute after it closed: its main kernel then counts as one no
+session is connected to.
 
 The registry forgets a session once it is disconnected and no lease refers
 to it. A forgotten session that later calls a tool is judged as never having
