@@ -141,11 +141,15 @@ def install_control_routes(
         selected = manager()
         try:
             resource = await selected.ensure_held(name, holder)
+            # The kernel may be retired between resolving and describing it,
+            # for example a child kernel whose home was just let go of; that
+            # is the same answer as not finding it.
+            snapshot = await selected.snapshot_one(resource.resource_id)
         except ResourceRoutingError as exc:
             return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
         except ResourceNotFoundError as exc:
             return JSONResponse({"ok": False, "message": str(exc)}, status_code=404)
-        return JSONResponse({"ok": True, "resource": await selected.snapshot_one(resource.resource_id)})
+        return JSONResponse({"ok": True, "resource": snapshot})
 
     @mcp.custom_route("/api/resources/{resource_id}/executions", methods=["POST"])
     async def submit_cell(request: Request) -> Response:
@@ -169,11 +173,13 @@ def install_control_routes(
         selected = manager()
         try:
             resource = await selected.rename(request.path_params["resource_id"], name)
+            # Retired between renaming and describing: not found, as above.
+            snapshot = await selected.snapshot_one(resource.resource_id)
         except ResourceRoutingError as exc:
             return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
         except ResourceNotFoundError as exc:
             return JSONResponse({"ok": False, "message": str(exc)}, status_code=404)
-        return JSONResponse({"ok": True, "resource": await selected.snapshot_one(resource.resource_id)})
+        return JSONResponse({"ok": True, "resource": snapshot})
 
     @mcp.custom_route("/api/resources/{resource_id}/executions/{execution:int}", methods=["GET"])
     async def execution_status(request: Request) -> Response:

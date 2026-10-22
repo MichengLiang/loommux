@@ -1,6 +1,6 @@
 # Main Kernel Binding Design
 
-> **Status: Accepted on October 23, 2026.** This document owns how an MCP
+> **Status: Implemented on October 23, 2026.** This document owns how an MCP
 > session chooses its kernel, how it returns to one later, how kernels are
 > named, and how long a kernel waits for its session. The
 > [Kernel Resource Daemon Design](kernel-resource-daemon-design.md) keeps the
@@ -303,3 +303,10 @@ compacted.
 | B10 | `loommux.self.rename()` renames, numbers a taken name, and the next header with the new name is the kernel's own |
 | B11 | A binding change ends the result with one `Kernel:` block; `status` shows the name |
 | B12 | `scripts/stress.py` passes |
+
+B1 to B11 are proved by `tests/resource/test_manager.py`,
+`tests/resource/test_leases.py`, `tests/resource/test_liveness.py`,
+`tests/kernel/test_kernel_extension.py`, `tests/test_cell_header.py`,
+`tests/mcp/test_presentation.py`, and, against a real HTTP daemon,
+`tests/mcp/test_kernel_binding.py`. The load check's cell mix opens main
+kernels by name on first cells, forwards to child kernels, and attaches.

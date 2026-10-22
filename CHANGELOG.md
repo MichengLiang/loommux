@@ -58,6 +58,13 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   from `loommux.resource`; `KernelRequest` and `connection_request` describe
   what a call asks for, and `LeasePolicy.timeout_for` takes `named=`.
 
+### Fixed
+
+- `POST /api/resources/ensure` answered 500 when the kernel it had resolved
+  was retired before the route described it, for example a child kernel whose
+  home had just been let go of; it now answers 404 as for a missing kernel,
+  and so does the rename route.
+
 ## [0.3.0] - 2026-10-22
 
 ### Changed

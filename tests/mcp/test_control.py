@@ -4,7 +4,27 @@ from starlette.testclient import TestClient
 
 from loommux.mcp.control import _resource_action
 from loommux.mcp.server import create_mcp
-from loommux.resource import ResourceProvisionError
+from loommux.resource import KernelResource, KernelResourceManager, ResourceProvisionError
+
+
+def test_a_kernel_retired_right_after_it_resolves_is_not_found(tmp_path: Path, monkeypatch) -> None:
+    """The load check once hit this as a 500: a child kernel retired with its
+    home between ensure resolving it and the route describing it."""
+    monkeypatch.chdir(tmp_path)
+
+    async def retired(self: KernelResourceManager, *args: object) -> KernelResource:
+        return KernelResource.create("gone", session=None)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(KernelResourceManager, "ensure_held", retired)
+    monkeypatch.setattr(KernelResourceManager, "rename", retired)
+    app = create_mcp().http_app(path="/mcp")
+
+    with TestClient(app) as client:
+        ensured = client.post("/api/resources/ensure", json={"name": "build", "holder": "home"})
+        renamed = client.post("/api/resources/some-id/rename", json={"name": "new"})
+
+    assert (ensured.status_code, ensured.json()["message"]) == (404, "resource was not found")
+    assert (renamed.status_code, renamed.json()["message"]) == (404, "resource was not found")
 
 
 def test_http_control_plane_exposes_console_and_policy(
