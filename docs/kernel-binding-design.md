@@ -39,9 +39,11 @@ same thing in every cell:
 | `%%loommux --attach NAME --create` | the same, opening `NAME` when no main kernel has that name |
 | `%%loommux --kernel NAME` | this one cell runs in the child kernel `NAME` of the session's home, opened on first use |
 
-A main kernel lives while a client is connected to it, and for 24 hours after
-the last call once none is. A kernel renames itself with one line,
-`loommux.self.rename("new-name")`, inside any cell.
+A main kernel lives while a client is connected to it. Once none is, a named
+main kernel is kept for 24 hours after the last call, and an unnamed
+`private-…` one is retired: giving a kernel a name is what asks for it to be
+kept. A kernel renames itself with one line, `loommux.self.rename("new-name")`,
+inside any cell.
 
 ## 2. Where The Shape Comes From
 
@@ -58,7 +60,7 @@ rules as they are; every row below is one of them.
 | Attach finds by name and does not create; creating is an explicit switch on the same command | `tmux new-session -A -s NAME`, `screen -R NAME`, `zellij attach --create NAME` | `--attach NAME`, `--attach NAME --create` |
 | Where the client lives and where one command runs are separate | tmux `-t TARGET`, `docker exec NAME CMD` beside `docker attach` | `--attach` beside `--kernel` |
 | A workspace can be renamed | `tmux rename-session`, `docker rename` | `loommux.self.rename()` |
-| An idle workspace nobody is connected to is culled after a timeout; activity resets it | Jupyter Server `cull_idle_timeout`, with `cull_connected = False` | 24 hours after the last call, never while connected |
+| An idle workspace nobody is connected to is culled after a timeout; activity resets it | Jupyter Server `cull_idle_timeout`, with `cull_connected = False` | a named main kernel 24 hours after the last call, never while connected |
 
 Two consequences follow before any loommux-specific reasoning. A cell header
 that meant "choose my workspace" on one call and "run elsewhere" on the next
@@ -73,6 +75,7 @@ windows.
 | --- | --- | --- |
 | Start a task | first cell begins `%%loommux --attach 主kernel绑定设计 --create` | `--create` opens a missing name |
 | Start without thinking about it | an ordinary first cell | a session without a main kernel opens `private-<session>` |
+| Close a throwaway host | nothing | an unnamed main kernel is retired once its session left |
 | Work | ordinary cells; `%%loommux --kernel build` for a side kernel | `--kernel` always forwards one cell |
 | The host closes; a new host resumes the conversation | the same first cell, `%%loommux --attach 主kernel绑定设计 --create` | `--attach` finds the kernel by name, whoever is or was connected |
 | A cell ran before the agent remembered its kernel | `%%loommux --attach 主kernel绑定设计` | `--attach` works on any call; the kernel let go of is released |
@@ -212,20 +215,35 @@ A renamed `private-…` main kernel counts as named for the activity window.
 
 | Kernel | Lives while | Retired |
 | --- | --- | --- |
-| main kernel | a client lease holds it, or less than the named window has passed since the last call of the last session that left it | when neither holds; a running cell first receives the orphan grace |
+| named main kernel | a client lease holds it, or less than the named window has passed since the last call of the last session that left it | when neither holds; a running cell first receives the orphan grace |
+| unnamed main kernel (`private-…`, never renamed) | a client lease holds it | when its last lease is released |
 | child kernel | its main kernel lives | with its main kernel |
 
-This is Jupyter's culling rule with `cull_idle_timeout` set to the named
-window, 24 hours by default (`LOOMMUX_NAMED_TTL_SECONDS`), and
-`cull_connected = False`.
+For a named main kernel this is Jupyter's culling rule with
+`cull_idle_timeout` set to the named window, 24 hours by default
+(`LOOMMUX_NAMED_TTL_SECONDS`), and `cull_connected = False`.
 
 A connection lease is held while its session's stream is open. When the stream
 closes, no replacement arrives within the reconnect grace, and the client sent
 nothing after the close, the session has left and its lease is released. At that
-moment the main kernel records its own **retention**: the lease's last renewal
-plus the named window, or the later of that and a retention it already had. A
-renewal is a request, or the end of an operation the session was waiting for,
-so a call still running when the host closed counts from when it finished.
+moment a named main kernel records its own **retention**: the lease's last
+renewal plus the named window, or the later of that and a retention it already
+had. A renewal is a request, or the end of an operation the session was
+waiting for, so a call still running when the host closed counts from when it
+finished. An unnamed main kernel records none and is retired by the same sweep,
+as every main kernel was before this design.
+
+Retention has exactly one consumer: a later session that attaches to the kernel
+by name. A name the agent chose describes its task and is in its context; that
+is what a later host writes in its first cell. A generated `private-…` name is
+a slice of a session id that the agent never chose and does not carry forward,
+so no session will attach to it, and keeping the kernel would only hold its
+memory for a day, once for every throwaway host the owner closes. Naming is
+therefore the request to be kept: `--attach NAME --create` in the first cell
+asks for it at the start, when the agent can still ask, and
+`loommux.self.rename()` asks for it later. The same `named` flag already chose
+the 24-hour rather than the 80-minute window under activity leases; here it
+chooses between keeping and not keeping.
 
 The fact "how long this kernel waits" belongs to the kernel, so it is stored
 once, on the kernel. Keeping it on each departed session's lease would store
@@ -237,11 +255,11 @@ The window protects the person running loommux from kernels they forgot, not
 the agent. That person closes the hosts, knows which kernels they want, and can
 retire any kernel from the console at any time; a computer left running with
 its hosts open keeps every kernel, because connected kernels never count down.
-So one window serves every main kernel, named or generated, and a kernel that is
-busy when its retention ends is retired like an idle one after the orphan
-grace: a forgotten runaway cell is exactly what the window is for. Jupyter
-protects busy kernels by default (`cull_busy = False`); its window protects work,
-this one protects the owner.
+So one window serves every named main kernel, and a kernel that is busy when its
+retention ends is retired like an idle one after the orphan grace: a forgotten
+runaway cell is exactly what the window is for. Jupyter protects busy kernels by
+default (`cull_busy = False`); its window protects work, this one protects the
+owner.
 
 Switching away (section 5) releases the session's lease and clears the kernel's
 retention, so the kernel is retired unless another session holds it.
@@ -295,8 +313,8 @@ line, for an agent that has lost track of it after its context was compacted.
 
 | Alternative | Reason |
 | --- | --- |
-| Keep a kernel only after the agent asks, `keep()` | The agent cannot ask at the moment it would need to: the host is closed from outside |
-| A short window for unnamed kernels and a long one for kept ones | Two windows for one purpose; the window protects the owner, who forgets either kind equally |
+| A separate `keep()` call, made when the agent wants to keep its kernel | The agent cannot ask at the moment it would need to, because the host is closed from outside; naming in the first cell asks at the start, and a second act would only be one more thing to forget |
+| Keep unnamed kernels too, for the same window | Retention serves a session returning by name, and nobody returns to a generated session-id name; it would hold a day of memory for every throwaway host and make naming mean nothing (section 11) |
 | Prefix every `In [n]:` with the kernel name | The agent reads each input beside its output and works in one kernel at a time; the name matters only when it changes |
 | `--attach` opens a missing kernel by itself | Hides that the kernel is gone; tmux, screen, and zellij all keep creation an explicit switch |
 | Spare a busy kernel when its retention ends | The window guards the owner against forgotten work, runaway cells included |
@@ -317,11 +335,13 @@ round 11, made a session's first call special. Its rules and why each went:
 | A kernel numbered on its first call also answered to the name it had asked for | Existed only to make the previous rule's numbered kernels read their first cell; gone with it |
 | A departed session's lease stayed, falling back to the named window, and showed as "waiting to be taken back" | Stored the kernel's retention once per departure; nothing read those leases except to skip them, and the console grew a row each time a window was closed |
 | "Connected" meant any lease that had not departed, and decided taking back and numbering | Nothing needs to know any more |
+| Every main kernel, named or generated, waited the same 24 hours, on the reasoning that a generated name is in the first result and so as easy to return to | It is in a result, but nobody carries it forward; the rule kept every throwaway kernel for a day and made naming pointless. Only named main kernels are kept now (section 7) |
 
 The tests and documentation of that version proved its behavior, and the
 behavior was what its rules said. What showed it wrong was using it: a resumed
 host received `-2`, and the console listed three leases for one agent. The
-family of tools in section 2 had answered both questions long before.
+family of tools in section 2 had answered both questions long before. The last
+row was found the same way, by asking what a kept unnamed kernel is for.
 
 ## 12. Verification
 
@@ -334,13 +354,14 @@ family of tools in section 2 had answered both questions long before.
 | B5 | `--kernel NAME` on a session's first call forwards to a child kernel of its new private kernel |
 | B6 | `--attach` naming another kernel inside a kernel is a `UsageError`; `--create` without `--attach` is a header error |
 | B7 | Two homes each open `build`; they are different kernels, and neither home lists the other's |
-| B8 | A connection lease whose session left is released after the reconnect grace without an alert; its main kernel stays for the named window after the lease's last renewal, and its snapshot reports the remaining retention |
+| B8 | A connection lease whose session left is released after the reconnect grace without an alert; its named main kernel stays for the named window after the lease's last renewal, and its snapshot reports the remaining retention |
 | B9 | A kernel the session switched away from keeps no retention |
 | B10 | `loommux.self.rename()` renames, numbers a taken name, and the next header with the new name is the kernel's own |
 | B11 | A change of main kernel ends the result with one `Kernel:` block; `status` shows the name |
 | B12 | `scripts/stress.py` passes |
+| B13 | An unnamed main kernel whose session left is retired with the lease, and one renamed before it left is kept like any named kernel |
 
-B1 to B11 are proved by `tests/resource/test_manager.py`,
+B1 to B11 and B13 are proved by `tests/resource/test_manager.py`,
 `tests/resource/test_leases.py`, `tests/resource/test_liveness.py`,
 `tests/kernel/test_kernel_extension.py`, `tests/test_cell_header.py`,
 `tests/mcp/test_presentation.py`, and, against a real HTTP daemon,

@@ -214,7 +214,7 @@ lifetime. `assess_lease()` turns them into one standing:
 | `connected` | a stream is open, or the session is bound to the process | held, no expiry |
 | `awaiting_stream` | no stream yet, within grace of first sight | held while the grace runs |
 | `reconnecting` | stream closed, within grace of the close | held while the grace runs |
-| `disconnected` | closed, grace over, no request since the close | released, no alert; the main kernel records its retention |
+| `disconnected` | closed, grace over, no request since the close | released, no alert; a named main kernel records its retention |
 | `unbound` | no stream ever, grace over | alert; activity window |
 | `stream_lost` | closed, grace over, a request arrived after the close | alert; activity window |
 
@@ -225,14 +225,16 @@ changed keeps working as it would under activity mode while the alert stays
 visible. A later stream returns the lease to `connected`.
 
 A `disconnected` lease belongs to a session that left in the ordinary way, and
-the sweep releases it. As it does, the main kernel records its own retention:
-the lease's last renewal plus the named activity window, or the later of that
-and a retention it already had. The kernel then waits for a session to attach
-to it by name ([Main Kernel Binding Design](kernel-binding-design.md)
-section 7). How long a kernel waits is a fact about the kernel, so it is stored
-once on the kernel rather than once per departed session. The window guards
-the person running loommux against forgotten kernels; they can retire any
-kernel from the console sooner.
+the sweep releases it. As it does, a named main kernel records its own
+retention: the lease's last renewal plus the named activity window, or the
+later of that and a retention it already had. The kernel then waits for a
+session to attach to it by name; an unnamed `private-…` kernel has no name
+anyone would attach to, records nothing, and is retired like before
+([Main Kernel Binding Design](kernel-binding-design.md) section 7). How long a
+kernel waits is a fact about the kernel, so it is stored once on the kernel
+rather than once per departed session. The window guards the person running
+loommux against forgotten kernels; they can retire any kernel from the console
+sooner.
 
 `connection_grace_seconds` defaults to 60. The MCP TypeScript SDK embedded in
 Claude Code retries a dropped stream twice, 1 s and then 1.5 s apart, so a
