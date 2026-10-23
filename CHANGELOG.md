@@ -91,8 +91,7 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   same cell, so `In [N]` in a result is `In[N]` and `_iN` inside the kernel.
   `restart` therefore clears the execution records and the next cell is
   `In [1]`; reading an execution from before the restart answers
-  `execution_not_found`. What a tool result showed stays in the client's
-  transcript; write output you will need after a restart to a file first.
+  `execution_not_found`.
 - **Breaking:** `ResourceServerSettings.from_environ()` is replaced by
   `from_values()`, which reads `config.py` names, and `create_mcp()` takes a
   `LoommuxConfig`; a `ServerFactory` receives it as its third argument.
