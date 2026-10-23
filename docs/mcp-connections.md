@@ -91,8 +91,9 @@ produce `http://127.0.0.1:8802/tools`.
 
 A host such as Claude Code keeps the session's standalone `GET` stream open
 for as long as it runs and never pings. Start the server with
-`LOOMMUX_LEASE_MODE=connection` so its workbench lives exactly as long as
-the host session instead of expiring after 80 idle minutes:
+`LOOMMUX_LEASE_MODE=connection` so its main kernel lives while the host is
+connected, however idle, and for 24 hours after the host closes, instead of
+expiring after 80 idle minutes:
 
 ```bash
 LOOMMUX_LEASE_MODE=connection loommux --server --host 127.0.0.1 --port 8801 --path /mcp

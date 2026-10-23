@@ -64,7 +64,7 @@ def test_a_session_names_its_main_kernel_and_switches_to_another_by_attaching(tm
 
 
 @pytest.mark.timeout(60)
-def test_a_main_kernel_whose_session_left_waits_and_is_taken_back_by_name(tmp_path: Path) -> None:
+def test_a_main_kernel_whose_session_left_keeps_itself_until_a_new_host_attaches_by_name(tmp_path: Path) -> None:
     async def scenario(origin: str) -> None:
         async with LeaseAwareClient(f"{origin}/mcp", "first") as first:
             assert await texts(first, "%%loommux --attach task --create\nkept = 'still here'") == ["In [1]:", "Kernel: task (opened)"]
