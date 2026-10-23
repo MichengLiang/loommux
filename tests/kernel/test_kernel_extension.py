@@ -165,7 +165,7 @@ class _Daemon:
         self.job, self.refusal, self.bodies = job, refusal, []
         self.identity, self.target_id = identity, target_id
 
-    def __getitem__(self, name: str) -> Any:
+    def create(self, name: str) -> Any:
         daemon = self
 
         class Target:
@@ -174,12 +174,19 @@ class _Daemon:
             def __init__(self) -> None:
                 self.name = name
 
-            def run(self, body: str, *, wait: float) -> _Job:
+            def run_cell(self, body: str, *, wait_seconds: float) -> dict[str, Any]:
                 if daemon.refusal is not None:
                     raise daemon.refusal
                 daemon.bodies.append(body)
+                return {"execution": 1}
+
+            def follow(self, execution: int, offset: int) -> dict[str, Any]:
+                assert daemon.job is not None and execution == 1
+                return daemon.job.follow(offset)
+
+            def interrupt(self) -> None:
                 assert daemon.job is not None
-                return daemon.job
+                daemon.job.interrupt()
 
         return Target()
 

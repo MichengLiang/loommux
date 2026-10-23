@@ -95,16 +95,16 @@ def test_a_kernel_renames_itself_in_one_line_and_learns_a_name_given_elsewhere(t
         async with LeaseAwareClient(f"{origin}/mcp", "agent") as agent, LeaseAwareClient(f"{origin}/mcp", "other") as other:
             await texts(other, "%%loommux --attach taken --create\n1")
             # B10: one line inside a cell that does other work.
-            renamed = await texts(agent, "work = 6 * 7\nprint(loommux.self.rename('report'), loommux.self.name)")
+            renamed = await texts(agent, "work = 6 * 7\nprint(loommux.rename(loommux.self, 'report'), loommux.self.name)")
             assert renamed[0] == "In [1]:\nreport report\n"
             assert await texts(agent, "%%loommux --kernel report\nwork") == ["In [2]:\nOut[2]: 42\n"]
             status = await agent.call_tool("status", {})
             assert status.content[0].text.startswith("name: report\n")
-            assert await texts(agent, "print(loommux.self.rename('taken'))") == ["In [3]:\ntaken-2\n"]
+            assert await texts(agent, "print(loommux.rename(loommux.self, 'taken'))") == ["In [3]:\ntaken-2\n"]
 
             # Renamed from its child kernel, the main kernel learns the name the
             # first time a header uses it, and reads it as its own after.
-            await texts(agent, "%%loommux --kernel build\nloommux['taken-2'].rename('from-child')")
+            await texts(agent, "%%loommux --kernel build\nloommux.rename('taken-2', 'from-child')")
             relearned = await texts(agent, "%%loommux --kernel from-child\nprint('never')")
             assert relearned[0].startswith("In [5]:\nUsageError: from-child is this kernel, renamed from elsewhere")
             assert await texts(agent, "%%loommux --kernel from-child\nprint(loommux.self.name)") == ["In [6]:\nfrom-child\n"]

@@ -9,21 +9,24 @@ from loommux.resource import KernelResource, KernelResourceManager, ResourceProv
 
 def test_a_kernel_retired_right_after_it_resolves_is_not_found(tmp_path: Path, monkeypatch) -> None:
     """The load check once hit this as a 500: a child kernel retired with its
-    home between ensure resolving it and the route describing it."""
+    home between the registry resolving it and the route describing it."""
     monkeypatch.chdir(tmp_path)
 
     async def retired(self: KernelResourceManager, *args: object) -> KernelResource:
         return KernelResource.create("gone", session=None)
 
-    monkeypatch.setattr(KernelResourceManager, "ensure_held", retired)
+    monkeypatch.setattr(KernelResourceManager, "create", retired)
+    monkeypatch.setattr(KernelResourceManager, "lookup", retired)
     monkeypatch.setattr(KernelResourceManager, "rename", retired)
     app = create_mcp().http_app(path="/mcp")
 
     with TestClient(app) as client:
-        ensured = client.post("/api/resources/ensure", json={"name": "build", "holder": "home"})
+        created = client.post("/api/resources", json={"path": "build", "context": "home"})
+        found = client.get("/api/resources/lookup?path=build&context=home")
         renamed = client.post("/api/resources/some-id/rename", json={"name": "new"})
 
-    assert (ensured.status_code, ensured.json()["message"]) == (404, "resource was not found")
+    assert (created.status_code, created.json()["message"]) == (404, "resource was not found")
+    assert (found.status_code, found.json()["status"]) == (404, "kernel_not_found")
     assert (renamed.status_code, renamed.json()["message"]) == (404, "resource was not found")
 
 
@@ -95,17 +98,24 @@ def test_program_routes_validate_requests_before_reaching_a_kernel(
     with TestClient(app) as client:
         responses = {
             "unknown resource": client.get("/api/resources/missing"),
-            "not an object": client.post("/api/resources/ensure", content=b"[1]"),
-            "not json": client.post("/api/resources/ensure", content=b"{"),
-            "name type": client.post("/api/resources/ensure", json={"name": 3}),
-            "unprintable name": client.post("/api/resources/ensure", json={"name": "a\nb", "holder": None}),
-            "no holder": client.post("/api/resources/ensure", json={"name": "lab", "holder": None}),
-            "missing holder": client.post("/api/resources/ensure", json={"name": "lab", "holder": "gone"}),
+            "not an object": client.post("/api/resources", content=b"[1]"),
+            "not json": client.post("/api/resources", content=b"{"),
+            "path type": client.post("/api/resources", json={"path": 3}),
+            "slash in a name": client.post("/api/resources", json={"path": "a/b/c", "context": None}),
+            "a main kernel": client.post("/api/resources", json={"path": "lab", "context": None}),
+            "missing context": client.post("/api/resources", json={"path": "lab", "context": "gone"}),
+            "no path": client.get("/api/resources/lookup"),
+            "lookup nothing": client.get("/api/resources/lookup?path=lab"),
             "source type": client.post("/api/resources/missing/executions", json={"source": 1}),
             "wait type": client.post("/api/resources/missing/executions", json={"source": "1", "wait_seconds": True}),
             "submit body": client.post("/api/resources/missing/executions", content=b"null"),
             "submit target": client.post("/api/resources/missing/executions", json={"source": "1"}),
             "status target": client.get("/api/resources/missing/executions/1"),
+            "latest target": client.get("/api/resources/missing/executions/latest"),
+            "execution word": client.get("/api/resources/missing/executions/first"),
+            "search query": client.get("/api/resources/missing/executions/1/search"),
+            "search target": client.get("/api/resources/missing/executions/latest/search?query=x&context_before=1"),
+            "search context": client.get("/api/resources/missing/executions/1/search?query=x&context_after=some"),
             "wait body": client.post("/api/resources/missing/executions/1/wait", content=b"x"),
             "timeout type": client.post("/api/resources/missing/executions/1/wait", json={"timeout_seconds": "soon"}),
             "output target": client.get("/api/resources/missing/executions/1/output"),
@@ -117,22 +127,30 @@ def test_program_routes_validate_requests_before_reaching_a_kernel(
         "unknown resource": 404,
         "not an object": 400,
         "not json": 400,
-        "name type": 400,
-        "unprintable name": 400,
-        "no holder": 404,
-        "missing holder": 404,
+        "path type": 400,
+        "slash in a name": 400,
+        "a main kernel": 400,
+        "missing context": 404,
+        "no path": 400,
+        "lookup nothing": 404,
         "source type": 400,
         "wait type": 400,
         "submit body": 400,
         "submit target": 404,
         "status target": 404,
+        "latest target": 404,
+        "execution word": 400,
+        "search query": 400,
+        "search target": 404,
+        "search context": 400,
         "wait body": 400,
         "timeout type": 400,
         "output target": 404,
         "follow params": 400,
         "follow target": 404,
     }
-    assert responses["no holder"].json()["message"] == "no main kernel named 'lab' and no kernel with that id; only a kernel can open one"
+    assert responses["a main kernel"].json()["message"] == "'lab' would be a main kernel, which only an MCP session opens: %%loommux --attach lab --create"
+    assert responses["lookup nothing"].json() == {"ok": False, "status": "kernel_not_found", "message": "no kernel 'lab'; main kernels: none"}
 
 
 def test_http_control_plane_rejects_invalid_policy(

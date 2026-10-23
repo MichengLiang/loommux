@@ -29,7 +29,7 @@ from loommux.resource.model import (
     resource_key,
 )
 from loommux.resource.policy import LeasePolicy, LeasePolicyManager
-from loommux.resource.routing import private_kernel_name, validate_kernel_name
+from loommux.resource.routing import ResourceRoutingError, private_kernel_name, validate_kernel_name
 from loommux.session import IPythonSession
 
 SessionFactory = Callable[[], IPythonSession]
@@ -53,7 +53,7 @@ class ResourceBusyError(ResourceManagerError):
 
 
 class KernelNotFoundError(ResourceManagerError):
-    """A session asked to attach, without ``--create``, to a main kernel that does not exist."""
+    """A name or path names no kernel: an ``--attach`` without ``--create``, or a lookup."""
 
 
 @dataclass(frozen=True)
@@ -231,47 +231,93 @@ class KernelResourceManager:
         async with self._registry_lock:
             return self._resources_by_id.get(resource_id)
 
-    async def ensure_held(self, name: str, holder_id: str | None) -> KernelResource:
-        """Return the kernel that ``holder_id``'s kernel names, opening a child kernel.
+    async def lookup(self, path: str, context_id: str | None) -> KernelResource:
+        """The kernel ``path`` names, read from ``context_id``'s kernel; never opens one.
 
-        Inside a kernel, names resolve in its home: the home's main kernel and
-        the asking kernel by their own name or id, otherwise a child kernel of
-        the home, opened on first use. A child kernel asking for a kernel opens
-        it in the same home, so homes have one level.
-
-        Without a holder the caller is not a kernel and nothing could anchor a
-        new kernel, so only a main kernel by name, or any kernel by id,
-        resolves.
+        The rules are docs/kernel-control-surface-design.md section 5.1.
         """
-        name = validate_kernel_name(name)
         async with self._registry_lock:
-            if holder_id is None:
-                existing = self._resources_by_id.get(name) or self._resources_by_key.get(resource_key(name, None))
-                if existing is None:
-                    raise ResourceNotFoundError(f"no main kernel named {name!r} and no kernel with that id; only a kernel can open one")
-                return existing
-            holder = self._resources_by_id.get(holder_id)
-            if holder is None:
-                raise ResourceNotFoundError("holder resource was not found")
-            home_id = holder.home or holder.resource_id
-            for candidate in (holder, self._resources_by_id.get(home_id)):
-                if candidate is not None and name in (candidate.resource_id, candidate.name):
-                    return candidate
-            existing = self._resources_by_key.get(resource_key(name, home_id)) or next(
-                (resource for resource in self._resources_by_id.values() if resource.home == home_id and resource.resource_id == name),
-                None,
-            )
-            if existing is not None:
-                return existing
+            found, scope, _ = self._resolve_locked(path, context_id)
+            if found is None:
+                raise KernelNotFoundError(self._missing_message_locked(path, scope))
+            return found
+
+    async def create(self, path: str, context_id: str | None) -> KernelResource:
+        """The kernel ``path`` names, opening it as a child kernel when it is missing.
+
+        A main kernel lives by a session's lease, so only a session opens one;
+        a missing main kernel here is refused. A child kernel asking opens its
+        sibling, so a main kernel's scope has one level.
+        """
+        async with self._registry_lock:
             if self._stopping:
                 raise ResourceManagerError("resource manager is stopping")
+            found, scope, name = self._resolve_locked(path, context_id)
+            if found is not None:
+                return found
+            if scope is None:
+                raise ResourceRoutingError(f"{name!r} would be a main kernel, which only an MCP session opens: %%loommux --attach {name} --create")
+            name = validate_kernel_name(name)
+            if name == scope.name:
+                # Read from the scope, a bare name finds the main kernel first,
+                # so a child kernel under its name could never be found.
+                raise ResourceRoutingError(f"{name!r} is the name of its main kernel")
+            home_id = scope.resource_id
             claim = self._claim_locked(name, home_id, True)
         resource = await _settled(claim)
         async with self._registry_lock:
             if home_id not in self._resources_by_id:
-                # The home retired while the kernel started; nothing anchors it.
-                raise ResourceNotFoundError("holder resource was not found")
+                # The main kernel retired while the child started; nothing anchors it.
+                raise ResourceNotFoundError(f"main kernel {scope.name!r} was retired while {name!r} started")
         return resource
+
+    def _resolve_locked(self, path: str, context_id: str | None) -> tuple[KernelResource | None, KernelResource | None, str]:
+        """What ``path`` names: the kernel or None, the main kernel whose scope it is read in, and its last name.
+
+        The scope is None for a name read at the root, which names a main kernel.
+        """
+        if (by_id := self._resources_by_id.get(path)) is not None:
+            return by_id, None, path
+        if "/" in path:
+            # Scopes are one level deep, so a name with "/" is read from the root.
+            parts = path.strip("/").split("/")
+            if len(parts) > 2 or "" in parts:
+                raise ResourceRoutingError(f"{path!r} is not a kernel path; write /main or /main/child")
+            main = self._resources_by_key.get(resource_key(parts[0], None))
+            if len(parts) == 1:
+                return main, None, parts[0]
+            if main is None:
+                raise KernelNotFoundError(self._missing_message_locked(parts[0], None))
+            return self._resources_by_key.get(resource_key(parts[1], main.resource_id)), main, parts[1]
+        scope = self._scope_locked(context_id)
+        if scope is None:
+            return self._resources_by_key.get(resource_key(path, None)), None, path
+        if path == scope.name:
+            return scope, scope, path
+        return self._resources_by_key.get(resource_key(path, scope.resource_id)), scope, path
+
+    def _scope_locked(self, context_id: str | None) -> KernelResource | None:
+        """The main kernel whose scope a bare name is read in, or None to read it at the root."""
+        if context_id is None:
+            return None
+        context = self._resources_by_id.get(context_id)
+        if context is None:
+            raise ResourceNotFoundError("the asking kernel was not found")
+        if context.home is None:
+            return context
+        main = self._resources_by_id.get(context.home)
+        if main is None:
+            raise ResourceNotFoundError("the asking kernel's main kernel was retired")
+        return main
+
+    def _missing_message_locked(self, path: str, scope: KernelResource | None) -> str:
+        if scope is None:
+            names = sorted(f"/{resource.name}" for resource in self._resources_by_id.values() if resource.home is None)
+            where = "main kernels"
+        else:
+            names = [scope.name, *sorted(resource.name for resource in self._resources_by_id.values() if resource.home == scope.resource_id)]
+            where = f"kernels of /{scope.name}"
+        return f"no kernel {path!r}; {where}: {', '.join(names) if names else 'none'}"
 
     @asynccontextmanager
     async def program_operation(self, resource_id: str) -> AsyncIterator[KernelResource]:
@@ -402,18 +448,6 @@ class KernelResourceManager:
         async with self._registry_lock:
             return sorted(
                 self._resources_by_id.values(),
-                key=lambda resource: resource.created_at,
-            )
-
-    async def list_home(self, resource_id: str) -> list[KernelResource]:
-        """The kernels of ``resource_id``'s home: its main kernel and child kernels, oldest first."""
-        async with self._registry_lock:
-            member = self._resources_by_id.get(resource_id)
-            if member is None:
-                raise ResourceNotFoundError("resource was not found")
-            home_id = member.home or member.resource_id
-            return sorted(
-                (resource for resource in self._resources_by_id.values() if home_id in (resource.resource_id, resource.home)),
                 key=lambda resource: resource.created_at,
             )
 
@@ -666,10 +700,9 @@ class KernelResourceManager:
             await asyncio.to_thread(resource.session.close)
             resource.lifecycle = ResourceLifecycle.STOPPED
 
-    async def snapshot(self, *, home_of: str | None = None) -> list[dict[str, Any]]:
-        """Every kernel, or with ``home_of`` only the kernels of that kernel's home."""
-        resources = await (self.list_resources() if home_of is None else self.list_home(home_of))
-        return [self._snapshot_resource(resource) for resource in resources]
+    async def snapshot(self) -> list[dict[str, Any]]:
+        """Every kernel, oldest first."""
+        return [self._snapshot_resource(resource) for resource in await self.list_resources()]
 
     async def snapshot_one(self, resource_id: str) -> dict[str, Any]:
         return self._snapshot_resource(await self._require_resource(resource_id))

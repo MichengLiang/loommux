@@ -9,7 +9,7 @@ from fastmcp import Client
 from server_harness import reserve_port, running_server, wait_for_resource_count
 
 from loommux.client import LeaseAwareClient
-from loommux.daemon import Daemon, DaemonError, Job
+from loommux.daemon import Daemon, DaemonError
 from loommux.mcp.factory import create_mcp
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="external Streamable HTTP subprocess harness is Linux-only")
@@ -33,11 +33,10 @@ def test_a_kernel_knows_itself_and_manages_other_kernels_through_its_daemon(tmp_
             assert name.startswith("private-")
             assert f"True\nloommux daemon {origin} · this kernel {name}" in identity
 
-            # Inside a kernel the listing is its home; the other session's main
-            # kernel belongs to no home of this one.
+            # The listing is every kernel, as the console's.
             listing = await output(agent, "print(loommux.kernels())")
             assert listing.splitlines()[0].split() == ["name", "id", "kernel", "busy", "idle", "pid", "executions", "leases", "kept", "scope", "home"]
-            assert [row.split()[0] for row in listing.splitlines()[1:]] == [name]
+            assert sorted(row.split()[0] for row in listing.splitlines()[1:]) == sorted([name, "lab"])
 
             # The person running loommux reaches every main kernel by name.
             owner = Daemon(origin)
@@ -46,7 +45,7 @@ def test_a_kernel_knows_itself_and_manages_other_kernels_through_its_daemon(tmp_
             assert (lab_handle.status()["name"], lab_handle.status()["kernel_state"]) == ("lab", "running")
             assert lab_handle.restart()["status"] == "restarted"
             assert "NameError" in await output(lab, "kept_in_lab")
-            assert lab_handle.recycle(force=True) == "recycled lab"
+            assert owner.recycle(lab_handle, force=True) == "recycled lab"
             owner.close()
 
     workspace = tmp_path / "workspace"
@@ -80,27 +79,34 @@ def test_notices_reach_the_agent_from_its_kernel_and_through_a_forwarded_cell(tm
 def test_a_kernel_opens_runs_and_holds_kernels_that_leave_with_it(tmp_path: Path) -> None:
     async def scenario(origin: str) -> None:
         async with LeaseAwareClient(f"{origin}/mcp", "agent") as agent:
-            opened = await output(agent, "build = loommux['build']\nprint(build.name, build.snapshot['scope'], build.snapshot['home'] == loommux.self.name)")
+            opened = await output(agent, "build = loommux.create('build')\nprint(build.name, build.snapshot['scope'], build.snapshot['home'] == loommux.self.name)")
             assert opened == "build child True\n"
 
-            started = await output(agent, "job = build.run(\"import time\\nprint('a', flush=True)\\ntime.sleep(0.5)\\nprint('b')\\n6 * 7\", wait=0.05)\nprint(job.done, job)")
-            assert started == "False <loommux job build #1 running>\n"
-            finished = await output(agent, "print(job.wait(10)['status'], job.done)\nprint(job.output())\nprint(job.output('stdout', '-1:'))")
-            assert finished == "completed True\na\nb\nOut[1]: 42\nb\n"
+            started = await output(agent, "n = build.run_cell(\"import time\\nprint('a', flush=True)\\ntime.sleep(0.5)\\nprint('b')\\n6 * 7\", wait_seconds=0.05)['execution']\nprint(n, build.execution_status(n)['status'])")
+            assert started == "1 running\n"
+            finished = await output(
+                agent,
+                "print(build.wait(n, timeout_seconds=10)['status'])\n"
+                "print(build.read_output(n)['text'])\n"
+                "print(build.read_output(n, 'stdout', '-1:')['text'])\n"
+                "print(build.search_output('b', n, 'stdout')['text'])",
+            )
+            assert finished == "completed\na\nb\nOut[1]: 42\nb\nM 2 | b\n"
 
             busy = await output(
                 agent,
                 "from loommux.daemon import DaemonError\n"
-                "long = build.run('import time; time.sleep(1)', wait=0.05)\n"
-                "try:\n    build.run('1')\nexcept DaemonError as error:\n    print(error.status, error)\n"
-                "print(long.wait(10)['status'], long.status()['status'])",
+                "long = build.run_cell('import time; time.sleep(1)', wait_seconds=0.05)['execution']\n"
+                "try:\n    build.run_cell('1')\nexcept DaemonError as error:\n    print(error.status, error)\n"
+                # None selects the current execution, then the most recent, as in the tools.
+                "print(build.wait(timeout_seconds=10)['execution'] == long, build.execution_status()['status'])",
             )
-            assert busy == "busy kernel is already executing code\ncompleted completed\n"
+            assert busy == "busy kernel is already executing code\nTrue completed\n"
 
             # A child kernel opening a kernel opens it in the same home, and a
             # sibling's name resolves to the sibling: every kernel here leaves
             # with the agent's main kernel.
-            await output(agent, "build.run(\"loommux['cache']\")\nloommux['cache'].run(\"loommux['build']\")")
+            await output(agent, "build.run_cell(\"loommux.create('cache')\")\nloommux['cache'].run_cell(\"loommux['build']\")")
             home = await output(agent, "print(sorted((k.name, k.snapshot['scope'], k.snapshot['home']) for k in loommux.kernels() if k.name != loommux.self.name))")
             agent_name = (await output(agent, "print(loommux.self.name)")).strip()
             assert home == f"[('build', 'child', '{agent_name}'), ('cache', 'child', '{agent_name}')]\n"
@@ -108,8 +114,12 @@ def test_a_kernel_opens_runs_and_holds_kernels_that_leave_with_it(tmp_path: Path
 
             outside = Daemon(origin)
             assert outside[build_id].name == "build"
-            with pytest.raises(DaemonError, match="only a kernel can open one"):
+            # Without a context a bare name is a main kernel's; a path reaches a child.
+            with pytest.raises(DaemonError, match="no kernel 'build'; main kernels: /"):
                 outside["build"]
+            assert outside[f"/{agent_name}/build"].id == build_id
+            with pytest.raises(DaemonError, match="only an MCP session opens"):
+                outside.create("fresh")
             outside.close()
             # A closed client opens new connections for its next request.
             assert outside[agent_name].name == agent_name
@@ -133,21 +143,24 @@ def drive_from_outside(daemon: Daemon, build_id: str) -> None:
     assert repr(build) == f"<loommux kernel build {build.id[:8]}>"
     assert build.status()["name"] == "build"
 
-    job = build.run("import time\nprint('outside', flush=True)\ntime.sleep(0.3)\n'done'", wait=0.05)
-    assert repr(job).startswith("<loommux job build #")
-    followed = job.follow(0, wait=1)
+    n = build.run_cell("import time\nprint('outside', flush=True)\ntime.sleep(0.3)\n'done'", wait_seconds=0.05)["execution"]
+    followed = build.follow(n, 0, wait=1)
     assert followed["text"] == "outside\n"
-    assert job.status()["status"] in {"running", "completed"}
-    assert job.wait(10)["status"] == "completed"
-    assert job.done
-    assert job.output("result").endswith("'done'")
+    assert build.execution_status(n)["status"] in {"running", "completed"}
+    assert build.wait(n, timeout_seconds=10)["status"] == "completed"
+    assert build.read_output(n, "result")["text"].endswith("'done'")
+    assert build.search_output("OUTSIDE", n, ignore_case=True, context_after=1)["matched_lines"] == 1
 
-    sleeper = build.run("import time; time.sleep(30)", wait=0.05)
-    assert sleeper.interrupt()["status"] == "interrupt_sent"
-    assert sleeper.wait(10)["status"] == "interrupted"
+    sleeper = build.run_cell("import time; time.sleep(30)", wait_seconds=0.05)["execution"]
+    assert build.interrupt()["status"] == "interrupt_sent"
+    assert build.wait(sleeper, timeout_seconds=10)["status"] == "interrupted"
     assert build.restart()["status"] == "restarted"
     with pytest.raises(DaemonError, match="execution was not found"):
-        Job(build, 999, {}).status()
+        build.execution_status(999)
+
+    assert daemon.rename(build, "built") == "built"
+    assert build.name == "built"
+    assert daemon.recycle(build_id) == "recycled built"
 
 
 def test_a_daemon_that_cannot_be_reached_says_where_it_looked() -> None:

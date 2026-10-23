@@ -1,23 +1,23 @@
-"""Control a Loommux daemon from Python: list, address, and manage its kernels.
+"""Control a Loommux daemon from Python: the daemon's buttons and any kernel's.
 
 Every Loommux kernel holds one :class:`Daemon` as ``loommux``, bound to the
 daemon that started it::
 
-    loommux.kernels()               # every kernel, one row each
-    loommux.self                    # this kernel
-    build = loommux["build"]        # this home's child kernel, opened on first use
-    job = build.run("make()", wait=5)
-    job.wait(600); job.output()
+    loommux.kernels()                  # every kernel, one row each
+    loommux.self                       # this kernel
+    build = loommux.create("build")    # a child kernel of this main kernel, opened if missing
+    loommux["/other-task/build"]       # another main kernel's child kernel; [] never opens
+    loommux.recycle("build")
     loommux.notify("⚠ memory is low")  # to the agent, apart from this cell's output
 
-Inside a kernel the client sees its home: the main kernel an MCP session works
-in and the child kernels opened from it. Kernels of other homes stay out of its
-listing and its names, so two homes may each have their own ``build``.
-Outside a kernel, ``Daemon()`` connects to ``LOOMMUX_CONTROL_URL`` or to
-``http://127.0.0.1:8801`` and acts for the person running loommux: it lists
-every kernel. The client speaks the daemon's HTTP control plane, so a mistake
-made through it stays in the calling process and can never stop the daemon's
-event loop.
+The daemon keeps the registry, so birth, death and names are its buttons; a
+:class:`Kernel` handle observes and controls one kernel. A name is a path:
+``/main/child`` from the root, a bare name from the caller's main kernel
+(docs/kernel-control-surface-design.md). Outside a kernel, ``Daemon()``
+connects to ``LOOMMUX_CONTROL_URL`` or to ``http://127.0.0.1:8801`` and reads
+every name from the root. The client speaks the daemon's HTTP control plane,
+so a mistake made through it stays in the calling process and can never stop
+the daemon's event loop.
 
 A kernel's identity is its environment, which its child processes inherit:
 a script started from a kernel acts as that kernel, holding what it opens on
@@ -68,28 +68,63 @@ class Daemon:
         self._http: httpx.Client | None = None
 
     def kernels(self, *, timeout: float = _CONTROL_TIMEOUT_SECONDS) -> Kernels:
-        """The kernels of this kernel's home, or outside a kernel every kernel; oldest first.
+        """Every kernel, oldest first, as the console lists them; a child kernel's row names its home.
 
         ``timeout`` is how many seconds to wait for the daemon before
         ``DaemonError``. Code that asks on every cell passes a short one, so a
         stuck daemon costs it one missed answer rather than a minute per cell.
         """
-        params = None if self.identity is None else {"home": self.identity.kernel_id}
-        resources = self._request("GET", "/api/resources", params=params, timeout=timeout)["resources"]
+        resources = self._request("GET", "/api/resources", timeout=timeout)["resources"]
         return Kernels(self._handle(resource) for resource in resources)
 
-    def __getitem__(self, name: str) -> Kernel:
-        """The kernel with this name or id.
+    def __getitem__(self, path: str) -> Kernel:
+        """The kernel ``path`` names; opens nothing.
 
-        Inside a kernel the name is this home's child kernel, opened on first
-        use and retired with the home's main kernel; this kernel's and the
-        main kernel's own names resolve to them. Outside a kernel nothing could
-        hold a new kernel, so only a main kernel by name, or any kernel by id,
-        resolves.
+        An id names its kernel anywhere; ``/main`` and ``main/child`` are read
+        from the root; a bare name is read from this kernel's main kernel, or
+        outside a kernel names a main kernel. A path naming nothing raises
+        ``DaemonError`` with status ``kernel_not_found``.
         """
-        holder = None if self.identity is None else self.identity.kernel_id
-        resource = self._request("POST", "/api/resources/ensure", json={"name": name, "holder": holder})["resource"]
-        return self._handle(resource)
+        params = {"path": path} | ({} if self.identity is None else {"context": self.identity.kernel_id})
+        return self._handle(self._request("GET", "/api/resources/lookup", params=params)["resource"])
+
+    def create(self, path: str) -> Kernel:
+        """The kernel ``path`` names, opening a child kernel when it is missing.
+
+        ``build`` opens in this kernel's main kernel, ``main/build`` in that
+        main kernel. A main kernel lives by an MCP session's lease, so only a
+        session opens one (``%%loommux --attach NAME --create``).
+        """
+        context = None if self.identity is None else self.identity.kernel_id
+        return self._handle(self._request("POST", "/api/resources", json={"path": path, "context": context})["resource"])
+
+    def rename(self, kernel: str | Kernel, name: str) -> str:
+        """Rename ``kernel`` (a path, an id or a handle) and return the name it received.
+
+        A name another kernel of its scope already has is numbered
+        (``name-2``). Renaming this kernel changes which cell headers name it
+        from the next cell on.
+        """
+        resource = self._request("POST", f"/api/resources/{self._id(kernel)}/rename", json={"name": name})["resource"]
+        self._learn(resource)
+        if isinstance(kernel, Kernel):
+            kernel.name = resource["name"]
+        return resource["name"]
+
+    def recycle(self, kernel: str | Kernel, *, force: bool = False) -> str:
+        """Retire ``kernel`` (a path, an id or a handle); ``force`` also retires it while it runs a cell."""
+        return self._request("POST", f"/api/resources/{self._id(kernel)}/recycle", json={"force": force})["message"]
+
+    def recycle_idle(self) -> int:
+        """Retire every kernel that runs nothing; how many were retired."""
+        return self._request("POST", "/api/resources/recycle-idle")["count"]
+
+    def recycle_all(self) -> int:
+        """Retire every kernel, running or not; how many were retired."""
+        return self._request("POST", "/api/resources/recycle-all")["count"]
+
+    def _id(self, kernel: str | Kernel) -> str:
+        return kernel.id if isinstance(kernel, Kernel) else self[kernel].id
 
     @property
     def self(self) -> Kernel:
@@ -167,7 +202,12 @@ class Daemon:
 
 
 class Kernel:
-    """A handle to one kernel resource; every method asks the daemon anew.
+    """A handle to one kernel: the eight operations of the MCP tools, aimed at it.
+
+    Each method has the name and parameters of its tool and returns the
+    structured result the kernel's session gives. ``execution=None`` selects
+    the current execution, then the most recent. Every method asks the daemon
+    anew.
 
     ``snapshot`` is the daemon's description at the moment the handle was
     listed, or ``None`` for a handle made without a listing.
@@ -185,15 +225,40 @@ class Kernel:
         self.daemon._learn(resource)
         return resource
 
-    def run(self, code: str, *, wait: float = 10.0) -> Job:
-        """Submit ``code`` as one cell and wait up to ``wait`` seconds.
+    def run_cell(self, freeform: str, *, wait_seconds: float = 10.0) -> dict[str, Any]:
+        """Submit ``freeform`` as one cell and wait up to ``wait_seconds``; its state either way.
 
-        Returns while the cell may still run; the job follows it. A kernel
-        that is already running a cell refuses with ``DaemonError`` whose
+        The result's ``execution`` is the number the other operations take.
+        ``wait_seconds=0`` returns at once and leaves the cell running. A
+        kernel already running a cell refuses with ``DaemonError`` whose
         ``status`` is ``busy``: cells are never queued.
         """
-        result = self.daemon._request("POST", f"/api/resources/{self.id}/executions", json={"source": code, "wait_seconds": wait}, timeout=wait + _CONTROL_TIMEOUT_SECONDS)["result"]
-        return Job(self, result["execution"], result)
+        return self._session("POST", "/executions", json={"source": freeform, "wait_seconds": wait_seconds}, timeout=wait_seconds + _CONTROL_TIMEOUT_SECONDS)
+
+    def execution_status(self, execution: int | None = None) -> dict[str, Any]:
+        return self._session("GET", f"/executions/{_selected(execution)}")
+
+    def read_output(self, execution: int | None = None, stream: str = "combined", line_range: str | None = None, max_chars: int | None = None) -> dict[str, Any]:
+        params = {"stream": stream} | _present(line_range=line_range, max_chars=max_chars)
+        return self._session("GET", f"/executions/{_selected(execution)}/output", params=params)
+
+    def search_output(
+        self,
+        query: str,
+        execution: int | None = None,
+        stream: str = "combined",
+        query_mode: str = "auto",
+        context_before: int = 0,
+        context_after: int = 0,
+        ignore_case: bool = False,
+        max_chars: int | None = None,
+    ) -> dict[str, Any]:
+        params = {"query": query, "stream": stream, "query_mode": query_mode, "context_before": str(context_before), "context_after": str(context_after)}
+        params |= {"ignore_case": "true"} if ignore_case else {}
+        return self._session("GET", f"/executions/{_selected(execution)}/search", params=params | _present(max_chars=max_chars))
+
+    def wait(self, execution: int | None = None, timeout_seconds: float = 30) -> dict[str, Any]:
+        return self._session("POST", f"/executions/{_selected(execution)}/wait", json={"timeout_seconds": timeout_seconds}, timeout=timeout_seconds + _CONTROL_TIMEOUT_SECONDS)
 
     def interrupt(self) -> dict[str, Any]:
         return self.daemon._request("POST", f"/api/resources/{self.id}/interrupt")["result"]
@@ -205,72 +270,20 @@ class Kernel:
         """
         return self.daemon._request("POST", f"/api/resources/{self.id}/restart")["result"]
 
-    def recycle(self, *, force: bool = False) -> str:
-        """Retire the kernel resource; ``force`` also retires it while busy."""
-        return self.daemon._request("POST", f"/api/resources/{self.id}/recycle", json={"force": force})["message"]
+    def follow(self, execution: int, offset: int, wait: float = 0.5) -> dict[str, Any]:
+        """Combined output of ``execution`` after ``offset`` characters, with ``status`` and the next ``offset``.
 
-    def rename(self, name: str) -> str:
-        """Rename the kernel and return the name it received.
-
-        A name another kernel of its scope already has is numbered
-        (``name-2``). Renaming the kernel that runs this takes effect for the
-        next cell header at once.
+        Answers as soon as new text exists or the execution ends, within
+        ``wait`` seconds, so a loop of calls receives output as it arrives:
+        what a tool result does for an agent, for a program.
         """
-        resource = self.daemon._request("POST", f"/api/resources/{self.id}/rename", json={"name": name})["resource"]
-        self.daemon._learn(resource)
-        self.name = resource["name"]
-        return self.name
+        return self._session("GET", f"/executions/{execution}/combined", params={"since": str(offset), "wait": str(wait)})
+
+    def _session(self, method: str, path: str, **options: Any) -> dict[str, Any]:  # noqa: ANN401
+        return self.daemon._request(method, f"/api/resources/{self.id}{path}", **options)["result"]
 
     def __repr__(self) -> str:
         return f"<loommux kernel {self.name} {self.id[:8]}>"
-
-
-class Job:
-    """One execution of a kernel, followed through the daemon.
-
-    ``last`` is the most recent state the daemon reported for it.
-    """
-
-    def __init__(self, kernel: Kernel, execution: int, last: dict[str, Any]) -> None:
-        self.kernel = kernel
-        self.execution = execution
-        self.last = last
-
-    @property
-    def done(self) -> bool:
-        return self.last.get("status") != "running"
-
-    def status(self) -> dict[str, Any]:
-        return self._update("GET", f"/executions/{self.execution}")
-
-    def wait(self, timeout: float = 30) -> dict[str, Any]:
-        """Wait up to ``timeout`` seconds for the execution to end; its state either way."""
-        return self._update("POST", f"/executions/{self.execution}/wait", json={"timeout_seconds": timeout}, timeout=timeout + _CONTROL_TIMEOUT_SECONDS)
-
-    def output(self, stream: str = "combined", lines: str | None = None) -> str:
-        """Text of one output stream; ``lines`` is a ``start:stop`` range as in ``read_output``."""
-        params = {"stream": stream} | ({} if lines is None else {"lines": lines})
-        return self.kernel.daemon._request("GET", f"/api/resources/{self.kernel.id}/executions/{self.execution}/output", params=params)["result"]["text"]
-
-    def follow(self, offset: int, wait: float = 0.5) -> dict[str, Any]:
-        """Combined output after ``offset`` characters, with ``status`` and the next ``offset``.
-
-        Answers as soon as new text exists or the execution ends, within
-        ``wait`` seconds, so a loop of calls relays output as it arrives.
-        """
-        params = {"since": str(offset), "wait": str(wait)}
-        self.last = self.kernel.daemon._request("GET", f"/api/resources/{self.kernel.id}/executions/{self.execution}/combined", params=params)["result"]
-        return self.last
-
-    def interrupt(self) -> dict[str, Any]:
-        return self.kernel.interrupt()
-
-    def _update(self, method: str, path: str, **options: Any) -> dict[str, Any]:  # noqa: ANN401
-        self.last = self.kernel.daemon._request(method, f"/api/resources/{self.kernel.id}{path}", **options)["result"]
-        return self.last
-
-    def __repr__(self) -> str:
-        return f"<loommux job {self.kernel.name} #{self.execution} {self.last.get('status')}>"
 
 
 class Kernels(list[Kernel]):
@@ -308,3 +321,12 @@ def _duration(seconds: float) -> str:
     if seconds >= 3600:
         return f"{seconds / 3600:.1f}h"
     return f"{seconds / 60:.0f}m" if seconds >= 60 else f"{max(seconds, 0):.0f}s"
+
+
+def _selected(execution: int | None) -> str:
+    # The tools' None, current then most recent, is "latest" in a path.
+    return "latest" if execution is None else str(execution)
+
+
+def _present(**values: object) -> dict[str, str]:
+    return {name: str(value) for name, value in values.items() if value is not None}

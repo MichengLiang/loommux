@@ -13,6 +13,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
 
 from loommux.resource import (
+    KernelNotFoundError,
     KernelResourceManager,
     LeaseMode,
     ResourceBusyError,
@@ -45,19 +46,49 @@ def install_control_routes(
         return HTMLResponse(CONSOLE_PATH.read_text(encoding="utf-8"))
 
     @mcp.custom_route("/api/resources", methods=["GET"])
-    async def list_resources(request: Request) -> Response:
-        """Every kernel, or with ``?home=<id>`` the kernels of that kernel's home."""
+    async def list_resources(_: Request) -> Response:
+        """Every kernel, oldest first."""
         selected = manager()
-        try:
-            resources = await selected.snapshot(home_of=request.query_params.get("home"))
-        except ResourceNotFoundError as exc:
-            return JSONResponse({"ok": False, "message": str(exc)}, status_code=404)
         return JSONResponse(
             {
-                "resources": resources,
+                "resources": await selected.snapshot(),
                 "policy": (await selected.policy_manager.current()).as_dict(),
             }
         )
+
+    @mcp.custom_route("/api/resources", methods=["POST"])
+    async def create_resource(request: Request) -> Response:
+        """The kernel ``path`` names from the kernel ``context``, opening a child kernel when it is missing."""
+        body, error = await _json_object(request)
+        if error is not None:
+            return error
+        path, context = body.get("path"), body.get("context")
+        if not isinstance(path, str) or not (context is None or isinstance(context, str)):
+            return JSONResponse({"ok": False, "message": "path must be a string and context a string or null"}, status_code=400)
+        return await _registry_answer(lambda selected: selected.create(path, context))
+
+    # Registered before /api/resources/{resource_id}, which would read "lookup" as an id.
+    @mcp.custom_route("/api/resources/lookup", methods=["GET"])
+    async def lookup_resource(request: Request) -> Response:
+        """The kernel ``?path=`` names from the kernel ``?context=``; opens nothing."""
+        path = request.query_params.get("path")
+        if not path:
+            return JSONResponse({"ok": False, "message": "path is required"}, status_code=400)
+        return await _registry_answer(lambda selected: selected.lookup(path, request.query_params.get("context") or None))
+
+    async def _registry_answer(operation: Callable[[KernelResourceManager], Awaitable[Any]]) -> JSONResponse:
+        selected = manager()
+        try:
+            resource = await operation(selected)
+            # The kernel may be retired between resolving and describing it,
+            # for example a child kernel whose main kernel was just let go of;
+            # that is the same answer as not finding it.
+            snapshot = await selected.snapshot_one(resource.resource_id)
+        except ResourceRoutingError as exc:
+            return JSONResponse({"ok": False, "status": "invalid_kernel_path", "message": str(exc)}, status_code=400)
+        except (KernelNotFoundError, ResourceNotFoundError) as exc:
+            return JSONResponse({"ok": False, "status": "kernel_not_found", "message": str(exc)}, status_code=404)
+        return JSONResponse({"ok": True, "resource": snapshot})
 
     @mcp.custom_route("/api/lease-policy", methods=["GET"])
     async def get_policy(_: Request) -> Response:
@@ -129,28 +160,6 @@ def install_control_routes(
             return JSONResponse({"ok": False, "message": str(exc)}, status_code=404)
         return JSONResponse({"ok": True, "resource": snapshot})
 
-    @mcp.custom_route("/api/resources/ensure", methods=["POST"])
-    async def ensure_resource(request: Request) -> Response:
-        """Open a kernel by name for the kernel ``holder``, which then holds it."""
-        body, error = await _json_object(request)
-        if error is not None:
-            return error
-        name, holder = body.get("name"), body.get("holder")
-        if not isinstance(name, str) or not (holder is None or isinstance(holder, str)):
-            return JSONResponse({"ok": False, "message": "name must be a string and holder a string or null"}, status_code=400)
-        selected = manager()
-        try:
-            resource = await selected.ensure_held(name, holder)
-            # The kernel may be retired between resolving and describing it,
-            # for example a child kernel whose home was just let go of; that
-            # is the same answer as not finding it.
-            snapshot = await selected.snapshot_one(resource.resource_id)
-        except ResourceRoutingError as exc:
-            return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
-        except ResourceNotFoundError as exc:
-            return JSONResponse({"ok": False, "message": str(exc)}, status_code=404)
-        return JSONResponse({"ok": True, "resource": snapshot})
-
     @mcp.custom_route("/api/resources/{resource_id}/executions", methods=["POST"])
     async def submit_cell(request: Request) -> Response:
         body, error = await _json_object(request)
@@ -181,27 +190,56 @@ def install_control_routes(
             return JSONResponse({"ok": False, "message": str(exc)}, status_code=404)
         return JSONResponse({"ok": True, "resource": snapshot})
 
-    @mcp.custom_route("/api/resources/{resource_id}/executions/{execution:int}", methods=["GET"])
+    @mcp.custom_route("/api/resources/{resource_id}/executions/{execution}", methods=["GET"])
     async def execution_status(request: Request) -> Response:
-        execution = request.path_params["execution"]
+        try:
+            execution = _execution(request)
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
         return await _session_call(request, lambda session: session.execution_status(execution))
 
-    @mcp.custom_route("/api/resources/{resource_id}/executions/{execution:int}/wait", methods=["POST"])
+    @mcp.custom_route("/api/resources/{resource_id}/executions/{execution}/wait", methods=["POST"])
     async def wait_execution(request: Request) -> Response:
         body, error = await _json_object(request)
         if error is not None:
             return error
-        execution, timeout = request.path_params["execution"], body.get("timeout_seconds", 30)
-        if isinstance(timeout, bool) or not isinstance(timeout, int | float):
-            return JSONResponse({"ok": False, "message": "timeout_seconds must be a number"}, status_code=400)
+        timeout = body.get("timeout_seconds", 30)
+        try:
+            execution = _execution(request)
+            if isinstance(timeout, bool) or not isinstance(timeout, int | float):
+                raise ValueError("timeout_seconds must be a number")
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
         return await _session_call(request, lambda session: session.wait(execution, float(timeout)))
 
-    @mcp.custom_route("/api/resources/{resource_id}/executions/{execution:int}/output", methods=["GET"])
+    @mcp.custom_route("/api/resources/{resource_id}/executions/{execution}/output", methods=["GET"])
     async def read_output(request: Request) -> Response:
-        execution = request.path_params["execution"]
-        stream = request.query_params.get("stream", "combined")
-        line_range = request.query_params.get("lines")
-        return await _session_call(request, lambda session: session.read_output(execution, stream, line_range))
+        query = request.query_params
+        try:
+            execution, max_chars = _execution(request), _optional_int(query, "max_chars")
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
+        stream, line_range = query.get("stream", "combined"), query.get("line_range")
+        return await _session_call(request, lambda session: session.read_output(execution, stream, line_range, max_chars))
+
+    @mcp.custom_route("/api/resources/{resource_id}/executions/{execution}/search", methods=["GET"])
+    async def search_output(request: Request) -> Response:
+        query = request.query_params
+        text = query.get("query")
+        try:
+            if text is None:
+                raise ValueError("query is required")
+            execution, max_chars = _execution(request), _optional_int(query, "max_chars")
+            before, after = _optional_int(query, "context_before") or 0, _optional_int(query, "context_after") or 0
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
+        stream, mode, ignore_case = query.get("stream", "combined"), query.get("query_mode", "auto"), query.get("ignore_case") == "true"
+        return await _session_call(
+            request,
+            lambda session: session.search_output(
+                text, execution, stream, query_mode=mode, context_before=before, context_after=after, ignore_case=ignore_case, max_chars=max_chars
+            ),
+        )
 
     @mcp.custom_route("/api/resources/{resource_id}/executions/{execution:int}/combined", methods=["GET"])
     async def follow_output(request: Request) -> Response:
@@ -325,6 +363,26 @@ async def _json_object(request: Request, *, optional: bool = False) -> tuple[dic
     if not isinstance(body, dict):
         return {}, JSONResponse({"ok": False, "message": "request body must be a JSON object"}, status_code=400)
     return body, None
+
+
+def _execution(request: Request) -> int | None:
+    """The execution a path names: a number, or ``latest`` for the current then the most recent, as the tools' ``None``."""
+    value = request.path_params["execution"]
+    if value == "latest":
+        return None
+    if not value.isdecimal():
+        raise ValueError("execution must be a number or latest")
+    return int(value)
+
+
+def _optional_int(query: Any, name: str) -> int | None:  # noqa: ANN401
+    value = query.get(name)
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        raise ValueError(f"{name} must be an integer") from None
 
 
 def _number(

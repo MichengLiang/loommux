@@ -37,7 +37,10 @@ def private_kernel_name(client: LeaseClient) -> str:
 
 
 def validate_kernel_name(name: str) -> str:
-    return _validate_display_label(name, "kernel name")
+    name = _validate_display_label(name, "kernel name")
+    if "/" in name:
+        raise ResourceRoutingError("kernel name must not contain '/', which separates a main kernel from its child kernel in a path")
+    return name
 
 
 def resolve_client(ctx: Context) -> LeaseClient:

@@ -167,7 +167,7 @@ def test_attaching_switches_at_any_time_and_lets_go_of_the_previous_main_kernel(
         target = (await _admit(manager, other, create("target"))).resource
         client = LeaseClient("0123456789abcdef", "agent")
         accidental = (await _admit(manager, client)).resource
-        child = await manager.ensure_held("build", accidental.resource_id)
+        child = await manager.create("build", accidental.resource_id)
 
         switched = await _admit(manager, client, attach("target"))
         again = await _admit(manager, client, attach(target.resource_id))
@@ -193,7 +193,7 @@ def test_attaching_to_a_missing_main_kernel_opens_nothing_and_lists_the_main_ker
         manager = KernelResourceManager(tmp_path, "launch_cwd", session_factory=FakeSession)
         connected = (await _admit(manager, LeaseClient("a", "a"), create("connected"))).resource
         waiting = await manager.get_or_create("waiting")
-        child = await manager.ensure_held("build", connected.resource_id)
+        child = await manager.create("build", connected.resource_id)
 
         with pytest.raises(KernelNotFoundError, match="no main kernel named 'gone'; main kernels: connected, waiting. Add --create to open it$"):
             await _admit(manager, LeaseClient("b", "b"), attach("gone"))
@@ -290,18 +290,18 @@ def test_child_kernels_live_in_one_home_and_leave_with_its_main_kernel(tmp_path:
         root = await manager.get_or_create("agent", named=False)
         lease(root)
 
-        x = await manager.ensure_held("x", root.resource_id)
+        x = await manager.create("x", root.resource_id)
         # A child kernel asking for a kernel opens it in the same home.
-        y = await manager.ensure_held("y", x.resource_id)
+        y = await manager.create("y", x.resource_id)
         assert (x.home, y.home) == (root.resource_id, root.resource_id)
-        assert await manager.ensure_held("y", x.resource_id) is y
-        assert await manager.ensure_held(x.resource_id, y.resource_id) is x
-        assert await manager.ensure_held("agent", y.resource_id) is root
-        assert await manager.ensure_held("y", y.resource_id) is y
+        assert await manager.create("y", x.resource_id) is y
+        assert await manager.lookup(x.resource_id, y.resource_id) is x
+        assert await manager.lookup("agent", y.resource_id) is root
+        assert await manager.lookup("y", y.resource_id) is y
         snapshot = await manager.snapshot_one(x.resource_id)
         assert (snapshot["scope"], snapshot["home"], snapshot["named"]) == ("child", "agent", True)
         assert (await manager.snapshot_one(root.resource_id))["scope"] == "main"
-        assert [resource.name for resource in await manager.list_home(y.resource_id)] == ["agent", "x", "y"]
+        assert [resource.name for resource in await manager.list_resources()] == ["agent", "x", "y"]
 
         assert await manager.sweep_once() == 0
         assert {x.lifecycle, y.lifecycle} == {ResourceLifecycle.RUNNING}
@@ -321,34 +321,60 @@ def test_two_homes_each_have_their_own_child_kernel_of_one_name(tmp_path: Path) 
         lease(first, "a")
         lease(second, "b")
 
-        build_first = await manager.ensure_held("build", first.resource_id)
-        build_second = await manager.ensure_held("build", second.resource_id)
+        build_first = await manager.create("build", first.resource_id)
+        build_second = await manager.create("build", second.resource_id)
 
         assert build_first is not build_second
-        assert [resource.name for resource in await manager.list_home(first.resource_id)] == ["first", "build"]
-        assert build_second not in await manager.list_home(build_first.resource_id)
-        assert [item["home"] for item in await manager.snapshot(home_of=second.resource_id)] == [None, "second"]
+        # A bare name is read from the asking kernel's main kernel; a path from the root.
+        assert await manager.lookup("build", second.resource_id) is build_second
+        assert await manager.lookup("build", build_first.resource_id) is build_first
+        assert await manager.lookup("/first/build", None) is build_first
+        assert await manager.lookup("second/build", build_first.resource_id) is build_second
+        # The listing is every kernel; each child kernel's row names its home.
+        assert [item["home"] for item in await manager.snapshot()] == [None, None, "first", "second"]
         await manager.stop()
 
     asyncio.run(scenario())
 
 
-def test_outside_a_kernel_only_a_main_kernel_name_or_an_id_resolves(tmp_path: Path) -> None:
+def test_lookup_reads_paths_and_opens_nothing_and_create_opens_only_child_kernels(tmp_path: Path) -> None:
     async def scenario() -> None:
         manager = KernelResourceManager(tmp_path, "launch_cwd", session_factory=FakeSession)
         agent = await manager.get_or_create("agent")
-        lab = await manager.ensure_held("lab", agent.resource_id)
+        lab = await manager.create("lab", agent.resource_id)
 
-        with pytest.raises(ResourceNotFoundError, match="only a kernel can open one"):
-            await manager.ensure_held("lab", None)
-        with pytest.raises(ResourceNotFoundError, match="holder resource was not found"):
-            await manager.ensure_held("lab", "retired-holder")
-        with pytest.raises(ResourceNotFoundError, match="resource was not found"):
-            await manager.list_home("retired")
+        # Without a context a bare name is a main kernel's.
+        with pytest.raises(KernelNotFoundError, match="no kernel 'lab'; main kernels: /agent$"):
+            await manager.lookup("lab", None)
+        with pytest.raises(KernelNotFoundError, match="no kernel 'gone'; kernels of /agent: agent, lab$"):
+            await manager.lookup("gone", lab.resource_id)
+        with pytest.raises(KernelNotFoundError, match="no kernel 'nobody'; main kernels: /agent$"):
+            await manager.lookup("/nobody/lab", None)
+        with pytest.raises(ResourceRoutingError, match="not a kernel path"):
+            await manager.lookup("a/b/c", None)
+        with pytest.raises(ResourceNotFoundError, match="asking kernel was not found"):
+            await manager.create("lab", "retired-holder")
         with pytest.raises(ResourceRoutingError, match="kernel name must contain printable characters only"):
-            await manager.ensure_held("a\tb", agent.resource_id)
-        assert await manager.ensure_held("agent", None) is agent
-        assert await manager.ensure_held(lab.resource_id, None) is lab
+            await manager.create("a\tb", agent.resource_id)
+        # A main kernel lives by a session's lease, so only a session opens one.
+        with pytest.raises(ResourceRoutingError, match="only an MCP session opens"):
+            await manager.create("/fresh", None)
+        with pytest.raises(ResourceRoutingError, match="only an MCP session opens"):
+            await manager.create("fresh", None)
+        with pytest.raises(ResourceRoutingError, match="name of its main kernel"):
+            await manager.create("agent/agent", None)
+        assert await manager.lookup("agent", None) is agent
+        assert await manager.lookup("/agent", lab.resource_id) is agent
+        assert await manager.lookup(lab.resource_id, None) is lab
+        assert await manager.lookup("/agent/lab", None) is lab
+        assert await manager.create("agent/lab", None) is lab
+        assert len(await manager.list_resources()) == 2
+        # From outside any kernel a path names the main kernel to open in.
+        outside = await manager.create("/agent/outside", None)
+        assert outside.home == agent.resource_id
+        # Two callers creating one name at once get one kernel.
+        first, second = await asyncio.gather(manager.create("twin", agent.resource_id), manager.create("twin", lab.resource_id))
+        assert first is second
         await manager.stop()
 
     asyncio.run(scenario())
@@ -359,7 +385,7 @@ def test_a_child_kernel_is_retired_with_its_main_kernel(tmp_path: Path) -> None:
         manager = KernelResourceManager(tmp_path, "launch_cwd", session_factory=FakeSession)
         agent = await manager.get_or_create("agent")
         lease(agent)
-        lab = await manager.ensure_held("lab", agent.resource_id)
+        lab = await manager.create("lab", agent.resource_id)
 
         await manager.recycle(agent.resource_id)
 
@@ -399,12 +425,12 @@ def test_a_kernel_opened_while_its_home_retires_is_not_handed_out(tmp_path: Path
     async def scenario() -> None:
         manager = KernelResourceManager(tmp_path, "launch_cwd", session_factory=SlowSession)
         agent = await manager.get_or_create("agent")
-        opening = asyncio.create_task(manager.ensure_held("lab", agent.resource_id))
+        opening = asyncio.create_task(manager.create("lab", agent.resource_id))
         await asyncio.sleep(0.05)
         await manager.recycle(agent.resource_id)
         SlowSession.release.set()
 
-        with pytest.raises(ResourceNotFoundError, match="holder resource was not found"):
+        with pytest.raises(ResourceNotFoundError, match="was retired while 'lab' started"):
             await opening
         await manager.stop()
 
@@ -417,20 +443,20 @@ def test_renaming_numbers_a_taken_name_within_the_kernels_scope(tmp_path: Path) 
         generated = await _first_call(manager, LeaseClient("0123456789abcdef", "agent"))
         report = await manager.get_or_create("report")
         other = await manager.get_or_create("other")
-        mine = await manager.ensure_held("build", generated.resource_id)
-        theirs = await manager.ensure_held("build", other.resource_id)
-        sibling = await manager.ensure_held("lab", generated.resource_id)
+        mine = await manager.create("build", generated.resource_id)
+        theirs = await manager.create("build", other.resource_id)
+        sibling = await manager.create("lab", generated.resource_id)
 
         assert (await manager.rename(generated.resource_id, "report")).name == "report-2"
         # A renamed generated kernel counts as named, and is found by its new name.
         assert generated.named is True
         assert await manager.get_or_create("report-2") is generated
-        assert await manager.ensure_held("report-2", None) is generated
+        assert await manager.lookup("report-2", None) is generated
         # Child kernel names are unique inside their home only.
         assert (await manager.rename(theirs.resource_id, "tests")).name == "tests"
         assert (await manager.rename(mine.resource_id, "tests")).name == "tests"
         assert (await manager.rename(sibling.resource_id, "tests")).name == "tests-2"
-        assert await manager.ensure_held("tests", generated.resource_id) is mine
+        assert await manager.lookup("tests", generated.resource_id) is mine
         assert (await manager.rename(report.resource_id, "report")).name == "report"
         # Inside a home the main kernel resolves first, so neither may take
         # the other's name: it would hide that kernel from every lookup.
@@ -438,6 +464,8 @@ def test_renaming_numbers_a_taken_name_within_the_kernels_scope(tmp_path: Path) 
         assert (await manager.rename(generated.resource_id, "tests")).name == "tests-2"
         with pytest.raises(ResourceRoutingError, match="kernel name must not exceed 256 characters"):
             await manager.rename(report.resource_id, "x" * 257)
+        with pytest.raises(ResourceRoutingError, match="must not contain '/'"):
+            await manager.rename(report.resource_id, "a/b")
         with pytest.raises(ResourceNotFoundError):
             await manager.rename("missing", "anything")
         await manager.stop()
