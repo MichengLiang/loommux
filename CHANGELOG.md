@@ -23,9 +23,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   `Kernel: NAME (opened)` or `Kernel: NAME (attached; N earlier executions)`
   block, and structured results carry `binding`; `status` begins with the
   kernel's name.
-- `Kernel.rename(name)` and `POST /api/resources/{id}/rename` rename a kernel
+- `Daemon.rename(kernel, name)` and `POST /api/resources/{id}/rename` rename a kernel
   and return the name it received, numbered when another main kernel, or a
-  child kernel of the same home, has it. `loommux.self.rename()` is one line
+  child kernel of the same home, has it. `loommux.rename(loommux.self, name)` is one line
   in any cell, and the kernel reads headers with its new name as its own from
   the next cell; a kernel renamed from elsewhere learns the name from the
   next answer describing it, or from a header that uses it. A name another
@@ -78,9 +78,26 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   home, so two sessions that both open `build` get two kernels, and a child
   kernel opening a kernel opens it in the same home. A child kernel lives
   exactly as long as its main kernel holds a client lease.
-- **Breaking:** inside a kernel, `loommux.kernels()` lists its home only;
-  outside a kernel, `Daemon()` lists every kernel and resolves a main kernel by
-  name or any kernel by id. `GET /api/resources?home=<id>` lists one home.
+- **Breaking:** the client has two panels
+  ([Kernel Control Surface Design](docs/kernel-control-surface-design.md)).
+  The daemon keeps the registry: `kernels()` lists every kernel, inside a
+  kernel too; `daemon[path]` finds and never opens; `create(path)` opens a
+  child kernel or returns the one the path finds, and refuses to open a main
+  kernel; `rename(kernel, name)`, `recycle(kernel, force=)`,
+  `recycle_idle()` and `recycle_all()` take a path, an id or a handle. A
+  kernel handle has the eight MCP tools as methods with their names and
+  parameters, `run_cell`, `status`, `execution_status`, `read_output`,
+  `search_output`, `wait`, `interrupt`, `restart`, plus `follow`;
+  `execution=None` is the current execution, then the most recent. `Job`,
+  `Kernel.run`, `Kernel.recycle` and `Kernel.rename` are gone.
+- **Breaking:** a name is a path: `/main/child` and `main/child` from the
+  root, a bare name from the caller's main kernel or, outside a kernel, a main
+  kernel's, and an id anywhere. A kernel name may not contain `/`.
+- **Breaking:** the control plane's `POST /api/resources/ensure` and
+  `GET /api/resources?home=` are replaced by `GET /api/resources/lookup` and
+  `POST /api/resources`; `GET /api/resources/{id}/executions/{n}/search` is
+  new, `/output` takes `line_range` and `max_chars`, and `latest` stands for
+  the current or most recent execution.
 - **Breaking:** resource snapshots report `scope` (`main` or `child`), `home`,
   and `named` instead of `key`, `shared`, and `held_by`; the console shows the
   home, and the `Kernels` table its scope and home columns.
@@ -117,7 +134,7 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
-- `POST /api/resources/ensure` answered 500 when the kernel it had resolved
+- Finding or opening a kernel by name answered 500 when the kernel it had resolved
   was retired before the route described it, for example a child kernel whose
   home had just been let go of; it now answers 404 as for a missing kernel,
   and so does the rename route.

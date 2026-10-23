@@ -242,10 +242,13 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, confi
             uv run pytest
 
         ``build`` 是这个会话主 kernel 名下的子 kernel，不存在时首次使用就开出，
-        跟着主 kernel 活、跟着它回收；主 kernel 与其他主 kernel 之间的子 kernel 存在命名空间的隔离。
-        中断这个 cell 会一并中断它。
+        跟着主 kernel 活、跟着它回收；子 kernel 的名字只在各自的主 kernel 名下唯一，
+        别的主 kernel 名下的写全称 ``/主kernel名/build``。
+        这个 cell 就是 ``loommux.create("build")`` 再在它上面 ``run_cell``，在这里等它、接着它的输出；
+        所以中断这个 cell，build 的这次执行也被中断。
         每个 kernel 里都有 ``loommux`` 对象：``loommux.kernels()`` 列出所有 kernel，
-        ``loommux["build"].run(code)`` 在后台提交并返回 job。
+        ``loommux.recycle("build")`` 回收；``loommux["build"]`` 取到的 kernel 有与这组工具同名同参的方法，
+        如 ``run_cell(code, wait_seconds=0)`` 在后台提交，之后 ``wait(n)``、``read_output(n)``。
 
         什么时候用呢？
         1. 同时想利用Kernel本身（如果Shellwork合适优先使用）去跑长任务的同时，还想要使用主Kernel去做别的事情使用。
@@ -262,7 +265,7 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, confi
             import pandas as pd
 
         ``--attach 名字`` 可重新切换会曾命名到的持久资源。
-        任务变了，在任意 cell 里顺手写 ``loommux.self.rename("新名字")``。
+        任务变了，在任意 cell 里顺手写 ``loommux.rename(loommux.self, "新名字")``。
 
         图像展示
         --------

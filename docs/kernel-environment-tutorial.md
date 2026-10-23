@@ -107,11 +107,11 @@ def _idle_children(result):
     now = datetime.now(UTC)
     for kernel in kernels:
         since = kernel.snapshot["idle_since"]
-        if kernel.snapshot["scope"] != "child" or since is None or (kernel.id, since) in _told:
+        if kernel.snapshot["home"] != me.name or since is None or (kernel.id, since) in _told:
             continue
         if now - datetime.fromisoformat(since) >= _IDLE:
             _told.add((kernel.id, since))
-            loommux.notify(f"{kernel.name} has run nothing since {since}; loommux[{kernel.name!r}].recycle() if it is done")
+            loommux.notify(f"{kernel.name} has run nothing since {since}; loommux.recycle({kernel.name!r}) if it is done")
 
 
 get_ipython().events.register("post_run_cell", _idle_children)
@@ -120,9 +120,10 @@ get_ipython().events.register("post_run_cell", _idle_children)
 - The hook runs after every cell, so it asks with `timeout=2`. The default
   control-plane timeout is a minute, and a stuck daemon would hold every cell
   that long.
-- Startup files run in child kernels too. Inside one, `kernels()` lists the
-  same home, so the hook speaks only in the main kernel and each child is
-  reported once.
+- `kernels()` lists every kernel, as the console does. A child kernel's row
+  carries `home`, the name of its main kernel, so the hook keeps the rows whose
+  home is its own. Startup files run in child kernels too, so the hook speaks
+  only in a main kernel and each child is reported once.
 - `idle_since` is when the kernel last became idle, or `None` while it runs.
   A child is reported once per idle stretch: `(id, idle_since)` changes when it
   runs again, and the next stretch may be reported anew.
@@ -135,7 +136,7 @@ With both files in place, a cell that crosses both thresholds ends like this:
 In [3]:
 
 ⏱ this cell ran 12 minutes
-build has run nothing since 2026-10-23T20:30:03.526315+00:00; loommux['build'].recycle() if it is done
+build has run nothing since 2026-10-23T20:30:03.526315+00:00; loommux.recycle('build') if it is done
 ```
 
 The notices are their own block after the cell's output. They are not part of

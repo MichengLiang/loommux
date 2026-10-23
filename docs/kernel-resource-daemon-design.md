@@ -342,14 +342,16 @@ The Streamable HTTP application serves:
 | Method | Path | Meaning |
 | --- | --- | --- |
 | `GET` | `/` | Dependency-free resource console. |
-| `GET` | `/api/resources` | Resource, execution, kernel, and lease snapshots; `?home=<id>` limits them to that kernel's home. |
+| `GET` | `/api/resources` | Every resource's snapshot: execution, kernel and lease state, scope and home. |
+| `GET` | `/api/resources/lookup` | The kernel `path` names, read from the kernel `context`; opens nothing ([Kernel Control Surface Design](kernel-control-surface-design.md) section 5). |
+| `POST` | `/api/resources` | The kernel `path` names from the kernel `context`, opening a child kernel when it is missing; a main kernel is refused. |
 | `GET` | `/api/resources/{id}` | One resource's snapshot. |
-| `POST` | `/api/resources/ensure` | Resolve `name` in the home of the kernel `holder`, opening a child kernel if needed; without a holder, resolve a main kernel by name or any kernel by id only. |
 | `POST` | `/api/resources/{id}/executions` | Submit `source` as one cell, waiting up to `wait_seconds`; refuses with `busy` instead of queueing. |
 | `POST` | `/api/resources/{id}/rename` | Rename to `name`, numbered when another kernel of its scope has it; the snapshot carries the name received. |
-| `GET` | `/api/resources/{id}/executions/{n}` | One execution's status. |
+| `GET` | `/api/resources/{id}/executions/{n}` | One execution's status; `latest` for `{n}` is the current execution, then the most recent. |
 | `POST` | `/api/resources/{id}/executions/{n}/wait` | Wait up to `timeout_seconds` for it to end. |
-| `GET` | `/api/resources/{id}/executions/{n}/output` | Read one stream (`stream`, `lines` as `start:stop`). |
+| `GET` | `/api/resources/{id}/executions/{n}/output` | Read one stream (`stream`, `line_range` as `start:stop`, `max_chars`). |
+| `GET` | `/api/resources/{id}/executions/{n}/search` | Search one stream with the `search_output` parameters. |
 | `GET` | `/api/lease-policy` | Current policy generation. |
 | `PUT` | `/api/lease-policy` | Atomically validate and update future defaults. |
 | `POST` | `/api/resources/{id}/interrupt` | Interrupt the selected running execution. |

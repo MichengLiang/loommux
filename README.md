@@ -264,27 +264,41 @@ source-ownership contract is documented in
 
 Every kernel knows which resource it is and where its daemon listens
 (`LOOMMUX_KERNEL_ID`, `LOOMMUX_KERNEL_NAME`, `LOOMMUX_CONTROL_URL`), and holds
-a client of that daemon as `loommux`:
+a client of that daemon as `loommux`. The daemon keeps the registry, so it
+lists, finds, opens, renames and retires kernels; a kernel handle has the eight
+operations of the MCP tools, with their names and parameters:
 
 ```python
-loommux.kernels()             # this home: name, id, state, busy, idle, pid, executions, leases, kept, scope, home
-loommux.kernels(timeout=2)    # the same, giving up with DaemonError after 2 seconds
-loommux.self                  # this kernel
-lab = loommux["lab"]          # this home's child kernel, by name or id; opened on first use
-job = lab.run("train()", wait=5)
-job.wait(600)                 # its state; job.output() reads its combined output
-lab.restart()
-loommux["lab"].recycle(force=True)
-loommux.self.rename("report-cleanup")   # returns the name received; report-cleanup-2 if taken
-loommux.notify("⚠ memory is low")      # to the agent, apart from this cell's output
+# the daemon's buttons
+loommux.kernels()                  # every kernel: name, id, state, busy, idle, pid, executions, leases, kept, scope, home
+loommux.kernels(timeout=2)         # the same, giving up with DaemonError after 2 seconds
+loommux.self                       # this kernel
+lab = loommux.create("lab")        # a child kernel of this main kernel, opened if missing
+loommux["lab"]                     # find by name, path or id; never opens
+loommux["/other-task/lab"]         # another main kernel's child kernel
+loommux.rename(loommux.self, "report-cleanup")   # returns the name received; report-cleanup-2 if taken
+loommux.recycle("lab", force=True)
+
+# a kernel's buttons
+n = lab.run_cell("train()", wait_seconds=0)["execution"]
+lab.wait(n, timeout_seconds=600)
+lab.read_output(n, line_range="-20:")["text"]
+lab.search_output("loss", n)
+lab.interrupt(); lab.restart()
+
+loommux.notify("⚠ memory is low")  # to the agent, apart from this cell's output
 ```
 
-A kernel opened this way is a child kernel of the asking kernel's home: the
-main kernel an MCP session works in. It lives as long as that main kernel holds
-a client lease and is released with it, and its name belongs to the home, so
-another session's kernels neither list nor reach it. A kernel already running a
-cell refuses `run()` with `DaemonError` whose `status` is `busy`; cells are
-never queued.
+A kernel opened this way is a child kernel of the asking kernel's main kernel.
+It lives as long as that main kernel is kept and is released with it. Its name
+is unique only among that main kernel's child kernels, so a name is a path:
+`/main/child` from the root, a bare name from the caller's main kernel, and an
+id anywhere. Names contain no `/`. Only an MCP session opens a main kernel
+(`--attach NAME --create`), because only its lease keeps one. A kernel already
+running a cell refuses `run_cell()` with `DaemonError` whose `status` is
+`busy`; cells are never queued. `%%loommux --kernel build` is `create`,
+`run_cell` and following its output in the forwarding cell; see the
+[Kernel Control Surface Design](docs/kernel-control-surface-design.md).
 
 `loommux.notify(text)` is how code in a kernel, an alarm in a `post_run_cell`
 hook for instance, tells the agent something about this moment. A notice is
@@ -475,11 +489,11 @@ for the grammar and its reasons.
 uv run pytest
 ```
 
-The kernel named `build` is this home's child kernel, opened on first use and
+The kernel named `build` is this main kernel's child kernel, opened on first use and
 retired with the main kernel (see [Controlling Kernels From A Kernel](#controlling-kernels-from-a-kernel)).
 Its combined output is relayed into this cell as it arrives; an error there
 ends this cell with a one-line `ForwardedCellError` beneath the relayed
-traceback, and interrupting this cell interrupts it as well. Writing the
+traceback, and since this cell waits on it, interrupting this cell interrupts it as well. Writing the
 receiving kernel's own name is the same as writing none. Relayed output is
 text; rich displays such as images stay in the target's execution record.
 
@@ -512,7 +526,7 @@ Without `--create` a missing name returns `kernel_not_found`, listing the main
 kernels, and opens nothing. The call that changes the session's main kernel ends
 with one block such as `Kernel: report-cleanup (attached; 12 earlier
 executions)`, and `status` begins with the kernel's name. A kernel renames
-itself with `loommux.self.rename("new-name")`. The rules, and the terminal
+itself with `loommux.rename(loommux.self, "new-name")`. The rules, and the terminal
 multiplexers and notebook servers they come from, are in
 [Main Kernel Binding Design](docs/kernel-binding-design.md).
 
