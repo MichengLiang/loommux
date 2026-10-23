@@ -293,7 +293,6 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, confi
         ``workspace_resolution`` 只能是 ``launch_cwd`` 或``explicit_config``；
         忙碌时 ``current_execution`` 是正在运行的正整数执行编号；
         空闲时 ``recent_execution`` 是最近一次被接受的执行编号。
-        执行编号就是 IPython 给这个 cell 的编号：``In [N]`` 在 kernel 里也是 ``In[N]``、``_iN``。
 
         IPython 通过原生 ZMQ 协议连接，拥有完整能力。
 
@@ -452,14 +451,13 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, confi
 
     @mcp.tool(output_schema=None)
     async def restart(ctx: Context) -> ToolResult:
-        """重启 IPython kernel：命名空间与 execution 记录一起清空，下一个 cell 是 ``In [1]``。
+        """重启 IPython kernel。
 
         重置边界
         --------
 
         若存在 running execution，它会先被终止；随后旧 kernel 停止并创建替代
-        kernel。重启之前的记录不再可读，见过的结果留在对话记录里；之后还要用的
-        输出，重启前先写进文件。
+        kernel。
 
         Returns:
             新 kernel 的状态与 PID；重启失败时返回 workspace 或 kernel

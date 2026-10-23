@@ -25,7 +25,7 @@ def format_tool_result_text(tool_name: str, status: Mapping[str, Any]) -> str:
     if tool_name == "interrupt":
         return _interrupt_surface(status)
     if tool_name == "restart":
-        return "Python kernel restarted; its execution records were cleared and the next cell is In [1]." if status.get("status") == "restarted" else _generic_surface(status)
+        return "Python kernel restarted." if status.get("status") == "restarted" else _generic_surface(status)
     return _generic_surface(status)
 
 

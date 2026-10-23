@@ -419,7 +419,7 @@ record, then the most recently accepted record. With neither, the tool returns
 | `search_output(...)` | Search a selected output stream using literal text or regular expressions. |
 | `wait(execution=None, timeout_seconds=30)` | Wait for an execution without interrupting it. |
 | `interrupt()` | Send an interrupt signal to the current running execution. |
-| `restart()` | Restart the kernel; its execution records are cleared and the next cell is `In [1]`. |
+| `restart()` | Restart the kernel. |
 
 ### Submitting A Cell
 
@@ -603,9 +603,7 @@ its final state after the kernel reports IOPub `idle`.
 `restart` is stronger: it stops the existing kernel and starts a
 replacement in the same workspace with the same interpreter, which runs the
 startup files again. A running cell is stopped. The execution records go with
-the old process and the next cell is `In [1]`, as IPython numbers it; what a
-tool result showed stays in the client's transcript, and output needed after a
-restart belongs in a file written before it.
+the old process and the next cell is `In [1]`, as IPython numbers it.
 
 Stopping the loommux server retires all resources. Their kernels, namespaces,
 execution-record tables, output streams, and sequences are not persisted to

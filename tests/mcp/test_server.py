@@ -298,7 +298,7 @@ async def test_shared_factory_binds_every_tool_to_the_integer_contract(default_c
     assert "M 1 | factory" in search.content[0].text
     assert wait.content[0].text == "In [1]:\nfactory\n"
     assert interrupt.content[0].text == "Python kernel is idle."
-    assert "next cell is In [1]" in reset.content[0].text
+    assert reset.content[0].text == "Python kernel restarted."
 
 
 async def test_real_mcp_eight_tool_loop_starts_the_count_again_after_reset(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
