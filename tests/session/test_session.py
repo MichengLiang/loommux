@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from loommux.cell_header import HEADER_HELP
 from loommux.session import IPythonSession
 
 TOKEN_LIGHT_MANY_LINES = "\n".join(f"line-{number}" for number in range(301)) + "\n"
@@ -434,7 +435,8 @@ def test_help_that_ipython_sends_to_a_pager_is_part_of_the_output(session: IPyth
     header = session.run_cell("%%loommux?")
 
     assert builtin["output_text"].startswith("before\nSignature: len(obj, /)\n")
-    assert "%%loommux [--kernel NAME | --attach NAME [--create]] [--wait SECONDS] [--full-output]" in header["output_text"]
+    usage = next(line.strip() for line in HEADER_HELP.splitlines() if line.strip().startswith("%%loommux"))
+    assert usage in header["output_text"]
 
 
 def test_stream_read_search_and_invalid_inputs(session: IPythonSession) -> None:

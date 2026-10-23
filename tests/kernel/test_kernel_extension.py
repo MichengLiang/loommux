@@ -6,7 +6,7 @@ import pytest
 from IPython.core.error import UsageError
 
 from loommux import kernel_extension
-from loommux.cell_header import CellHeader
+from loommux.cell_header import HEADER_HELP, CellHeader
 from loommux.daemon import DaemonError
 from loommux.identity import KernelIdentity
 from loommux.kernel_extension import ForwardedCellError, ForwardedInterrupt, forward, remove_own_header
@@ -79,7 +79,8 @@ def test_loading_twice_installs_once_and_unloading_removes_everything(monkeypatc
     assert transformer(["%%loommux --kernel lab\n", "x\n"]) == ["\n", "x\n"]
     assert transformer(["%%loommux --kernel abc123\n", "x\n"]) == ["\n", "x\n"]
     assert {kind: set(names) for kind, names in shell.magics.items()} == {"cell": {"loommux"}, "line": {"%loommux", "loommux"}}
-    assert "--kernel NAME" in (shell.magics["cell"]["loommux"].__doc__ or "")
+    # %%loommux? shows the grammar itself, the one text both readers parse by.
+    assert shell.magics["cell"]["loommux"].__doc__ == HEADER_HELP
     assert type(shell.namespace["loommux"]).__name__ == "Daemon"
 
     kernel_extension.unload_ipython_extension(shell)

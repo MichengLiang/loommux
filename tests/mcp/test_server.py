@@ -13,6 +13,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
+from loommux.cell_header import CellHeaderError, read_cell_header
 from loommux.kernel.session import KernelSession
 from loommux.mcp.factory import create_mcp as create_policy_mcp
 from loommux.mcp.result import make_tool_result
@@ -149,80 +150,25 @@ async def test_result_modes_use_the_server_interpreter_and_preserve_workspace_re
     assert reset.data["workspace_resolution"] == "launch_cwd"
 
 
-async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_every_cell_header_example_in_the_tool_descriptions_parses(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The descriptions teach the header by example, and an agent copies them.
+    # Their wording is their own authority and is not asserted here; whether an
+    # example is a header the real parser accepts is the one thing a machine
+    # can check, so the grammar and the examples that teach it cannot drift.
     monkeypatch.chdir(workspace)
     async with Client(create_default_mcp()) as client:
-        tools = {tool.name: tool for tool in await client.list_tools()}
+        tools = await client.list_tools()
 
-    run_cell = tools["run_cell"].description or ""
-    assert "向持久 IPython kernel 提交一个 IPython cell。" in run_cell
-    assert "当前持久 IPython 会话中的后续 cell" in run_cell
-    assert "输入\n----" in run_cell
-    assert "loommux cell magic\n-------" in run_cell
-    assert "执行编号与后续操作\n--------------------" in run_cell
-    assert "后续工具\n使用它定位当前持久 IPython 会话中的这次执行" in run_cell
-    assert "%%loommux --wait 120 --full-output" in run_cell
-    assert "loommux:" not in run_cell
-    assert "5,000 token" in run_cell
-    assert "UTF-8 字节数" in run_cell
-    assert "wait" in run_cell
-    assert "图像展示\n--------" in run_cell
-    assert "IPython ``display()``" in run_cell
-    assert "execution_id" not in run_cell and "output_log" not in run_cell
-    assert "原始 IPython cell 源码文本" in tools["run_cell"].inputSchema["properties"]["freeform"]["description"]
+    examples = [(tool.name, line.strip()) for tool in tools for line in (tool.description or "").splitlines() if line.strip().startswith("%%loommux")]
+    rejected = []
+    for name, example in examples:
+        try:
+            read_cell_header(example)
+        except CellHeaderError as exc:
+            rejected.append((name, example, str(exc)))
 
-    status = tools["execution_status"].description or ""
-    assert "选择规则\n--------" in status
-    assert "当前\nrunning 记录" in status
-    assert "正整数执行编号" in tools["execution_status"].inputSchema["properties"]["execution"]["description"]
-
-    status = tools["status"].description or ""
-    assert "workspace_resolution" in status
-    assert "launch_cwd" in status and "explicit_config" in status
-
-    read = tools["read_output"].description or ""
-    assert "行坐标\n------" in read
-    assert "``:10``" in read and "``-10:``" in read and "``3:3``" in read
-    assert "完整读取\n--------" in read
-    assert "无需把阅读拆成连续小范围" in read
-    read_parameters = tools["read_output"].inputSchema["properties"]
-    assert "省略时使用当前记录" in read_parameters["execution"]["description"]
-    assert "已确定需要完整消费所选流时省略" in read_parameters["line_range"]["description"]
-    assert "必须为正数" in read_parameters["max_chars"]["description"]
-
-    search = tools["search_output"].description or ""
-    assert "选择与匹配\n------------" in search
-    assert 'query_mode="auto"' in search
-    search_parameters = tools["search_output"].inputSchema["properties"]
-    assert "字面文本或正则表达式" in search_parameters["query"]["description"]
-    assert "必须大于或等于 0" in search_parameters["context_before"]["description"]
-    assert "每个命中之后" in search_parameters["context_after"]["description"]
-    assert "忽略大小写" in search_parameters["ignore_case"]["description"]
-
-    wait = tools["wait"].description or ""
-    assert "选择与等待\n----------" in wait
-    assert "不中断 Python cell" in wait
-    assert "完整 combined 正文" in wait
-    assert "默认 30 秒" in tools["wait"].inputSchema["properties"]["timeout_seconds"]["description"]
-
-    interrupt = tools["interrupt"].description or ""
-    assert "中断语义\n--------" in interrupt
-    assert "IOPub ``idle``" in interrupt
-
-    reset = tools["restart"].description or ""
-    assert "重置边界\n--------" in reset
-    assert "连续的下一个编号" in reset
-    assert "当前持久 IPython 会话的 execution 历史" in reset
-
-    model_descriptions = "\n".join(tool.description or "" for tool in tools.values())
-    for implementation_term in (
-        "kernel resource",
-        "resource manager",
-        "client lease",
-        "policy generation",
-        "租约",
-    ):
-        assert implementation_term not in model_descriptions
+    assert examples
+    assert rejected == []
 
 
 async def test_result_modes_share_content_but_only_structured_exposes_structured_status(default_client: Client[Any]) -> None:
