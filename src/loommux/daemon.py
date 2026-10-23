@@ -67,10 +67,15 @@ class Daemon:
             self.url = os.environ.get(CONTROL_URL_ENV) or DEFAULT_CONTROL_URL
         self._http: httpx.Client | None = None
 
-    def kernels(self) -> Kernels:
-        """The kernels of this kernel's home, or outside a kernel every kernel; oldest first."""
+    def kernels(self, *, timeout: float = _CONTROL_TIMEOUT_SECONDS) -> Kernels:
+        """The kernels of this kernel's home, or outside a kernel every kernel; oldest first.
+
+        ``timeout`` is how many seconds to wait for the daemon before
+        ``DaemonError``. Code that asks on every cell passes a short one, so a
+        stuck daemon costs it one missed answer rather than a minute per cell.
+        """
         params = None if self.identity is None else {"home": self.identity.kernel_id}
-        resources = self._request("GET", "/api/resources", params=params)["resources"]
+        resources = self._request("GET", "/api/resources", params=params, timeout=timeout)["resources"]
         return Kernels(self._handle(resource) for resource in resources)
 
     def __getitem__(self, name: str) -> Kernel:

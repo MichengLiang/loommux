@@ -267,7 +267,8 @@ Every kernel knows which resource it is and where its daemon listens
 a client of that daemon as `loommux`:
 
 ```python
-loommux.kernels()             # this home: name, id, state, busy, idle, pid, executions, leases, scope, home
+loommux.kernels()             # this home: name, id, state, busy, idle, pid, executions, leases, kept, scope, home
+loommux.kernels(timeout=2)    # the same, giving up with DaemonError after 2 seconds
 loommux.self                  # this kernel
 lab = loommux["lab"]          # this home's child kernel, by name or id; opened on first use
 job = lab.run("train()", wait=5)

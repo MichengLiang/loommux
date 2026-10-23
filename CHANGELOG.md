@@ -59,6 +59,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   notices over with its final state.
 - Snapshots report `idle_since`, when the kernel last became idle, `null`
   while a cell runs; the `Kernels` table shows it as its `idle` column.
+- `Daemon.kernels(timeout=)` bounds the wait for the daemon, so code that
+  asks on every cell can give up quickly on a stuck daemon.
 
 ### Changed
 
