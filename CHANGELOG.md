@@ -30,19 +30,20 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   the next cell; a kernel renamed from elsewhere learns the name from the
   next answer describing it, or from a header that uses it. A name another
   kernel of the same home answers to is numbered, so none hides another.
-- A main kernel records its own retention. Snapshots report
+- A named main kernel records its own retention. Snapshots report
   `retention_remaining_seconds` while it is what keeps the kernel, the console
   shows it as 保留, and the `Kernels` table as its `kept` column.
 
 ### Changed
 
-- A main kernel whose connection-lease sessions all left is no longer retired
-  about a minute later. The departed lease is still released when the
+- A named main kernel whose connection-lease sessions all left is no longer
+  retired about a minute later. The departed lease is still released when the
   reconnect grace ends, and the kernel then keeps itself for the named window
   (`LOOMMUX_NAMED_TTL_SECONDS`, 24 hours) after that lease's last renewal; it
   is retired when the window ends, busy or not (a running cell gets the orphan
-  grace). Switching away with `--attach` clears it. Activity and heartbeat
-  leases are unchanged.
+  grace). Switching away with `--attach` clears it. An unnamed
+  `private-<session>` kernel is retired with its lease as before; renaming it
+  makes it named. Activity and heartbeat leases are unchanged.
 - **Breaking:** a kernel opened by name from a kernel is a child kernel of
   that kernel's main kernel, its home, instead of a globally named kernel held
   by every kernel that opened it. Names resolve inside the asking kernel's

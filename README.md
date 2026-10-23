@@ -207,10 +207,12 @@ The server chooses how a lease proves that its client is still there with
 
 A connection lease survives any amount of idleness. About a minute after the
 client exits (`LOOMMUX_CONNECTION_GRACE_SECONDS`, default 60), the session
-counts as gone and its lease is released. The main kernel then keeps itself
-for the named window (`LOOMMUX_NAMED_TTL_SECONDS`, 24 hours) after the last
-call, so a new session can attach to it by name; the console shows how long it
-has left and can retire it at any time. If a session
+counts as gone and its lease is released. A named main kernel then keeps
+itself for the named window (`LOOMMUX_NAMED_TTL_SECONDS`, 24 hours) after the
+last call, so a new session can attach to it by name; the console shows how
+long it has left and can retire it at any time. An unnamed `private-<session>`
+kernel is retired with the lease, since nobody comes back to a generated name.
+If a session
 calls tools without that stream, or keeps calling after it
 closed, the lease falls back to the activity window and raises an alert:
 every tool result of that session ends with a `Lease alert` block, and the
@@ -426,7 +428,8 @@ Each MCP session works in one main kernel. `--attach NAME --create` names it:
 the session works in the main kernel `NAME` from this cell on, which is opened
 when it does not exist and found by name when it does, whoever else works in
 it. A phrase describing the task makes a good name, and the same first cell
-returns to the kernel after the host was closed:
+returns to the kernel after the host was closed. Naming is what keeps a kernel
+after its host closes:
 
 ```python
 %%loommux --attach report-cleanup --create
