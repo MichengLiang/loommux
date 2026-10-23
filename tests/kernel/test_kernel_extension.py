@@ -113,7 +113,7 @@ def test_a_kernel_reads_its_new_name_as_its_own_from_the_next_cell(monkeypatch: 
 
 
 def test_a_forward_that_resolves_to_this_kernel_asks_for_the_cell_again() -> None:
-    daemon = _Daemon(_Job([]), identity=KernelIdentity("me-id", "old", None), target_id="me-id")
+    daemon = _Daemon(_Execution([]), identity=KernelIdentity("me-id", "old", None), target_id="me-id")
 
     with pytest.raises(UsageError, match="renamed is this kernel, renamed from elsewhere"):
         forward(daemon, CellHeader(kernel="renamed"), "body", print)
@@ -143,7 +143,7 @@ def test_unloading_keeps_a_loommux_name_the_author_rebound(monkeypatch: pytest.M
     assert shell.namespace == {"loommux": "mine"}
 
 
-class _Job:
+class _Execution:
     def __init__(self, states: list[Any]) -> None:
         self.states = states
         self.last: dict[str, Any] = {"status": "running"}
@@ -161,7 +161,7 @@ class _Job:
 
 
 class _Daemon:
-    def __init__(self, job: _Job | None = None, refusal: DaemonError | None = None, identity: KernelIdentity | None = None, target_id: str = "target-id") -> None:
+    def __init__(self, job: _Execution | None = None, refusal: DaemonError | None = None, identity: KernelIdentity | None = None, target_id: str = "target-id") -> None:
         self.job, self.refusal, self.bodies = job, refusal, []
         self.identity, self.target_id = identity, target_id
 
@@ -202,7 +202,7 @@ def run_forward(daemon: Any) -> str:
 
 
 def test_forward_relays_output_until_the_target_completes() -> None:
-    job = _Job([state("running", "a\n", 2), state("running", "", 2), state("completed", "b\n", 4)])
+    job = _Execution([state("running", "a\n", 2), state("running", "", 2), state("completed", "b\n", 4)])
     daemon = _Daemon(job)
 
     assert run_forward(daemon) == "a\nb\n"
@@ -219,7 +219,7 @@ def test_forward_relays_output_until_the_target_completes() -> None:
 )
 def test_forward_ends_as_the_target_ended_with_a_one_line_error(final: dict[str, Any], message: str) -> None:
     with pytest.raises(ForwardedCellError) as raised:
-        run_forward(_Daemon(_Job([final])))
+        run_forward(_Daemon(_Execution([final])))
 
     assert str(raised.value) == message
     assert raised.value._render_traceback_() == [f"ForwardedCellError: {message}"]
@@ -233,14 +233,14 @@ def test_a_refused_forward_names_the_reason() -> None:
 
 
 def test_a_target_retired_while_relaying_ends_the_cell_in_one_line() -> None:
-    job = _Job([state("running", "partial\n", 8), DaemonError("resource was not found")])
+    job = _Execution([state("running", "partial\n", 8), DaemonError("resource was not found")])
 
     with pytest.raises(ForwardedCellError, match="^build: DaemonError: resource was not found$"):
         run_forward(_Daemon(job))
 
 
 def test_an_interrupt_is_passed_to_the_target_and_its_last_output_relayed() -> None:
-    job = _Job([state("running", "working\n", 8), KeyboardInterrupt(), state("interrupted", "KeyboardInterrupt\n", 26)])
+    job = _Execution([state("running", "working\n", 8), KeyboardInterrupt(), state("interrupted", "KeyboardInterrupt\n", 26)])
 
     with pytest.raises(ForwardedInterrupt) as raised:
         run_forward(_Daemon(job))
@@ -251,7 +251,7 @@ def test_an_interrupt_is_passed_to_the_target_and_its_last_output_relayed() -> N
 
 
 def test_an_interrupt_while_draining_is_not_passed_twice(monkeypatch: pytest.MonkeyPatch) -> None:
-    job = _Job([KeyboardInterrupt(), KeyboardInterrupt()])
+    job = _Execution([KeyboardInterrupt(), KeyboardInterrupt()])
 
     with pytest.raises(KeyboardInterrupt):
         run_forward(_Daemon(job))
@@ -261,7 +261,7 @@ def test_an_interrupt_while_draining_is_not_passed_twice(monkeypatch: pytest.Mon
 
 def test_draining_after_an_interrupt_stops_at_its_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(kernel_extension, "INTERRUPT_RELAY_SECONDS", 0.0)
-    job = _Job([KeyboardInterrupt()])
+    job = _Execution([KeyboardInterrupt()])
 
     with pytest.raises(KeyboardInterrupt):
         run_forward(_Daemon(job))
