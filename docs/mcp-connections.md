@@ -90,13 +90,13 @@ Its endpoint is `http://127.0.0.1:8802/mcp`. `--path /tools` would instead
 produce `http://127.0.0.1:8802/tools`.
 
 A host such as Claude Code keeps the session's standalone `GET` stream open
-for as long as it runs and never pings. Start the server with a configuration
-directory whose `config.py` sets `lease_mode = "connection"`, so its main kernel lives while the host is
+for as long as it runs and never pings. Start the server in a directory whose
+`.loommux/config.py` sets `lease_mode = "connection"`, so its main kernel lives while the host is
 connected, however idle, and, when the agent named it, for 24 hours after the
 host closes, instead of expiring after 80 idle minutes:
 
 ```bash
-loommux --server --host 127.0.0.1 --port 8801 --path /mcp --config .loommux
+loommux --server --host 127.0.0.1 --port 8801 --path /mcp
 ```
 
 The lease modes and their alerts are described in

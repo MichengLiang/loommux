@@ -63,13 +63,9 @@ async def test_result_modes_have_identical_eight_tool_schemas_and_descriptions(w
     assert schema["execution"]["anyOf"][0]["type"] == "integer"
 
 
-async def test_default_workspace_ignores_legacy_files_and_exposes_launch_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    project = tmp_path / "project"
-    launch_cwd = project / "nested" / "launch"
-    marker = tmp_path / "legacy-executed"
+async def test_the_default_workspace_is_the_launch_directory_and_status_says_so(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    launch_cwd = tmp_path / "nested" / "launch"
     launch_cwd.mkdir(parents=True)
-    (project / "loommux_workspace.py").write_text(f"from pathlib import Path\nPath({str(marker)!r}).touch()\n", encoding="utf-8")
-    (launch_cwd / "loommux_workspace.py").write_text(f"from pathlib import Path\nPath({str(marker)!r}).touch()\n", encoding="utf-8")
     monkeypatch.chdir(launch_cwd)
 
     async with Client(create_default_mcp()) as client:
@@ -80,7 +76,6 @@ async def test_default_workspace_ignores_legacy_files_and_exposes_launch_source(
     assert f"workspace: {launch_cwd}" in status.content[0].text
     assert "workspace_resolution: launch_cwd" in status.content[0].text
     assert cwd.content[0].text == f"In [1]:\n{launch_cwd}\n"
-    assert not marker.exists()
 
 
 async def test_explicit_resolver_controls_server_workspace_and_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

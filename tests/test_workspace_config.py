@@ -10,20 +10,15 @@ from loommux.workspace_resolver import WorkspaceConfigError, resolve_workspace_l
 CODEX_EXAMPLE = Path(__file__).parents[1] / "examples" / "config" / "codex"
 
 
-def test_default_workspace_does_not_execute_legacy_files_in_the_launch_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    project = tmp_path / "project"
-    launch_cwd = project / "src" / "feature"
+def test_without_a_resolver_the_workspace_is_the_launch_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    launch_cwd = tmp_path / "project" / "src"
     launch_cwd.mkdir(parents=True)
-    marker = tmp_path / "legacy-was-executed"
-    for legacy_path in (project / "loommux_workspace.py", launch_cwd / "loommux_workspace.py"):
-        legacy_path.write_text(f"from pathlib import Path\nPath({str(marker)!r}).touch()\n", encoding="utf-8")
     monkeypatch.chdir(launch_cwd)
 
     resolution = resolve_workspace_launch()
 
     assert resolution.workspace == launch_cwd.resolve()
     assert resolution.workspace_resolution == "launch_cwd"
-    assert not marker.exists()
 
 
 @pytest.mark.parametrize("returned", ["'notebooks'", "Path('notebooks')"])

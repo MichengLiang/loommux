@@ -219,10 +219,10 @@ every tool result of that session ends with a `Lease alert` block, and the
 console at `/` turns its lease-signal row red. For Claude Code over HTTP:
 
 ```bash
-loommux --server --host 127.0.0.1 --port 8801 --path /mcp --config .loommux
+loommux --server --host 127.0.0.1 --port 8801 --path /mcp
 ```
 
-with `.loommux/config.py` holding:
+started in a directory whose `.loommux/config.py` holds:
 
 ```python
 lease_mode = "connection"
@@ -315,20 +315,21 @@ Python-selection mechanism.
 
 A `config.py` in the [configuration directory](#configuration-directory) that
 defines `resolve_workspace(launch_cwd: Path) -> Path | str` chooses another
-workspace; it is the only way to. loommux never searches for or executes
-`loommux_workspace.py`, `.loommux`, `.codex`, or any other workspace-tree file
-or marker. Resolver failures prevent startup before tools are available.
+workspace; it is the only way to. loommux does not treat `.git`, `.codex` or
+any other tool's marker as its own. Resolver failures prevent startup before
+tools are available.
 
 The [Codex](examples/config/codex/config.py) configuration directory is an
-example, inert until `--config` names it. See [workspace
+example. See [workspace
 configuration](docs/workspace-configuration.md) and the canonical [Coding
 Agent Control Plane Design](docs/coding-agent-control-plane-design.md#5-host-workspace-resolver)
 for the complete contract.
 
 ## Configuration Directory
 
-`loommux --config DIR` names the one place loommux is configured, shaped like an
-IPython profile directory:
+loommux is configured in one directory, shaped like an IPython profile
+directory: the nearest `.loommux` at or above the directory it starts in, as git
+finds `.git`, or the one `--config DIR` names. The start logs which one it uses.
 
 ```text
 .loommux/
@@ -352,8 +353,7 @@ IPython profile directory:
 It may import modules and define helpers. Any other public name stops the start
 with `config_unknown_setting`, so a misspelled setting is reported rather than
 left at its default. A relative `DIR` is read from the directory loommux starts
-in; loommux never finds one by itself. The environment does not configure
-loommux.
+in. The environment does not configure loommux.
 
 The files of `startup/` run in name order in every kernel process: when a main
 or child kernel opens, after `restart`, and after the replacement that stands

@@ -411,10 +411,10 @@ the whole context, and that open stream holds the lease.
 
 ## 9. Server settings
 
-The settings are names in the `config.py` of the configuration directory
-loommux is started with (`--config DIR`; see the
-[Kernel Environment Design](kernel-environment-design.md), section 4). The
-environment does not configure them.
+The settings are names in the `config.py` of the configuration directory, the
+nearest `.loommux` at or above the launch directory or the one `--config DIR`
+names (see the [Kernel Environment Design](kernel-environment-design.md),
+section 4). The environment does not configure them.
 
 | `config.py` name | Default |
 | --- | ---: |

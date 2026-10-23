@@ -33,13 +33,14 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - A named main kernel records its own retention. Snapshots report
   `retention_remaining_seconds` while it is what keeps the kernel, the console
   shows it as 保留, and the `Kernels` table as its `kept` column.
-- `loommux --config DIR` names a configuration directory shaped like an
-  IPython profile: `config.py`, run once in the daemon, whose plain names are
-  the settings (`lease_mode`, `named_activity_timeout_seconds`, …) and whose
-  `resolve_workspace(launch_cwd)` chooses the workspace; and `startup/`. A
-  public name that is not a setting, or a setting with a wrong value, stops
-  the start with `config_unknown_setting` or `config_invalid_setting`. The
-  directory is never discovered; `examples/config/codex/` and
+- A configuration directory shaped like an IPython profile: `config.py`, run
+  once in the daemon, whose plain names are the settings (`lease_mode`,
+  `named_activity_timeout_seconds`, …) and whose `resolve_workspace(launch_cwd)`
+  chooses the workspace; and `startup/`. It is the nearest `.loommux` at or
+  above the launch directory, as git finds `.git`, or the one `--config DIR`
+  names, and the start logs which. A public name that is not a setting, or a
+  setting with a wrong value, stops the start with `config_unknown_setting` or
+  `config_invalid_setting`. `examples/config/codex/` and
   `examples/lease-aware-client/config/` are examples.
 - The `.py` and `.ipy` files of `startup/` run in every kernel process (open,
   restart, the Windows interrupt replacement) in name order before its first

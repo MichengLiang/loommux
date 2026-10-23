@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from loommux.config import ConfigError, LoommuxConfig, load_config
+from loommux.config import ConfigError, LoommuxConfig, find_config, load_config
 from loommux.mcp.entrypoints import run_entrypoint
 from loommux.resource import LeaseMode
 from loommux.resource.settings import ResourceServerSettings
@@ -123,20 +123,50 @@ def _no_stack_dump_handler(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.usefixtures("_no_stack_dump_handler")
-def test_the_entrypoint_reads_only_the_directory_named_by_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    marker = tmp_path / "config-ran"
-    configuration(tmp_path, f"from pathlib import Path\nPath({str(marker)!r}).touch()\nlease_mode = 'connection'\n")
-    monkeypatch.chdir(tmp_path)
+def test_the_nearest_directory_upward_is_found(tmp_path: Path) -> None:
+    root = configuration(tmp_path)
+    nested = tmp_path / "project" / "src"
+    nested.mkdir(parents=True)
+    (tmp_path / "project" / ".loommux").write_text("a file, not a configuration directory\n", encoding="utf-8")
+
+    assert find_config(nested) == root
+    assert find_config(tmp_path) == root
+
+    nearer = configuration(nested)
+    assert find_config(nested) == nearer
+
+
+@pytest.mark.usefixtures("_no_stack_dump_handler")
+def test_the_entrypoint_uses_the_found_directory_unless_config_names_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    tree, elsewhere, empty = tmp_path / "tree", tmp_path / "elsewhere", tmp_path / "empty"
+    for directory in (tree, elsewhere, empty):
+        directory.mkdir()
+    marker = tmp_path / "tree-config-ran"
+    found = configuration(tree, f"from pathlib import Path\nPath({str(marker)!r}).touch()\nlease_mode = 'connection'\n")
+    named = configuration(elsewhere, "orphan_grace_seconds = 5\n")
+    launch = tree / "nested"
+    launch.mkdir()
     received: list[LoommuxConfig] = []
 
-    run_entrypoint(lambda _mode, _url, config: received.append(config) or RecordingMCP(), argv=[])
-    # A .loommux in the launch directory is not discovered.
-    assert received == [LoommuxConfig()]
+    def start(argv: list[str]) -> str:
+        run_entrypoint(lambda _mode, _url, config: received.append(config) or RecordingMCP(), argv=argv)
+        return capsys.readouterr().err
+
+    monkeypatch.chdir(launch)
+    assert start([]) == f"loommux: configuration {found} (found from the launch directory)\n"
+    assert received[-1].settings.lease_mode is LeaseMode.CONNECTION
+    assert marker.exists()
+
+    marker.unlink()
+    assert start(["--config", str(named)]) == f"loommux: configuration {named} (named by --config)\n"
+    assert received[-1].settings.orphan_grace_seconds == 5
     assert not marker.exists()
 
-    run_entrypoint(lambda _mode, _url, config: received.append(config) or RecordingMCP(), argv=["--config", ".loommux"])
-    assert received[1].settings.lease_mode is LeaseMode.CONNECTION
-    assert marker.exists()
+    monkeypatch.chdir(empty)
+    assert start([]) == "loommux: no configuration directory; defaults apply\n"
+    assert received[-1] == LoommuxConfig()
 
 
 @pytest.mark.usefixtures("_no_stack_dump_handler")

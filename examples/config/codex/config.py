@@ -3,8 +3,9 @@
 Codex starts its MCP servers from wherever the agent is working, often a
 subdirectory of the project. The workspace this resolver returns is the
 project: the parent of the nearest ``.codex`` directory, or the launch
-directory when there is none. loommux itself never looks for ``.codex``; this
-directory has effect only when ``--config`` names it.
+directory when there is none. loommux itself does not look for ``.codex``;
+this resolver does. Use it with ``--config examples/config/codex``, or copy it
+into a project's ``.loommux/``.
 """
 
 from pathlib import Path

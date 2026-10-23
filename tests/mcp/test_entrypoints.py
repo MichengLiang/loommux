@@ -4,6 +4,7 @@ import faulthandler
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -30,6 +31,13 @@ def _no_real_stack_dump_handler(monkeypatch: pytest.MonkeyPatch) -> None:
     # run_entrypoint registers nothing there.
     if sys.platform != "win32":
         monkeypatch.setattr(faulthandler, "register", lambda *_args, **_kwargs: None)
+
+
+@pytest.fixture(autouse=True)
+def _launched_where_no_configuration_is_found(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The entrypoint looks for .loommux upward from the current directory; run
+    # from a checkout inside a tree that has one, these tests would read it.
+    monkeypatch.chdir(tmp_path)
 
 
 def test_default_entrypoint_uses_content_stdio_transport() -> None:
@@ -88,7 +96,7 @@ def test_invalid_or_removed_options_are_rejected_before_starting(argv: list[str]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="faulthandler.register is POSIX-only")
-def test_sigusr1_prints_every_thread_stack_while_the_server_runs() -> None:
+def test_sigusr1_prints_every_thread_stack_while_the_server_runs(tmp_path: Path) -> None:
     script = (
         "import os, signal, threading, time\n"
         "from loommux.mcp.entrypoints import run_entrypoint\n"
@@ -100,7 +108,7 @@ def test_sigusr1_prints_every_thread_stack_while_the_server_runs() -> None:
         "run_entrypoint(lambda mode, url, config: BlockedMCP(), argv=['--server'])\n"
     )
 
-    completed = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=10)
+    completed = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=10, cwd=tmp_path)
 
     assert completed.returncode == 0
     assert len(re.findall(r"[Tt]hread 0x[0-9a-f]+ \(most recent call first\)", completed.stderr)) >= 2

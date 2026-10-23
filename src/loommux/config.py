@@ -1,10 +1,10 @@
-"""Read the configuration directory named by ``loommux --config DIR``.
+"""Find and read loommux's configuration directory.
 
 The directory holds ``config.py``, run once in the daemon's own process, and
 ``startup/``, whose files every kernel runs when it starts; each is optional.
-loommux never looks for such a directory by itself: whoever writes
-``--config`` into a command allows that directory to run. The rules and their
-reasons are in docs/kernel-environment-design.md, section 4.
+It is the nearest ``.loommux`` at or above the launch directory, as git finds
+``.git``, or the one ``--config DIR`` names. The rules and their reasons are in
+docs/kernel-environment-design.md, section 4.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from loommux.resource.settings import SETTING_NAMES, ResourceServerSettings
 from loommux.workspace_resolver import WorkspaceResolver
 
 CONFIG_FILE = "config.py"
+CONFIG_DIRECTORY = ".loommux"
 STARTUP_DIRECTORY = "startup"
 RESOLVER_NAME = "resolve_workspace"
 # What `from __future__ import annotations` binds in a module; the class is private.
@@ -36,11 +37,20 @@ class ConfigError(RuntimeError):
 
 @dataclass(frozen=True)
 class LoommuxConfig:
-    """What a configuration directory says; the defaults are a start without ``--config``."""
+    """What a configuration directory says; the defaults are a start without one."""
 
     settings: ResourceServerSettings = field(default_factory=ResourceServerSettings)
     resolve_workspace: WorkspaceResolver | None = None
     startup_directory: Path | None = None
+
+
+def find_config(start: Path) -> Path | None:
+    """The nearest ``.loommux`` directory at ``start`` or above it, or None."""
+    start = start.resolve()
+    for directory in (start, *start.parents):
+        if (candidate := directory / CONFIG_DIRECTORY).is_dir():
+            return candidate
+    return None
 
 
 def load_config(directory: str | Path) -> LoommuxConfig:
