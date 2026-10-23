@@ -247,7 +247,9 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, confi
         每个 kernel 里都有 ``loommux`` 对象：``loommux.kernels()`` 列出所有 kernel，
         ``loommux["build"].run(code)`` 在后台提交并返回 job。
 
-        什么时候用呢？仅存在同时想利用Kernel本身（如果Shellwork合适优先使用）去跑长任务的同时，还想要使用主科诺去做别的事情使用。
+        什么时候用呢？
+        1. 同时想利用Kernel本身（如果Shellwork合适优先使用）去跑长任务的同时，还想要使用主Kernel去做别的事情使用。
+        2. 想要保持主Kernel命名空间干净，临时去子Kernel做探索、尝试、测试……完成后回收临时Kernel。
         如果你要做的事情本身就是阻塞当前的这个任务，那么请只使用主Kernel.
 
         主 kernel
