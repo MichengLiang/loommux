@@ -1,10 +1,9 @@
-"""Read the server-owned defaults for kernel resource leases."""
+"""Validate the lease settings a configuration directory's ``config.py`` names."""
 
 from __future__ import annotations
 
-import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from math import isfinite
 
 from loommux.resource.policy import (
@@ -31,67 +30,31 @@ class ResourceServerSettings:
     orphan_grace_seconds: float = 30
 
     @classmethod
-    def from_environ(
-        cls,
-        environ: Mapping[str, str] | None = None,
-    ) -> ResourceServerSettings:
-        values = os.environ if environ is None else environ
+    def from_values(cls, values: Mapping[str, object]) -> ResourceServerSettings:
+        """Settings from names a ``config.py`` set; an absent name keeps its default.
+
+        Raises ``ValueError`` naming the setting whose value is wrong.
+        """
+        defaults = cls()
+        mode = values.get("lease_mode", defaults.lease_mode.value)
         try:
-            mode = LeaseMode(values.get("LOOMMUX_LEASE_MODE", "activity").strip().lower())
-        except ValueError as exc:
-            raise ValueError("LOOMMUX_LEASE_MODE must be activity, heartbeat, or connection") from exc
-        settings = cls(
-            lease_mode=mode,
-            private_activity_timeout_seconds=_positive_float(
-                values,
-                "LOOMMUX_PRIVATE_TTL_SECONDS",
-                DEFAULT_PRIVATE_ACTIVITY_TIMEOUT_SECONDS,
-            ),
-            named_activity_timeout_seconds=_positive_float(
-                values,
-                "LOOMMUX_NAMED_TTL_SECONDS",
-                DEFAULT_NAMED_ACTIVITY_TIMEOUT_SECONDS,
-            ),
-            heartbeat_interval_seconds=_positive_float(
-                values,
-                "LOOMMUX_HEARTBEAT_INTERVAL_SECONDS",
-                DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
-            ),
-            heartbeat_timeout_seconds=_positive_float(
-                values,
-                "LOOMMUX_HEARTBEAT_TIMEOUT_SECONDS",
-                DEFAULT_HEARTBEAT_TIMEOUT_SECONDS,
-            ),
-            connection_grace_seconds=_positive_float(
-                values,
-                "LOOMMUX_CONNECTION_GRACE_SECONDS",
-                DEFAULT_CONNECTION_GRACE_SECONDS,
-            ),
-            sweep_interval_seconds=_positive_float(
-                values,
-                "LOOMMUX_SWEEP_INTERVAL_SECONDS",
-                10,
-            ),
-            orphan_grace_seconds=_positive_float(
-                values,
-                "LOOMMUX_ORPHAN_GRACE_SECONDS",
-                30,
-            ),
-        )
+            lease_mode = LeaseMode(mode.strip().lower()) if isinstance(mode, str) else None
+        except ValueError:
+            lease_mode = None
+        if lease_mode is None:
+            raise ValueError(f"lease_mode must be 'activity', 'heartbeat', or 'connection', not {mode!r}")
+        durations = {name: _positive_seconds(name, values.get(name, getattr(defaults, name))) for name in SETTING_NAMES if name != "lease_mode"}
+        settings = cls(lease_mode=lease_mode, **durations)
         if settings.heartbeat_timeout_seconds <= settings.heartbeat_interval_seconds:
-            raise ValueError(
-                "LOOMMUX_HEARTBEAT_TIMEOUT_SECONDS must be greater than "
-                "LOOMMUX_HEARTBEAT_INTERVAL_SECONDS"
-            )
+            raise ValueError("heartbeat_timeout_seconds must be greater than heartbeat_interval_seconds")
         return settings
 
 
-def _positive_float(
-    environ: Mapping[str, str],
-    name: str,
-    default: float,
-) -> float:
-    value = float(environ.get(name, default))
-    if not isfinite(value) or value <= 0:
-        raise ValueError(f"{name} must be a positive finite number")
-    return value
+SETTING_NAMES = tuple(setting.name for setting in fields(ResourceServerSettings))
+
+
+def _positive_seconds(name: str, value: object) -> float:
+    # bool is an int to Python, but `orphan_grace_seconds = True` is a mistake.
+    if isinstance(value, bool) or not isinstance(value, int | float) or not isfinite(value) or value <= 0:
+        raise ValueError(f"{name} must be a positive finite number of seconds, not {value!r}")
+    return float(value)

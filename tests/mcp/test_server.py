@@ -14,13 +14,15 @@ from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
 from loommux.cell_header import CellHeaderError, read_cell_header
+from loommux.config import LoommuxConfig, load_config
 from loommux.kernel.session import KernelSession
 from loommux.mcp.factory import create_mcp as create_policy_mcp
 from loommux.mcp.result import make_tool_result
 from loommux.mcp.server import create_mcp as create_default_mcp
+from loommux.resource import LeaseMode
+from loommux.resource.settings import ResourceServerSettings
 from loommux.session import IPythonSession
 
-WORKSPACE_CONFIG_ENV = "LOOMMUX_WORKSPACE_CONFIG"
 TOKEN_LIGHT_MANY_LINES = "\n".join(f"line-{number}" for number in range(301)) + "\n"
 TOKEN_HEAVY_LINE = "abcdefghij " * 20
 TOKEN_HEAVY_MANY_LINES = f"{TOKEN_HEAVY_LINE}\n" * 301
@@ -84,14 +86,14 @@ async def test_default_workspace_ignores_legacy_files_and_exposes_launch_source(
 async def test_explicit_resolver_controls_server_workspace_and_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     launch_cwd = tmp_path / "launch"
     workspace = tmp_path / "workspace"
-    resolver = tmp_path / "resolver.py"
+    directory = tmp_path / "config"
     launch_cwd.mkdir()
     workspace.mkdir()
-    resolver.write_text("def resolve_workspace(launch_cwd):\n    return launch_cwd.parent / 'workspace'\n", encoding="utf-8")
+    directory.mkdir()
+    (directory / "config.py").write_text("def resolve_workspace(launch_cwd):\n    return launch_cwd.parent / 'workspace'\n", encoding="utf-8")
     monkeypatch.chdir(launch_cwd)
-    monkeypatch.setenv(WORKSPACE_CONFIG_ENV, str(resolver))
 
-    async with Client(create_default_mcp()) as client:
+    async with Client(create_policy_mcp("content", config=load_config(directory))) as client:
         status = await client.call_tool("status", {})
         cwd = await client.call_tool("run_cell", {"freeform": "import os\nprint(os.getcwd())"})
 
@@ -104,30 +106,21 @@ async def test_explicit_resolver_controls_server_workspace_and_status(tmp_path: 
 async def test_configured_resolution_errors_prevent_server_startup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     launch_cwd = tmp_path / "launch"
     launch_cwd.mkdir()
-    resolver_directory = tmp_path / "resolver-directory"
-    resolver_directory.mkdir()
     (launch_cwd / "workspace-file").write_text("not a directory", encoding="utf-8")
-    cases = [
-        ("relative.py", "workspace_config_not_absolute"),
-        (str(tmp_path / "missing.py"), "workspace_config_not_found"),
-        (str(resolver_directory), "workspace_config_not_file"),
-    ]
-    for filename, source, status in [
-        ("load-error.py", "raise RuntimeError('private resolver source')\n", "workspace_config_load_failed"),
-        ("missing-resolver.py", "PRIVATE_RESOLVER_CONTENT = 'private resolver source'\n", "workspace_config_load_failed"),
-        ("invalid-return.py", "def resolve_workspace(launch_cwd):\n    return 3\n", "workspace_config_invalid_return"),
-        ("missing-workspace.py", "def resolve_workspace(launch_cwd):\n    return 'missing'\n", "workspace_not_found"),
-        ("file-workspace.py", "def resolve_workspace(launch_cwd):\n    return 'workspace-file'\n", "workspace_not_directory"),
-    ]:
-        resolver = tmp_path / filename
-        resolver.write_text(source, encoding="utf-8")
-        cases.append((str(resolver), status))
     monkeypatch.chdir(launch_cwd)
 
-    for configured_path, expected_status in cases:
-        monkeypatch.setenv(WORKSPACE_CONFIG_ENV, configured_path)
+    def raises(_launch_cwd: Path) -> Path:
+        raise RuntimeError("private resolver source")
+
+    for resolver, expected_status in [
+        (raises, "workspace_config_load_failed"),
+        (lambda _launch_cwd: 3, "workspace_config_invalid_return"),
+        (lambda _launch_cwd: "missing", "workspace_not_found"),
+        (lambda _launch_cwd: "workspace-file", "workspace_not_directory"),
+    ]:
+        config = LoommuxConfig(resolve_workspace=resolver)  # pyright: ignore[reportArgumentType]
         with pytest.raises(RuntimeError, match=expected_status) as error:
-            async with Client(create_default_mcp()):
+            async with Client(create_policy_mcp("content", config=config)):
                 pytest.fail("MCP tools must not become usable after resolver failure")
         assert "private resolver source" not in str(error.value)
 
@@ -369,10 +362,9 @@ def test_mcp_result_mode_only_changes_structured_content() -> None:
 async def test_in_process_session_is_connected_for_the_process_lifetime(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Without an HTTP request the session is stdio or in-process and never loses its stream."""
     monkeypatch.chdir(workspace)
-    monkeypatch.setenv("LOOMMUX_LEASE_MODE", "connection")
-    monkeypatch.setenv("LOOMMUX_CONNECTION_GRACE_SECONDS", "0.01")
+    config = LoommuxConfig(settings=ResourceServerSettings(lease_mode=LeaseMode.CONNECTION, connection_grace_seconds=0.01))
 
-    async with Client(create_default_mcp()) as client:
+    async with Client(create_policy_mcp("content", config=config)) as client:
         await client.call_tool("status", {})
         await asyncio.sleep(0.05)
         status = await client.call_tool("status", {})

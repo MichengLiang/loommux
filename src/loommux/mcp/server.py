@@ -22,7 +22,7 @@ mcp = create_mcp()
 def main(argv: Sequence[str] | None = None) -> None:
     """Run the MCP consumer using its command-line transport selection."""
 
-    run_entrypoint(lambda result_mode, control_url: create_factory(result_mode, control_url=control_url), argv=argv)
+    run_entrypoint(lambda result_mode, control_url, config: create_factory(result_mode, control_url=control_url, config=config), argv=argv)
 
 
 if __name__ == "__main__":

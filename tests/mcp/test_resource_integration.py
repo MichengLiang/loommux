@@ -114,8 +114,8 @@ def test_open_standalone_stream_holds_a_connection_lease_past_every_window(
     with running_server(
         reserve_port(),
         workspace,
-        LOOMMUX_LEASE_MODE="connection",
-        LOOMMUX_CONNECTION_GRACE_SECONDS="0.3",
+        lease_mode="connection",
+        connection_grace_seconds=0.3,
     ) as origin:
         asyncio.run(scenario(origin))
 
@@ -162,10 +162,10 @@ def test_a_session_without_a_standalone_stream_ends_its_results_with_an_alert(
     with running_server(
         reserve_port(),
         workspace,
-        LOOMMUX_LEASE_MODE="connection",
-        LOOMMUX_CONNECTION_GRACE_SECONDS="0.3",
+        lease_mode="connection",
+        connection_grace_seconds=0.3,
         # The degraded lease must outlive the observation; with the default
         # 0.2 s activity window it would be reclaimed before the second call.
-        LOOMMUX_PRIVATE_TTL_SECONDS="30",
+        private_activity_timeout_seconds=30,
     ) as origin:
         scenario(origin)

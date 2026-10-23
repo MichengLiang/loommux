@@ -51,7 +51,7 @@ def test_a_kernel_knows_itself_and_manages_other_kernels_through_its_daemon(tmp_
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    with running_server(reserve_port(), workspace, LOOMMUX_LEASE_MODE="connection") as origin:
+    with running_server(reserve_port(), workspace, lease_mode="connection") as origin:
         asyncio.run(scenario(origin))
 
 
@@ -98,7 +98,7 @@ def test_a_kernel_opens_runs_and_holds_kernels_that_leave_with_it(tmp_path: Path
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    with running_server(reserve_port(), workspace, LOOMMUX_LEASE_MODE="connection", LOOMMUX_CONNECTION_GRACE_SECONDS="0.3") as origin:
+    with running_server(reserve_port(), workspace, lease_mode="connection", connection_grace_seconds=0.3) as origin:
         asyncio.run(scenario(origin))
 
 
@@ -185,5 +185,5 @@ def test_a_header_naming_another_kernel_forwards_the_cell_there(tmp_path: Path) 
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    with running_server(reserve_port(), workspace, LOOMMUX_LEASE_MODE="connection") as origin:
+    with running_server(reserve_port(), workspace, lease_mode="connection") as origin:
         asyncio.run(scenario(origin))

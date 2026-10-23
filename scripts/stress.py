@@ -64,13 +64,15 @@ CELLS = (
     "1 + 1",
     "raise ValueError('boom')",
 )
-SERVER_SETTINGS = {
-    "LOOMMUX_LEASE_MODE": "connection",
-    "LOOMMUX_SWEEP_INTERVAL_SECONDS": "0.2",
-    "LOOMMUX_CONNECTION_GRACE_SECONDS": "1",
-    "LOOMMUX_NAMED_TTL_SECONDS": "1",
-    "LOOMMUX_ORPHAN_GRACE_SECONDS": "1",
-}
+# The server's config.py. A one-second named window, because over three minutes
+# a thousand sessions come and go and each would otherwise keep its kernel a day.
+SERVER_SETTINGS = """\
+lease_mode = "connection"
+sweep_interval_seconds = 0.2
+connection_grace_seconds = 1
+named_activity_timeout_seconds = 1
+orphan_grace_seconds = 1
+"""
 CONSOLE_STALL_SECONDS = 8
 # httpx builds a transport for every proxy variable when a client is created,
 # before NO_PROXY is consulted, so a developer's ALL_PROXY=socks5h://... makes
@@ -116,13 +118,14 @@ def main() -> int:
     options.report_dir.mkdir(parents=True, exist_ok=True)
     log_path = options.report_dir / f"server-{int(time.time())}.log"
     workspace = Path(tempfile.mkdtemp(prefix="loommux-stress-"))
+    config = Path(tempfile.mkdtemp(prefix="loommux-stress-config-"))
+    (config / "config.py").write_text(SERVER_SETTINGS, encoding="utf-8")
     port = _free_port()
     base = f"http://127.0.0.1:{port}"
     with log_path.open("w") as log:
         server = subprocess.Popen(
-            [sys.executable, "-m", "loommux.mcp.server", "--server", "--port", str(port)],
+            [sys.executable, "-m", "loommux.mcp.server", "--server", "--port", str(port), "--config", str(config)],
             cwd=workspace,
-            env={**os.environ, **SERVER_SETTINGS},
             stdout=log,
             stderr=subprocess.STDOUT,
         )

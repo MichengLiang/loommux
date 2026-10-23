@@ -40,19 +40,16 @@ await client.ping()
 请在项目根目录 `/home/t103o/workbench/projects/loommux` 中执行：
 
 ```bash
-LOOMMUX_LEASE_MODE=heartbeat \
-LOOMMUX_HEARTBEAT_INTERVAL_SECONDS=2 \
-LOOMMUX_HEARTBEAT_TIMEOUT_SECONDS=7 \
-LOOMMUX_SWEEP_INTERVAL_SECONDS=0.5 \
-LOOMMUX_ORPHAN_GRACE_SECONDS=2 \
 uv run python -m loommux.mcp.server \
   --server \
   --host 127.0.0.1 \
   --port 8801 \
-  --path /mcp
+  --path /mcp \
+  --config examples/lease-aware-client/config
 ```
 
-心跳超时必须严格大于心跳间隔。这里使用较短的时间，只是为了方便观察；
+设置写在配置目录的 `config/config.py` 里：heartbeat 模式，心跳间隔 2 秒、超时
+7 秒。心跳超时必须严格大于心跳间隔。这里使用较短的时间，只是为了方便观察；
 实际业务可以使用更宽松的时间窗口。
 
 ## 运行推荐客户端
@@ -115,10 +112,10 @@ Streamable HTTP transport 发送。尤其是命名共享资源时，第一次业
 
 ## activity 模式对比
 
-如果服务器采用：
+如果服务器的 `config.py` 写的是：
 
-```bash
-LOOMMUX_LEASE_MODE=activity
+```python
+lease_mode = "activity"
 ```
 
 业务工具调用进入和完成时会刷新租约。客户端不需要为了保持资源而单独
@@ -130,14 +127,14 @@ LOOMMUX_LEASE_MODE=activity
 
 ## connection 模式对比
 
-如果服务器采用：
+如果服务器的 `config.py` 写的是：
 
-```bash
-LOOMMUX_LEASE_MODE=connection
+```python
+lease_mode = "connection"
 ```
 
 租约跟着 MCP Session 的独立 `GET` 流走：流开着，资源就一直保留，闲置多久
-都不过期；流断开后等待 `LOOMMUX_CONNECTION_GRACE_SECONDS`（默认 60 秒），
+都不过期；流断开后等待 `connection_grace_seconds`（默认 60 秒），
 期间重连回来就当没断过，否则回收。`LeaseAwareClient` 与普通 FastMCP
 `Client` 在整个上下文期间都挂着这条流，所以两个示例都不需要心跳；
 `demo.py` 在这种模式下不会启动 ping 任务。

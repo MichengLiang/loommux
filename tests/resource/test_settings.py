@@ -4,10 +4,10 @@ from loommux.resource import LeaseMode
 from loommux.resource.settings import ResourceServerSettings
 
 
-def test_unset_environment_uses_the_declared_lease_defaults() -> None:
-    """An unset variable must produce the duration the project declares."""
+def test_unset_names_use_the_declared_lease_defaults() -> None:
+    """A config.py that sets nothing must produce the durations the project declares."""
 
-    settings = ResourceServerSettings.from_environ({})
+    settings = ResourceServerSettings.from_values({})
 
     # The first assertion guards the two declaration sites against drifting
     # apart; the second pins the value the documentation publishes.
@@ -17,15 +17,15 @@ def test_unset_environment_uses_the_declared_lease_defaults() -> None:
 
 
 def test_settings_read_all_resource_lease_values() -> None:
-    settings = ResourceServerSettings.from_environ(
+    settings = ResourceServerSettings.from_values(
         {
-            "LOOMMUX_LEASE_MODE": "heartbeat",
-            "LOOMMUX_PRIVATE_TTL_SECONDS": "3",
-            "LOOMMUX_NAMED_TTL_SECONDS": "9",
-            "LOOMMUX_HEARTBEAT_INTERVAL_SECONDS": "1",
-            "LOOMMUX_HEARTBEAT_TIMEOUT_SECONDS": "4",
-            "LOOMMUX_SWEEP_INTERVAL_SECONDS": "0.5",
-            "LOOMMUX_ORPHAN_GRACE_SECONDS": "2",
+            "lease_mode": "heartbeat",
+            "private_activity_timeout_seconds": 3,
+            "named_activity_timeout_seconds": 9,
+            "heartbeat_interval_seconds": 1,
+            "heartbeat_timeout_seconds": 4,
+            "sweep_interval_seconds": 0.5,
+            "orphan_grace_seconds": 2,
         }
     )
 
@@ -40,38 +40,36 @@ def test_settings_read_all_resource_lease_values() -> None:
 
 @pytest.mark.parametrize(
     "value",
-    ["0", "-1", "nan", "inf"],
+    [0, -1, float("nan"), float("inf"), "10", True],
 )
-def test_settings_reject_non_positive_durations(value: str) -> None:
-    with pytest.raises(ValueError):
-        ResourceServerSettings.from_environ(
-            {"LOOMMUX_SWEEP_INTERVAL_SECONDS": value}
-        )
+def test_settings_reject_anything_but_positive_finite_seconds(value: object) -> None:
+    with pytest.raises(ValueError, match="sweep_interval_seconds"):
+        ResourceServerSettings.from_values({"sweep_interval_seconds": value})
 
 
 def test_settings_reject_unknown_lease_mode() -> None:
-    with pytest.raises(ValueError, match="activity, heartbeat, or connection"):
-        ResourceServerSettings.from_environ({"LOOMMUX_LEASE_MODE": "other"})
+    with pytest.raises(ValueError, match="'activity', 'heartbeat', or 'connection'"):
+        ResourceServerSettings.from_values({"lease_mode": "other"})
 
 
 def test_settings_read_the_connection_mode_and_its_grace() -> None:
-    settings = ResourceServerSettings.from_environ(
+    settings = ResourceServerSettings.from_values(
         {
-            "LOOMMUX_LEASE_MODE": " Connection ",
-            "LOOMMUX_CONNECTION_GRACE_SECONDS": "12.5",
+            "lease_mode": " Connection ",
+            "connection_grace_seconds": 12.5,
         }
     )
 
     assert settings.lease_mode is LeaseMode.CONNECTION
     assert settings.connection_grace_seconds == 12.5
-    assert ResourceServerSettings.from_environ({}).connection_grace_seconds == 60
+    assert ResourceServerSettings.from_values({}).connection_grace_seconds == 60
 
 
 def test_settings_reject_invalid_heartbeat_relationship() -> None:
     with pytest.raises(ValueError, match="must be greater"):
-        ResourceServerSettings.from_environ(
+        ResourceServerSettings.from_values(
             {
-                "LOOMMUX_HEARTBEAT_INTERVAL_SECONDS": "5",
-                "LOOMMUX_HEARTBEAT_TIMEOUT_SECONDS": "5",
+                "heartbeat_interval_seconds": 5,
+                "heartbeat_timeout_seconds": 5,
             }
         )

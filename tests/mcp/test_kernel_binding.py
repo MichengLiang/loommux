@@ -59,7 +59,7 @@ def test_a_session_names_its_main_kernel_and_switches_to_another_by_attaching(tm
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    with running_server(reserve_port(), workspace, LOOMMUX_LEASE_MODE="connection", LOOMMUX_CONNECTION_GRACE_SECONDS="0.3") as origin:
+    with running_server(reserve_port(), workspace, lease_mode="connection", connection_grace_seconds=0.3) as origin:
         asyncio.run(scenario(origin))
 
 
@@ -85,7 +85,7 @@ def test_a_main_kernel_whose_session_left_keeps_itself_until_a_new_host_attaches
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    with running_server(reserve_port(), workspace, LOOMMUX_LEASE_MODE="connection", LOOMMUX_CONNECTION_GRACE_SECONDS="0.3", LOOMMUX_NAMED_TTL_SECONDS="60") as origin:
+    with running_server(reserve_port(), workspace, lease_mode="connection", connection_grace_seconds=0.3, named_activity_timeout_seconds=60) as origin:
         asyncio.run(scenario(origin))
 
 
@@ -117,5 +117,5 @@ def test_a_kernel_renames_itself_in_one_line_and_learns_a_name_given_elsewhere(t
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    with running_server(reserve_port(), workspace, LOOMMUX_LEASE_MODE="connection", LOOMMUX_CONNECTION_GRACE_SECONDS="0.3") as origin:
+    with running_server(reserve_port(), workspace, lease_mode="connection", connection_grace_seconds=0.3) as origin:
         asyncio.run(scenario(origin))

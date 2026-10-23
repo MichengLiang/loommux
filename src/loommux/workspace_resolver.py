@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
-import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from loommux.host_workspace_config import WorkspaceConfigError, execute_workspace_resolver, load_workspace_resolver
+WorkspaceResolver = Callable[[Path], str | Path]
+
+
+class WorkspaceConfigError(RuntimeError):
+    """A workspace resolution failure with its public classification."""
+
+    def __init__(self, status: str, message: str) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 @dataclass(frozen=True)
@@ -17,14 +25,18 @@ class WorkspaceResolution:
     workspace_resolution: str
 
 
-def resolve_workspace_launch() -> WorkspaceResolution:
-    """Resolve the launch cwd or the one resolver explicitly authorized by env."""
+def resolve_workspace_launch(resolver: WorkspaceResolver | None = None) -> WorkspaceResolution:
+    """Resolve the launch cwd, or ask the resolver a ``--config`` directory's ``config.py`` defines."""
     launch_cwd = Path.cwd().resolve()
-    resolver = load_workspace_resolver(os.environ)
     if resolver is None:
         return WorkspaceResolution(workspace=_validate_workspace(launch_cwd), workspace_resolution="launch_cwd")
 
-    value = execute_workspace_resolver(resolver, launch_cwd)
+    try:
+        value = resolver(launch_cwd)
+    except Exception as exc:
+        # The status is what reaches the MCP surface; the resolver's own detail
+        # stays in the chained exception for whoever started the server.
+        raise WorkspaceConfigError("workspace_config_load_failed", "workspace resolver failed while executing") from exc
     if not isinstance(value, str | Path):
         raise WorkspaceConfigError("workspace_config_invalid_return", "workspace resolver must return str or pathlib.Path")
     return WorkspaceResolution(workspace=_validate_workspace(_resolve_path(value, launch_cwd)), workspace_resolution="explicit_config")

@@ -327,7 +327,7 @@ An idle unowned resource is reclaimed immediately. A resource whose cell is
 still running enters `orphaned`. This distinction matters because a loommux
 `run_cell` request can return while the execution continues in the kernel.
 
-An orphaned running resource receives `LOOMMUX_ORPHAN_GRACE_SECONDS`. If no
+An orphaned running resource receives `orphan_grace_seconds`. If no
 participant returns before the grace expires, the session is closed and the
 kernel process group is terminated. This prevents an abandoned infinite cell
 from retaining a resource forever.
@@ -411,22 +411,27 @@ the whole context, and that open stream holds the lease.
 
 ## 9. Server settings
 
-| Environment variable | Default |
-| --- | ---: |
-| `LOOMMUX_LEASE_MODE` | `activity` |
-| `LOOMMUX_PRIVATE_TTL_SECONDS` | `4800` |
-| `LOOMMUX_NAMED_TTL_SECONDS` | `86400` |
-| `LOOMMUX_HEARTBEAT_INTERVAL_SECONDS` | `15` |
-| `LOOMMUX_HEARTBEAT_TIMEOUT_SECONDS` | `60` |
-| `LOOMMUX_CONNECTION_GRACE_SECONDS` | `60` |
-| `LOOMMUX_SWEEP_INTERVAL_SECONDS` | `10` |
-| `LOOMMUX_ORPHAN_GRACE_SECONDS` | `30` |
+The settings are names in the `config.py` of the configuration directory
+loommux is started with (`--config DIR`; see the
+[Kernel Environment Design](kernel-environment-design.md), section 4). The
+environment does not configure them.
 
-`LOOMMUX_LEASE_MODE` accepts `activity`, `heartbeat`, or `connection`.
+| `config.py` name | Default |
+| --- | ---: |
+| `lease_mode` | `"activity"` |
+| `private_activity_timeout_seconds` | `4800` |
+| `named_activity_timeout_seconds` | `86400` |
+| `heartbeat_interval_seconds` | `15` |
+| `heartbeat_timeout_seconds` | `60` |
+| `connection_grace_seconds` | `60` |
+| `sweep_interval_seconds` | `10` |
+| `orphan_grace_seconds` | `30` |
+
+`lease_mode` accepts `"activity"`, `"heartbeat"`, or `"connection"`.
 
 The lease durations are declared once in `resource/policy.py`; the settings
-dataclass and the environment reader both resolve to those same values, so an
-unset variable cannot fall back to a duration the project no longer advertises.
+dataclass and the `config.py` reader both resolve to those same values, so an
+unset name cannot fall back to a duration the project no longer advertises.
 
 All durations must be positive. Heartbeat timeout must be strictly greater
 than heartbeat interval.

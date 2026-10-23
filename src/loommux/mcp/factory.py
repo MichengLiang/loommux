@@ -12,7 +12,7 @@ from fastmcp.server.http import StarletteWithLifespan
 from fastmcp.tools import ToolResult
 
 from loommux.cell_header import CellHeaderError, read_cell_header
-from loommux.host_workspace_config import WorkspaceConfigError
+from loommux.config import LoommuxConfig
 from loommux.mcp.control import install_control_routes
 from loommux.mcp.lease_ping import install_lease_aware_ping_handler
 from loommux.mcp.result import ResultMode, make_tool_result
@@ -31,9 +31,8 @@ from loommux.resource import (
     resolve_client,
     resolve_policy_generation,
 )
-from loommux.resource.settings import ResourceServerSettings
 from loommux.session import IPythonSession
-from loommux.workspace_resolver import resolve_workspace_launch
+from loommux.workspace_resolver import WorkspaceConfigError, resolve_workspace_launch
 
 # Claude Code persists text results above 50,000 characters to a file unless the
 # tool declares its own ceiling. Tools that deliver an execution's full body opt in
@@ -83,13 +82,15 @@ class _LoommuxMCP(FastMCP):
         return app
 
 
-def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> FastMCP:
+def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, config: LoommuxConfig | None = None) -> FastMCP:
     """Build one MCP server whose tools consume selected kernel resources.
 
     ``control_url`` is the origin of this server's HTTP control plane as its
-    kernels reach it; every kernel learns it at start.
+    kernels reach it; every kernel learns it at start. ``config`` is what the
+    ``--config`` directory says; without one every setting has its default.
     """
 
+    configured = config or LoommuxConfig()
     manager: KernelResourceManager | None = None
     connections = ConnectionRegistry()
 
@@ -170,10 +171,10 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
     async def lifespan(_server: FastMCP) -> AsyncIterator[dict[str, Any]]:
         nonlocal manager
         try:
-            resolution = resolve_workspace_launch()
+            resolution = resolve_workspace_launch(configured.resolve_workspace)
         except WorkspaceConfigError as exc:
             raise RuntimeError(f"loommux workspace initialization failed: {exc.status}") from exc
-        settings = ResourceServerSettings.from_environ()
+        settings = configured.settings
         policy_manager = LeasePolicyManager(
             initial_mode=settings.lease_mode,
             private_activity_timeout_seconds=settings.private_activity_timeout_seconds,

@@ -221,7 +221,7 @@ A renamed `private-…` main kernel counts as named for the activity window.
 
 For a named main kernel this is Jupyter's culling rule with
 `cull_idle_timeout` set to the named window, 24 hours by default
-(`LOOMMUX_NAMED_TTL_SECONDS`), and `cull_connected = False`.
+(`named_activity_timeout_seconds` in `config.py`), and `cull_connected = False`.
 
 A connection lease is held while its session's stream is open. When the stream
 closes, no replacement arrives within the reconnect grace, and the client sent

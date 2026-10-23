@@ -196,8 +196,8 @@ with that name, where each participating session still holds an independent
 lease. Kernels that a kernel opens by name are child kernels of that home (see
 [Main Kernel Binding Design](docs/kernel-binding-design.md)).
 
-The server chooses how a lease proves that its client is still there with
-`LOOMMUX_LEASE_MODE`:
+The server chooses how a lease proves that its client is still there with the
+`lease_mode` setting of its [configuration directory](#configuration-directory):
 
 | Mode | The lease holds while | Fits |
 | --- | --- | --- |
@@ -206,9 +206,9 @@ The server chooses how a lease proves that its client is still there with
 | `connection` | the session keeps its standalone Streamable HTTP `GET` stream open; stdio sessions for the life of the process | clients that hold that stream while they run, such as Claude Code |
 
 A connection lease survives any amount of idleness. About a minute after the
-client exits (`LOOMMUX_CONNECTION_GRACE_SECONDS`, default 60), the session
+client exits (`connection_grace_seconds`, default 60), the session
 counts as gone and its lease is released. A named main kernel then keeps
-itself for the named window (`LOOMMUX_NAMED_TTL_SECONDS`, 24 hours) after the
+itself for the named window (`named_activity_timeout_seconds`, 24 hours) after the
 last call, so a new session can attach to it by name; the console shows how
 long it has left and can retire it at any time. An unnamed `private-<session>`
 kernel is retired with the lease, since nobody comes back to a generated name.
@@ -219,7 +219,13 @@ every tool result of that session ends with a `Lease alert` block, and the
 console at `/` turns its lease-signal row red. For Claude Code over HTTP:
 
 ```bash
-LOOMMUX_LEASE_MODE=connection loommux --server --host 127.0.0.1 --port 8801 --path /mcp
+loommux --server --host 127.0.0.1 --port 8801 --path /mcp --config .loommux
+```
+
+with `.loommux/config.py` holding:
+
+```python
+lease_mode = "connection"
 ```
 
 The server publishes the current lease policy at `/api/lease-policy`. The
@@ -296,19 +302,47 @@ interpreter that launched `loommux` launches the kernel. This preserves the
 same virtual environment that imported loommux and avoids an ambiguous second
 Python-selection mechanism.
 
-`LOOMMUX_WORKSPACE_CONFIG` is the only optional workspace configuration
-entrance for the Python/IPython `loommux` server. Set it to the absolute path of
-a trusted Python resolver defining `resolve_workspace(launch_cwd: Path) -> Path
-| str`. loommux never searches or executes `loommux_workspace.py`, `.codex`, or
-any other workspace-tree file or marker. Resolver failures prevent startup
-before tools are available.
+A `config.py` in the [configuration directory](#configuration-directory) that
+defines `resolve_workspace(launch_cwd: Path) -> Path | str` chooses another
+workspace; it is the only way to. loommux never searches for or executes
+`loommux_workspace.py`, `.loommux`, `.codex`, or any other workspace-tree file
+or marker. Resolver failures prevent startup before tools are available.
 
-The [generic](examples/workspace-resolvers/generic.py) and
-[Codex](examples/workspace-resolvers/codex.py) resolver examples are inert
-until explicitly selected through that environment variable. See [workspace
+The [Codex](examples/config/codex/config.py) configuration directory is an
+example, inert until `--config` names it. See [workspace
 configuration](docs/workspace-configuration.md) and the canonical [Coding
 Agent Control Plane Design](docs/coding-agent-control-plane-design.md#5-host-workspace-resolver)
 for the complete contract.
+
+## Configuration Directory
+
+`loommux --config DIR` names the one place loommux is configured, shaped like an
+IPython profile directory:
+
+```text
+.loommux/
+    config.py        settings and resolve_workspace, read once when the daemon starts
+    startup/         files every kernel runs when it starts
+```
+
+`config.py` is an ordinary Python module whose plain names are the settings:
+
+| Name | Default |
+| --- | ---: |
+| `lease_mode` | `"activity"` |
+| `private_activity_timeout_seconds` | `4800` |
+| `named_activity_timeout_seconds` | `86400` |
+| `heartbeat_interval_seconds` | `15` |
+| `heartbeat_timeout_seconds` | `60` |
+| `connection_grace_seconds` | `60` |
+| `sweep_interval_seconds` | `10` |
+| `orphan_grace_seconds` | `30` |
+
+It may import modules and define helpers. Any other public name stops the start
+with `config_unknown_setting`, so a misspelled setting is reported rather than
+left at its default. A relative `DIR` is read from the directory loommux starts
+in; loommux never finds one by itself. The environment does not configure
+loommux. See [Kernel Environment Design](docs/kernel-environment-design.md).
 
 ## Execution Model
 
