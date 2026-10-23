@@ -105,7 +105,9 @@ def forward(daemon: Daemon, header: CellHeader, body: str, write: Callable[[str]
     """Run ``body`` in the kernel the header names and relay its output.
 
     The forwarding cell ends as the forwarded one did: an error there raises
-    here, and an interrupt here is passed down before it is raised.
+    here, and an interrupt here is passed down before it is raised. What the
+    forwarded cell noticed is spoken again here, with the kernel's name, since
+    no MCP session works in a child kernel to receive it.
 
     A name that resolves to this very kernel is one it was given elsewhere,
     for example by its main kernel through ``loommux[...].rename()``. Resolving
@@ -129,6 +131,8 @@ def forward(daemon: Daemon, header: CellHeader, body: str, write: Callable[[str]
     except DaemonError as exc:
         # The target was retired or restarted while its cell ran here.
         raise ForwardedCellError(header.kernel, exc.status or "DaemonError", str(exc)) from None
+    for notice in job.last.get("notices", ()):
+        daemon.notify(f"{header.kernel} · {notice}")
     _raise_for(header.kernel, job.last)
 
 

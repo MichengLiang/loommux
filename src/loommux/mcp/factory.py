@@ -139,7 +139,11 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, confi
                 request=request,
                 replaces_kernel=replaces_kernel,
             ) as admission:
-                status = await asyncio.to_thread(operation, admission.resource.session)
+                # Every result, whatever the tool, ends with the notices no
+                # result has delivered yet (kernel-environment-design 6.3).
+                status, notices = await asyncio.to_thread(lambda session: (operation(session), session.take_notices()), admission.resource.session)
+            if notices:
+                status = {**status, "notices": notices}
             if admission.binding is not None:
                 status = {**status, "binding": admission.binding.as_dict()}
             if tool_name == "status":

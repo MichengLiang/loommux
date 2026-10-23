@@ -125,6 +125,43 @@ def test_the_binding_block_follows_the_output_and_precedes_a_lease_alert() -> No
     assert format_tool_result_text("execution_status", {"ok": True, "execution": 5, "status": "completed", "output_total_lines": 2}).startswith("execution 5: completed")
 
 
+def test_notices_follow_even_an_omitted_output_and_precede_the_binding_and_alert() -> None:
+    notices = [
+        {"execution": None, "text": "00-vitals.ipy failed: NameError: x"},
+        {"execution": 3, "text": "📬 reply"},
+        {"execution": 4, "text": "⚠ memory"},
+    ]
+    result = make_tool_result(
+        "run_cell",
+        {
+            "ok": True,
+            "status": "completed",
+            "execution": 4,
+            "output_omitted_reason": "token_limit_exceeded",
+            "output_total_lines": 301,
+            "output_total_characters": 60_000,
+            "output_total_utf8_bytes": 60_000,
+            "notices": notices,
+            "binding": {"name": "lab", "kind": "opened", "executions": 0},
+            "lease_alert": {"standing": "unbound", "fallback_window_seconds": 30},
+        },
+        "content",
+    )
+
+    texts = [block.text for block in result.content]
+    assert texts[0].startswith("In [4]:\nOutput omitted")
+    # The shown execution's own notice needs no label; others name their source.
+    assert texts[1] == "Startup · 00-vitals.ipy failed: NameError: x\nIn [3] · 📬 reply\n⚠ memory"
+    assert texts[2] == "Kernel: lab (opened)"
+    assert texts[3].startswith("Lease alert")
+
+
+def test_a_result_without_an_execution_labels_every_notice() -> None:
+    result = make_tool_result("status", {"ok": True, "kernel_started": True, "notices": [{"execution": 2, "text": "done"}]}, "content")
+
+    assert result.content[-1].text == "In [2] · done"
+
+
 def test_tool_failure_surface_remains_concise() -> None:
     assert format_tool_result_text("read_output", {"ok": False, "status": "invalid_stream", "message": "bad stream"}) == "invalid_stream: bad stream"
 

@@ -90,6 +90,21 @@ def format_binding(binding: Mapping[str, Any]) -> str:
     return f"Kernel: {binding.get('name')} ({'; '.join(notes)})"
 
 
+def format_notices(notices: list[Mapping[str, Any]], shown: object) -> str:
+    """One line per notice, labeled when it is not the shown execution's own.
+
+    A notice of the execution the result shows needs no label; one of another
+    cell names it as ``In [N]`` does, and one of the startup files as Startup.
+    """
+
+    def label(execution: object) -> str:
+        if execution is None:
+            return "Startup · "
+        return "" if execution == shown else f"In [{execution}] · "
+
+    return "\n".join(f"{label(notice.get('execution'))}{notice.get('text', '')}" for notice in notices)
+
+
 def format_lease_alert(alert: Mapping[str, Any]) -> str:
     """Tell the reader that a connection lease lost the signal it relies on."""
     standing = str(alert.get("standing", "unknown"))

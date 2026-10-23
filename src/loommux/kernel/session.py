@@ -19,6 +19,7 @@ from loommux.execution import Execution
 from loommux.identity import KernelIdentity
 from loommux.kernel.launch import KernelLaunch
 from loommux.kernel.runtime import KernelRuntime, close_jupyter_event_loop
+from loommux.notice import NOTICE_MIME
 
 # ipykernel sends execute_reply before it publishes idle, so at idle the reply
 # is already on its way; this only bounds a kernel that never sends one.
@@ -151,6 +152,9 @@ class KernelSession:
                     execution.append_stderr(text)
             elif msg_type in {"execute_result", "display_data"}:
                 data = content.get("data", {})
+                if msg_type == "display_data" and isinstance(data, dict) and NOTICE_MIME in data:
+                    execution.append_notice(str(data[NOTICE_MIME]))
+                    return
                 if isinstance(data, dict) and "text/plain" in data:
                     text = str(data["text/plain"])
                     execution.append_result_text(text)

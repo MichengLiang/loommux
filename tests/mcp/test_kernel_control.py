@@ -55,6 +55,27 @@ def test_a_kernel_knows_itself_and_manages_other_kernels_through_its_daemon(tmp_
         asyncio.run(scenario(origin))
 
 
+@pytest.mark.timeout(60)
+def test_notices_reach_the_agent_from_its_kernel_and_through_a_forwarded_cell(tmp_path: Path) -> None:
+    async def scenario(origin: str) -> None:
+        async with LeaseAwareClient(f"{origin}/mcp", "agent") as agent:
+            own = await agent.call_tool("run_cell", {"freeform": "loommux.notify('from the main kernel')\n'main'"})
+            forwarded = await agent.call_tool("run_cell", {"freeform": "%%loommux --kernel build --wait 30\nloommux.notify('from the child')\n'child'"})
+            later = await agent.call_tool("status", {})
+
+        # The notice comes before the Kernel: line the first call also carries.
+        assert [block.text for block in own.content][:2] == ["In [1]:\nOut[1]: 'main'\n", "from the main kernel"]
+        assert own.content[2].text.startswith("Kernel: private-")
+        # The child's own Out label is its own count; the notice names the child.
+        assert [block.text for block in forwarded.content] == ["In [2]:\nOut[1]: 'child'\n", "build · from the child"]
+        assert all("from the" not in block.text for block in later.content)
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    with running_server(reserve_port(), workspace, lease_mode="connection") as origin:
+        asyncio.run(scenario(origin))
+
+
 @pytest.mark.timeout(90)
 def test_a_kernel_opens_runs_and_holds_kernels_that_leave_with_it(tmp_path: Path) -> None:
     async def scenario(origin: str) -> None:

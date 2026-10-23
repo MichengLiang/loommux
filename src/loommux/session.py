@@ -39,6 +39,10 @@ class IPythonSession:
         self.recent_execution: int | None = None
         self._kernel_restarting = False
         self._next_execution = 1
+        # Every record numbered up to here has had its notices taken or found
+        # none. Cells run one at a time, so only the newest record can still be
+        # running and everything before it is final.
+        self._noticed_through = 0
         self._lock = threading.RLock()
 
     def close(self) -> None:
@@ -77,6 +81,7 @@ class IPythonSession:
             self.current_execution = None
             self.recent_execution = None
             self._next_execution = 1
+            self._noticed_through = 0
         return self.status()
 
     def run_cell(self, freeform: str, *, wait_seconds: float | None = None) -> dict[str, Any]:
@@ -212,7 +217,12 @@ class IPythonSession:
         # after every chunk would pay for the whole output each time.
         status, error = record.status, record.error_summary
         text = log.text_since(offset)
-        return {"ok": True, "execution": record.execution, "status": status, "error": error, "text": text, "offset": offset + len(text)}
+        result = {"ok": True, "execution": record.execution, "status": status, "error": error, "text": text, "offset": offset + len(text)}
+        if status != "running":
+            # Handed to the follower with the final state: a forwarding cell
+            # speaks them again, since no MCP session works in a child kernel.
+            result["notices"] = self.take_notices_of(record.execution)
+        return result
 
     def interrupt(self) -> dict[str, Any]:
         with self._lock:
@@ -265,6 +275,32 @@ class IPythonSession:
             return self._workspace_error("kernel_start_failed", f"kernel failed to restart: {exc}", workspace, python_path)
         return {"ok": True, "status": "restarted", "workspace": str(workspace), "workspace_resolution": self.workspace_resolution, "python": str(python_path), "kernel_started": True, "kernel_pid": kernel.pid, "busy": False, "current_execution": None, "recent_execution": self.recent_execution}
 
+    def take_notices(self) -> list[dict[str, Any]]:
+        """The notices no result has delivered yet, each handed out exactly once.
+
+        A record's notices are final when it is: a cell still running may speak
+        again, so its notices wait for whichever result follows its end.
+        """
+        taken: list[dict[str, Any]] = []
+        with self._lock:
+            number = self._noticed_through + 1
+            while (record := self.executions.get(number)) is not None and not record.is_running:
+                if not record.notices_delivered:
+                    record.notices_delivered = True
+                    taken.extend({"execution": number, "text": text} for text in record.notice_texts())
+                self._noticed_through = number
+                number += 1
+        return taken
+
+    def take_notices_of(self, execution: int) -> list[str]:
+        """One final execution's notices, for a caller that followed that execution to its end."""
+        with self._lock:
+            record = self.executions.get(execution)
+            if record is None or record.is_running or record.notices_delivered:
+                return []
+            record.notices_delivered = True
+            return record.notice_texts()
+
     def _forget_records_locked(self) -> None:
         """Begin the count again with the kernel process that is about to replace this one.
 
@@ -276,6 +312,7 @@ class IPythonSession:
         self.executions.clear()
         self.recent_execution = None
         self._next_execution = 1
+        self._noticed_through = 0
 
     def _close_kernel(self) -> None:
         with self._lock:

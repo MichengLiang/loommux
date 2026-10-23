@@ -431,7 +431,8 @@ def test_output_since_follows_a_cell_by_character_offset(session: IPythonSession
 
     assert first["text"] == "first\n"
     assert first["status"] == "running"
-    assert rest == {"ok": True, "execution": 1, "status": "completed", "error": None, "text": "second\n", "offset": 13}
+    # A final state hands over the execution's notices, none here.
+    assert rest == {"ok": True, "execution": 1, "status": "completed", "error": None, "text": "second\n", "offset": 13, "notices": []}
     assert session.output_since(1, 13, wait_seconds=5)["text"] == ""
     assert session.output_since(9, 0)["status"] == "execution_not_found"
     assert session.output_since(1, -1)["status"] == "invalid_offset"

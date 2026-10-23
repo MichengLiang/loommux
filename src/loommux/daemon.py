@@ -8,6 +8,7 @@ daemon that started it::
     build = loommux["build"]        # this home's child kernel, opened on first use
     job = build.run("make()", wait=5)
     job.wait(600); job.output()
+    loommux.notify("⚠ memory is low")  # to the agent, apart from this cell's output
 
 Inside a kernel the client sees its home: the main kernel an MCP session works
 in and the child kernels opened from it. Kernels of other homes stay out of its
@@ -30,6 +31,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from loommux.identity import CONTROL_URL_ENV, KernelIdentity
+from loommux.notice import NOTICE_MIME
 
 if TYPE_CHECKING:
     import httpx
@@ -89,6 +91,25 @@ class Daemon:
         if self.identity is None:
             raise DaemonError("this process is not a Loommux kernel")
         return Kernel(self, self.identity.kernel_id, self.identity.name)
+
+    def notify(self, text: str) -> None:
+        """Tell the agent something about this moment, apart from the cell's output.
+
+        Speak during a cell, including from ``pre_run_cell`` and
+        ``post_run_cell`` hooks: the notice belongs to that cell, never enters
+        its output streams, and is never omitted with long output. The next
+        tool result ends with it, once. A notice is one short alarm with a
+        pointer to act on it, cut at 500 characters; a cell keeps its first
+        ten. Text spoken while no cell runs belongs to no request and is lost.
+        """
+        from IPython.core.interactiveshell import InteractiveShell
+        from IPython.display import publish_display_data
+
+        # A script started from a kernel inherits its identity, but has no
+        # cell to speak in; publishing there would create an IPython shell.
+        if self.identity is None or not InteractiveShell.initialized():
+            raise DaemonError("notify speaks from a cell of a Loommux kernel")
+        publish_display_data({NOTICE_MIME: str(text)})
 
     def _handle(self, resource: dict[str, Any]) -> Kernel:
         self._learn(resource)

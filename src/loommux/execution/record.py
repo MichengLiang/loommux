@@ -13,6 +13,7 @@ import tiktoken
 from loommux.execution.events import IMAGE_MIME_PREFERENCE, PresentationElement, PresentationFailure, PresentationImage, PresentationText
 from loommux.execution.logs import ExecutionLogs
 from loommux.execution.terminal import TerminalTextNormalizer
+from loommux.notice import NOTICES_PER_EXECUTION, bounded, more_notices
 
 ExecutionStatus = Literal["running", "completed", "error", "interrupted", "killed"]
 OUTPUT_TOKEN_ENCODING = "o200k_base"
@@ -54,6 +55,11 @@ class Execution:
     done: threading.Event = field(default_factory=threading.Event, repr=False)
     logs: ExecutionLogs = field(default_factory=ExecutionLogs, init=False)
     presentation: list[PresentationElement] = field(default_factory=list, init=False)
+    # Notices are not output: no stream and no token limit sees them. They are
+    # kept apart until a result delivers them, once.
+    notices: list[str] = field(default_factory=list, init=False)
+    notices_not_kept: int = field(default=0, init=False)
+    notices_delivered: bool = field(default=False, init=False)
     # Kept as parts and joined on read: appending to one string attribute
     # copies all of it each time, which is quadratic for many displays.
     _result_parts: list[str] = field(default_factory=list, init=False, repr=False)
@@ -112,6 +118,19 @@ class Execution:
         self.status = "error"
         self.updated_at = time.time()
         return output
+
+    def append_notice(self, text: str) -> None:
+        """Keep one notice the cell spoke, within the channel's bounds."""
+        if len(self.notices) >= NOTICES_PER_EXECUTION:
+            self.notices_not_kept += 1
+            return
+        # Each notice is whole when it arrives, so a fresh normalizer leaves no
+        # control sequence open across notices.
+        self.notices.append(bounded(TerminalTextNormalizer().normalize(text)))
+
+    def notice_texts(self) -> list[str]:
+        """The kept notices, followed by how many were not kept, if any."""
+        return [*self.notices, more_notices(self.notices_not_kept)] if self.notices_not_kept else list(self.notices)
 
     def append_display_data(self, data: object, metadata: object) -> None:
         """Record one rich display event after its text/plain projection.
