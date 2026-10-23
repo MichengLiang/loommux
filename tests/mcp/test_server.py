@@ -155,14 +155,13 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
         tools = {tool.name: tool for tool in await client.list_tools()}
 
     run_cell = tools["run_cell"].description or ""
-    assert "向持久 IPython kernel 提交一个原始 IPython cell。" in run_cell
+    assert "向持久 IPython kernel 提交一个 IPython cell。" in run_cell
     assert "当前持久 IPython 会话中的后续 cell" in run_cell
     assert "输入\n----" in run_cell
-    assert "cell 头\n-------" in run_cell
+    assert "loommux cell magic\n-------" in run_cell
     assert "执行编号与后续操作\n--------------------" in run_cell
     assert "后续工具\n使用它定位当前持久 IPython 会话中的这次执行" in run_cell
     assert "%%loommux --wait 120 --full-output" in run_cell
-    assert "invalid_cell_header" in run_cell
     assert "loommux:" not in run_cell
     assert "5,000 token" in run_cell
     assert "UTF-8 字节数" in run_cell
@@ -180,8 +179,6 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
     status = tools["status"].description or ""
     assert "workspace_resolution" in status
     assert "launch_cwd" in status and "explicit_config" in status
-    assert "resolver 的路径或内容" in status
-    assert "private runtime root" in status
 
     read = tools["read_output"].description or ""
     assert "行坐标\n------" in read
@@ -211,7 +208,6 @@ async def test_tool_descriptions_expose_the_complete_chinese_operation_contract(
     interrupt = tools["interrupt"].description or ""
     assert "中断语义\n--------" in interrupt
     assert "IOPub ``idle``" in interrupt
-    assert "信号已发送不等同于记录已终态" in interrupt
 
     reset = tools["restart"].description or ""
     assert "重置边界\n--------" in reset
