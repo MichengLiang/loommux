@@ -36,7 +36,7 @@ def test_a_kernel_knows_itself_and_manages_other_kernels_through_its_daemon(tmp_
             # Inside a kernel the listing is its home; the other session's main
             # kernel belongs to no home of this one.
             listing = await output(agent, "print(loommux.kernels())")
-            assert listing.splitlines()[0].split() == ["name", "id", "kernel", "busy", "pid", "executions", "leases", "kept", "scope", "home"]
+            assert listing.splitlines()[0].split() == ["name", "id", "kernel", "busy", "idle", "pid", "executions", "leases", "kept", "scope", "home"]
             assert [row.split()[0] for row in listing.splitlines()[1:]] == [name]
 
             # The person running loommux reaches every main kernel by name.

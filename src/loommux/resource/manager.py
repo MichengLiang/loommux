@@ -835,6 +835,7 @@ class KernelResourceManager:
             ),
             "current_execution": session_status.get("current_execution"),
             "recent_execution": session_status.get("recent_execution"),
+            "idle_since": session_status.get("idle_since"),
             "execution_count": len(resource.session.executions),
             "lease_count": len(leases),
             # Reported only while it is what keeps the kernel: a held kernel

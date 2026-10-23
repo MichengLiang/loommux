@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from loommux.identity import CONTROL_URL_ENV, KernelIdentity
@@ -273,23 +274,32 @@ class Kernels(list[Kernel]):
     def __repr__(self) -> str:
         if not self:
             return "no kernels"
-        rows = [("name", "id", "kernel", "busy", "pid", "executions", "leases", "kept", "scope", "home")]
+        rows = [("name", "id", "kernel", "busy", "idle", "pid", "executions", "leases", "kept", "scope", "home")]
+        now = datetime.now(UTC)
         for kernel in self:
             snapshot = kernel.snapshot or {}
             retention = snapshot.get("retention_remaining_seconds")
+            idle_since = snapshot.get("idle_since")
             rows.append(
                 (
                     kernel.name,
                     kernel.id[:8],
                     str(snapshot.get("kernel_state", "")),
                     "busy" if snapshot.get("busy") else "idle",
+                    "-" if idle_since is None else _duration((now - datetime.fromisoformat(idle_since)).total_seconds()),
                     str(snapshot.get("kernel_pid") or "-"),
                     str(snapshot.get("execution_count", "")),
                     str(snapshot.get("lease_count", "")),
-                    "-" if retention is None else f"{retention / 3600:.1f}h" if retention >= 3600 else f"{retention:g}s",
+                    "-" if retention is None else _duration(retention),
                     str(snapshot.get("scope", "")),
                     str(snapshot.get("home") or "-"),
                 )
             )
         widths = [max(len(row[column]) for row in rows) for column in range(len(rows[0]))]
         return "\n".join("  ".join(cell.ljust(width) for cell, width in zip(row, widths, strict=True)).rstrip() for row in rows)
+
+
+def _duration(seconds: float) -> str:
+    if seconds >= 3600:
+        return f"{seconds / 3600:.1f}h"
+    return f"{seconds / 60:.0f}m" if seconds >= 60 else f"{max(seconds, 0):.0f}s"

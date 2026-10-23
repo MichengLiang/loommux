@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import threading
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -320,6 +321,18 @@ def test_restart_kills_a_running_execution_and_forgets_it(session: IPythonSessio
 
     assert session.execution_status(running["execution"])["status"] == "execution_not_found"
     assert session.run_cell("'next'")["execution"] == 1
+
+
+def test_idle_since_is_when_the_kernel_last_became_idle_and_null_while_a_cell_runs(session: IPythonSession) -> None:
+    started = datetime.fromisoformat(session.status()["idle_since"])
+    running = session.run_cell("%%loommux --wait 0.1\nimport time\ntime.sleep(0.4)")
+
+    assert running["status"] == "running"
+    assert session.status()["idle_since"] is None
+    session.wait(running["execution"], timeout_seconds=3)
+    finished = datetime.fromisoformat(session.status()["idle_since"])
+    assert finished > started
+    assert finished <= datetime.now(UTC)
 
 
 def test_invalid_header_has_no_real_kernel_or_sequence_side_effect(session: IPythonSession) -> None:

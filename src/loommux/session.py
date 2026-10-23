@@ -4,6 +4,7 @@ import math
 import sys
 import threading
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +55,9 @@ class IPythonSession:
         self._noticed_through = 0
         # What the current kernel process's startup files said, until a result delivers it.
         self._startup_notices: list[str] = []
+        # When the kernel last became idle, for reminders about kernels nobody
+        # uses; None while a cell runs.
+        self._idle_since: datetime | None = None
         self._lock = threading.RLock()
 
     def close(self) -> None:
@@ -93,6 +97,7 @@ class IPythonSession:
             self.recent_execution = None
             self._next_execution = 1
             self._noticed_through = 0
+            self._idle_since = datetime.now(UTC)
         return self.status()
 
     def run_cell(self, freeform: str, *, wait_seconds: float | None = None) -> dict[str, Any]:
@@ -135,11 +140,13 @@ class IPythonSession:
             self.executions[execution.execution] = execution
             self.current_execution = execution.execution
             self.recent_execution = execution.execution
+            self._idle_since = None
         try:
             kernel.submit(execution, source)
         except Exception as exc:
             with self._lock:
                 self.current_execution = None
+                self._idle_since = datetime.now(UTC)
                 execution.record_error({"ename": type(exc).__name__, "evalue": str(exc), "traceback": []})
                 execution.finish()
             return self._execution_response(execution)
@@ -166,6 +173,7 @@ class IPythonSession:
                 "busy": self.current_execution is not None,
                 "current_execution": self.current_execution,
                 "recent_execution": self.recent_execution,
+                "idle_since": None if self._idle_since is None else self._idle_since.isoformat(),
             }
 
     def execution_status(self, execution: int | None = None) -> dict[str, Any]:
@@ -338,6 +346,7 @@ class IPythonSession:
         with self._lock:
             if self.current_execution == record.execution:
                 self.current_execution = None
+                self._idle_since = datetime.now(UTC)
 
     def _on_kernel_exit(
         self,
@@ -349,6 +358,7 @@ class IPythonSession:
                 record.record_kernel_exit(returncode)
             if record is not None and self.current_execution == record.execution:
                 self.current_execution = None
+                self._idle_since = datetime.now(UTC)
 
     def _select_execution(self, execution: int | None) -> Execution | None:
         with self._lock:
@@ -404,6 +414,7 @@ class IPythonSession:
             kernel = self._start_kernel(workspace, python_path)
             with self._lock:
                 self.kernel = kernel
+                self._idle_since = datetime.now(UTC)
             return kernel
         finally:
             with self._lock:
