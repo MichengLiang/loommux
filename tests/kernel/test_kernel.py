@@ -217,7 +217,8 @@ def test_kernel_ignores_hostile_user_state_and_reset_replaces_its_private_root(t
         _assert_kernel_policy(session, second_launch)
         _assert_hostile_user_state_is_untouched(profile_marker, jupyter_marker, python_startup_marker, history_database, original_history_stat.st_mtime_ns)
         assert session.read_output(1, "stdout")["text"]
-        assert session.run_cell("'after reset'")["execution"] == 3
+        # The policy check ran the new kernel's first cell.
+        assert session.run_cell("'after reset'")["execution"] == 2
     finally:
         session.close()
     assert second_root is not None

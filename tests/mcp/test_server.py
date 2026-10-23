@@ -310,10 +310,10 @@ async def test_shared_factory_binds_every_tool_to_the_integer_contract(default_c
     assert "M 1 | factory" in search.content[0].text
     assert wait.content[0].text == "In [1]:\nfactory\n"
     assert interrupt.content[0].text == "Python kernel is idle."
-    assert "sequence is preserved" in reset.content[0].text
+    assert "next cell is In [1]" in reset.content[0].text
 
 
-async def test_real_mcp_eight_tool_loop_preserves_public_sequence_across_reset(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_real_mcp_eight_tool_loop_starts_the_count_again_after_reset(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(workspace)
     async with Client(create_structured_mcp()) as client:
         initial = await client.call_tool("status", {})
@@ -355,9 +355,9 @@ async def test_real_mcp_eight_tool_loop_preserves_public_sequence_across_reset(w
     assert interrupt.data["execution"] == interrupted_execution
     assert interrupted.data["status"] == "interrupted"
     assert reset.data["status"] == "restarted"
-    assert old_record.content[0].text == "small-output"
-    assert after_reset.data["execution"] == 4
-    assert after_reset.content[0].text == "In [4]:\nafter-reset\n"
+    assert old_record.data["status"] == "execution_not_found"
+    assert after_reset.data["execution"] == 1
+    assert after_reset.content[0].text == "In [1]:\nafter-reset\n"
 
 
 def test_mcp_result_mode_only_changes_structured_content() -> None:

@@ -70,7 +70,7 @@ execution 的文字日志。
 event 到达顺序。
 
 展示事件属于 execution record，不属于 kernel namespace、IPython output cache 或
-用户 home profile。reset 保留既有 execution record 时，也保留其已捕获展示事件。
+用户 home profile。reset 清空 execution record 时，其已捕获展示事件随之清空。
 
 ### 3.3 可交付图像
 

@@ -25,7 +25,7 @@ def format_tool_result_text(tool_name: str, status: Mapping[str, Any]) -> str:
     if tool_name == "interrupt":
         return _interrupt_surface(status)
     if tool_name == "restart":
-        return "Python kernel restarted; the session execution sequence is preserved." if status.get("status") == "restarted" else _generic_surface(status)
+        return "Python kernel restarted; its execution records were cleared and the next cell is In [1]." if status.get("status") == "restarted" else _generic_surface(status)
     return _generic_surface(status)
 
 
@@ -185,7 +185,7 @@ def _execution_status_surface(status: Mapping[str, Any]) -> str:
     error = status.get("error")
     if isinstance(error, Mapping):
         lines.append(_error_sentence(execution, status).removesuffix("."))
-    for key in ("submitted_at", "updated_at", "completed_at", "kernel_pid", "execution_count_at_submit", "output_total_lines", "output_omitted_reason"):
+    for key in ("submitted_at", "updated_at", "completed_at", "kernel_pid", "output_total_lines", "output_omitted_reason"):
         if status.get(key) is not None:
             lines.append(f"{key}: {_compact(status[key])}")
     return "\n".join(lines)

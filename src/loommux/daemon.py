@@ -172,7 +172,7 @@ class Kernel:
         return self.daemon._request("POST", f"/api/resources/{self.id}/interrupt")["result"]
 
     def restart(self) -> dict[str, Any]:
-        """Replace the kernel process; its execution records remain readable.
+        """Replace the kernel process; its execution records go with it and the next cell is 1.
 
         Restarting the kernel that calls this ends the calling cell with it.
         """

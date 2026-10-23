@@ -49,7 +49,6 @@ class KernelSession:
         self.runtime = KernelRuntime(workspace, python_path, identity)
         self.client: BlockingKernelClient | None = None
         self.current_execution: Execution | None = None
-        self.latest_execution_count = 0
         self._lock = threading.RLock()
         self._stop_collector = threading.Event()
         self._collector: threading.Thread | None = None
@@ -100,13 +99,6 @@ class KernelSession:
     def is_alive(self) -> bool:
         return self.runtime.is_alive()
 
-    def kernel_info(self) -> dict[str, Any]:
-        return {
-            "busy": self.current_execution is not None and self.current_execution.is_running,
-            "kernel_pid": self.pid,
-            "execution_count": self.latest_execution_count,
-        }
-
     def _collect_iopub(self) -> None:
         # get_iopub_msg caches a jupyter_core event loop in this thread's own
         # context; close it when the collector ends rather than leaving it to a
@@ -151,12 +143,7 @@ class KernelSession:
             execution = self.current_execution
             if execution is None or parent_msg_id != execution.msg_id:
                 return
-            if msg_type == "execute_input":
-                count = content.get("execution_count")
-                if isinstance(count, int):
-                    execution.execution_count_at_submit = count
-                    self.latest_execution_count = count
-            elif msg_type == "stream":
+            if msg_type == "stream":
                 text = str(content.get("text", ""))
                 if content.get("name") == "stdout":
                     execution.append_stdout(text)

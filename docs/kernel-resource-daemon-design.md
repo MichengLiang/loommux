@@ -113,8 +113,10 @@ same startup task; unrelated kernels may start in parallel. Slow kernel
 readiness therefore does not hold the registry lock or serialize every
 resource.
 
-`restart` preserves the logical resource, lease set, execution records, and
-next execution number while replacing the kernel process and namespace.
+`restart` preserves the logical resource and its lease set while replacing the
+kernel process, its namespace, and its execution records; the next cell is
+execution 1, as IPython numbers it
+([Kernel Environment Design](kernel-environment-design.md), section 7).
 `recycle` removes the logical resource and closes its session.
 
 Every operation that may replace the kernel process holds the resource's

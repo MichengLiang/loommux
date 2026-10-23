@@ -57,7 +57,6 @@ class ControlledKernel:
     def __init__(self, should_fail: bool) -> None:
         self.should_fail = should_fail
         self.pid = 123
-        self.latest_execution_count = 0
 
     def start(self) -> None:
         if self.should_fail:
@@ -254,7 +253,7 @@ def test_unmarked_token_heavy_output_is_omitted(session: IPythonSession) -> None
     assert response["output_total_utf8_bytes"] == len(TOKEN_HEAVY_MANY_LINES.encode("utf-8"))
 
 
-def test_full_output_header_survives_running_wait_error_and_reset(session: IPythonSession) -> None:
+def test_full_output_header_survives_running_wait_and_error(session: IPythonSession) -> None:
     running = session.run_cell("%%loommux --wait 0.1 --full-output\nimport time\ntime.sleep(0.3)\nprint(('abcdefghij ' * 20 + '\\n') * 301, end='')")
     assert running["status"] == "running"
     assert running["output_omitted_reason"] == "running"
@@ -268,15 +267,6 @@ def test_full_output_header_survives_running_wait_error_and_reset(session: IPyth
     assert failed["output_omitted"] is False
     assert "before failure" in failed["output_text"]
     assert "RuntimeError: expected failure" in failed["output_text"]
-
-    killed = session.run_cell("%%loommux --wait 0.1 --full-output\nimport time\nprint('before reset', flush=True)\ntime.sleep(5)")
-    assert killed["status"] == "running"
-    time.sleep(0.2)
-    session.restart()
-    reset_result = session.wait(killed["execution"])
-    assert reset_result["status"] == "killed"
-    assert reset_result["output_omitted"] is False
-    assert "before reset" in reset_result["output_text"]
 
 
 def test_invalid_header_fails_before_python_execution(session: IPythonSession) -> None:
@@ -294,25 +284,42 @@ def test_a_header_keeps_traceback_lines_as_written(session: IPythonSession) -> N
     assert "line 3" in failed["output_text"]
 
 
-def test_reset_preserves_records_and_sequence_and_reauthors_out_label(session: IPythonSession) -> None:
-    first = session.run_cell("'before reset'")
+IPYTHON_NUMBER = "%%loommux --full-output\nget_ipython().execution_count - 1, _i.strip() == ''"
+
+
+def test_an_execution_number_is_the_number_ipython_gives_the_cell(session: IPythonSession) -> None:
+    session.run_cell("value = 1")
+    session.run_cell("raise ValueError('a failing cell is counted')")
+    session.run_cell("def not_python(:")
+    probe = session.run_cell(IPYTHON_NUMBER)
+
+    # IPython has already counted the running cell, so its own number is one
+    # less than the count; _i is the cell before it, a syntax error included.
+    assert probe["execution"] == 4
+    assert probe["result_text"] == "(4, False)"
+
+
+def test_restart_starts_the_count_again(session: IPythonSession) -> None:
+    before = session.run_cell("'before restart'")
     reset = session.restart()
-    second = session.run_cell("%%loommux --full-output\n'after reset'")
+    after = session.run_cell(IPYTHON_NUMBER)
 
+    assert before["execution"] == 1
     assert reset["status"] == "restarted"
-    assert first["execution"] == 1
-    assert second["execution"] == 2
-    assert "Out[2]: 'after reset'" in str(session.read_output(2)["text"])
-    assert "Out[1]: 'before reset'" in str(session.read_output(1)["text"])
+    assert reset["recent_execution"] is None
+    assert after["execution"] == 1
+    # A first cell has no cell before it, so _i is empty.
+    assert after["result_text"] == "(1, True)"
+    assert "Out[1]: (1, True)" in str(session.read_output(1)["text"])
+    assert "before restart" not in str(session.read_output(1)["text"])
 
 
-def test_reset_kills_running_execution_but_keeps_it_readable(session: IPythonSession) -> None:
+def test_restart_kills_a_running_execution_and_forgets_it(session: IPythonSession) -> None:
     running = session.run_cell("%%loommux --wait 0.1\nimport time\ntime.sleep(5)")
     session.restart()
 
-    status = session.execution_status(running["execution"])
-    assert status["status"] == "killed"
-    assert status["execution"] == 1
+    assert session.execution_status(running["execution"])["status"] == "execution_not_found"
+    assert session.run_cell("'next'")["execution"] == 1
 
 
 def test_invalid_header_has_no_real_kernel_or_sequence_side_effect(session: IPythonSession) -> None:

@@ -330,10 +330,11 @@ An execution can be `running`, `completed`, `error`, `interrupted`, or
 failures. The error summary identifies the exception while the collected
 traceback remains available from the execution's `traceback` stream.
 
-The integer is owned by loommux rather than copied from IPython's kernel-local
-execution counter. It stays stable for the logical resource, including across
-`restart`. When a cell yields a `text/plain` display result, loommux
-authors the combined log with its own stable coordinate:
+The integer is the number IPython gives the same cell: `In [5]` in a result is
+`In[5]` and `_i5` inside the kernel. `restart` starts the count again, as a
+notebook does; the records of the replaced process go with it, and what an
+agent saw of them is in its own transcript. When a cell yields a `text/plain`
+display result, the combined log carries the same coordinate:
 
 ```text
 Out[5]: 42
@@ -360,7 +361,7 @@ record, then the most recently accepted record. With neither, the tool returns
 | `search_output(...)` | Search a selected output stream using literal text or regular expressions. |
 | `wait(execution=None, timeout_seconds=30)` | Wait for an execution without interrupting it. |
 | `interrupt()` | Send an interrupt signal to the current running execution. |
-| `restart()` | Restart the kernel while preserving execution records and the resource-local sequence. |
+| `restart()` | Restart the kernel; its execution records are cleared and the next cell is `In [1]`. |
 
 ### Submitting A Cell
 

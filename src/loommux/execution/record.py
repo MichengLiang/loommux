@@ -49,7 +49,6 @@ class Execution:
     _full_output_requested: bool = field(default=False, repr=False)
     error: dict[str, Any] | None = None
     completed_at: float | None = None
-    execution_count_at_submit: int | None = None
     msg_id: str | None = None
     interrupt_requested: bool = False
     done: threading.Event = field(default_factory=threading.Event, repr=False)
@@ -227,7 +226,6 @@ class Execution:
             "updated_at": self.updated_at,
             "completed_at": self.completed_at,
             "kernel_pid": self.kernel_pid,
-            "execution_count_at_submit": self.execution_count_at_submit,
             "error": self.error_summary,
             "output_total_lines": output_total_lines,
             "output_total_characters": combined_log.character_count,

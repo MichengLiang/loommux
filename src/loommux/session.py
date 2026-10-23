@@ -150,7 +150,6 @@ class IPythonSession:
                 "busy": self.current_execution is not None,
                 "current_execution": self.current_execution,
                 "recent_execution": self.recent_execution,
-                "kernel_execution_count": kernel.latest_execution_count if kernel is not None else 0,
             }
 
     def execution_status(self, execution: int | None = None) -> dict[str, Any]:
@@ -239,6 +238,8 @@ class IPythonSession:
             self.current_execution = None
             record.record_error({"ename": "KeyboardInterrupt", "evalue": "", "traceback": []})
             record.finish()
+            # A new process numbers its cells from 1, exactly as after restart().
+            self._forget_records_locked()
             workspace, python_path = self.workspace, self.python_path
         try:
             kernel = self._replace_kernel(old_kernel, workspace, python_path)
@@ -257,11 +258,24 @@ class IPythonSession:
             self.current_execution = None
             if running is not None and running.is_running:
                 running.kill()
+            self._forget_records_locked()
         try:
             kernel = self._replace_kernel(old_kernel, workspace, python_path)
         except Exception as exc:
             return self._workspace_error("kernel_start_failed", f"kernel failed to restart: {exc}", workspace, python_path)
         return {"ok": True, "status": "restarted", "workspace": str(workspace), "workspace_resolution": self.workspace_resolution, "python": str(python_path), "kernel_started": True, "kernel_pid": kernel.pid, "busy": False, "current_execution": None, "recent_execution": self.recent_execution}
+
+    def _forget_records_locked(self) -> None:
+        """Begin the count again with the kernel process that is about to replace this one.
+
+        IPython numbers the new process's cells from 1, and a loommux execution
+        is IPython's number, so records of the old process cannot stay: two of
+        them would answer to one number. What the agent saw of them is in its
+        own transcript.
+        """
+        self.executions.clear()
+        self.recent_execution = None
+        self._next_execution = 1
 
     def _close_kernel(self) -> None:
         with self._lock:
@@ -315,7 +329,7 @@ class IPythonSession:
 
     def _kernel_status(self) -> dict[str, Any]:
         kernel = self.kernel
-        return {"busy": self.current_execution is not None, "kernel_pid": kernel.pid if kernel is not None else None, "execution_count": kernel.latest_execution_count if kernel is not None else 0}
+        return {"busy": self.current_execution is not None, "kernel_pid": kernel.pid if kernel is not None else None}
 
     def _new_kernel_session(self, workspace: Path, python_path: Path) -> KernelSession:
         return KernelSession(
