@@ -240,6 +240,9 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
         每个 kernel 里都有 ``loommux`` 对象：``loommux.kernels()`` 列出所有 kernel，
         ``loommux["build"].run(code)`` 在后台提交并返回 job。
 
+        什么时候用呢？仅存在同时想利用Kernel本身（如果Shellwork合适优先使用）去跑长任务的同时，还想要使用主科诺去做别的事情使用。
+        如果你要做的事情本身就是阻塞当前的这个任务，那么请只使用主Kernel.
+
         主 kernel
         ---------
 
@@ -260,12 +263,7 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
         执行编号与后续操作
         --------------------
 
-        每个已接受的提交都会获得一个连续递增的正整数 ``execution``。后续工具
-        使用它定位当前持久 IPython 会话中的这次执行。若执行仍在运行，或未标记
-        ``--full-output`` 的 combined 输出超过 5,000 token，响应不携带完整输出
-        正文；行数、Unicode code point 字符数和 UTF-8 字节数描述同一份
-        normalized combined 文本。使用 ``wait`` 等待，使用 ``execution_status``
-        查看状态，使用 ``read_output`` 或 ``search_output`` 读取或搜索保留的输出。
+        提交成功可以获得一个 ``execution``。后续工具使用它定位当前持久 IPython 会话中的这次执行。
 
         Args:
             freeform: 原始 IPython cell 源码文本。
@@ -284,13 +282,11 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
         --------
 
         还返回当前 IPython 工作台启动时解析的 workspace、其
-        ``workspace_resolution`` 来源
-        类别、Python 解释器、kernel PID、kernel 是否已启动，以及 kernel 是否
-        正忙。``workspace_resolution`` 只能是 ``launch_cwd`` 或
-        ``explicit_config``；忙碌时 ``current_execution`` 是正在
-        运行的正整数执行编号；空闲时 ``recent_execution`` 是最近一次被接受的
-        执行编号。kernel-local execution count 只用于诊断，不能用来选择
-        loommux execution。
+        ``workspace_resolution`` 来源类别、Python 解释器、kernel PID、kernel 是否已启动，以及 kernel 是否正忙。
+        ``workspace_resolution`` 只能是 ``launch_cwd`` 或``explicit_config``；
+        忙碌时 ``current_execution`` 是正在运行的正整数执行编号；
+        空闲时 ``recent_execution`` 是最近一次被接受的执行编号。
+        kernel-local execution count 只用于诊断，不能用来选择loommux execution。
 
         .. code-block:: text
 
