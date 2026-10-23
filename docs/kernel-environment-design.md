@@ -14,17 +14,19 @@
 
 ## 1. Decision
 
-loommux is pointed at one **configuration directory** when it starts:
+loommux uses one **configuration directory**: the nearest `.loommux/` at or
+above the directory it is started in, or the directory `--config DIR` names.
 
 ```text
-loommux --server --config .loommux
+loommux --server              # in the workbench, or any directory below it
 
-.loommux/
+.loommux/           found upward from the launch directory
     config.py        read once, by the daemon, when it starts
     startup/         run by every kernel, every time it starts, in name order
         00-vitals.ipy
 ```
 
+- The daemon logs, as it starts, which directory it uses and how it was found.
 - `config.py` is a Python module. Its plain names are settings, such as
   `lease_mode = "connection"`; a function `resolve_workspace(launch_cwd)`
   chooses the kernel workspace. A public name that is not a setting stops the
@@ -49,19 +51,22 @@ Each rule below is one other tools reached before; loommux takes it as it is.
 
 | Rule | Prior art | Here |
 | --- | --- | --- |
-| Configuration and startup files live together in one directory the program is pointed at | an IPython profile directory holds `ipython_config.py` and `startup/`; `ipython --profile-dir DIR` | `--config DIR` holding `config.py` and `startup/` |
+| Configuration and startup files live together in one directory | an IPython profile directory holds `ipython_config.py` and `startup/` | `.loommux/` holding `config.py` and `startup/` |
+| A tool finds its configuration by walking up from where it starts, and the nearest wins; a flag names another | git finds `.git`, just a `justfile`, Ruff and pytest a `pyproject.toml`, Claude Code `CLAUDE.md` and `.claude/`; `ruff --config`, `just --justfile`, `ipython --profile-dir` | the nearest `.loommux/`; `--config DIR` |
 | A configuration file is a Python module whose plain names are the settings | Sphinx `conf.py`; Django settings modules | `lease_mode = "connection"` |
 | Startup files run in name order, `.py` and `.ipy` alike, and are not recorded as input | IPython runs `startup/00-first.py` … with `store_history=False` | each file is one request with `store_history=False` |
-| A file inside a project tree runs only after someone explicitly allows it | direnv `allow`; VS Code workspace trust; git never runs hooks it cloned | the directory is named by `--config`, never discovered |
 | An unknown option is an error, not a silent default | argparse rejects unknown options; Ruff rejects unknown settings | an unknown name in `config.py` stops the start |
 | Restarting a kernel starts its count again | after a Jupyter Notebook restart the next cell is `In [1]` | records are cleared, the next cell is `In [1]` |
 | A warning travels apart from the program's output, and a repeated one is shown once | Python's `warnings` reach stderr, not stdout, and the default filter shows each once; an andon lamp hangs above the station, not on the product | notices are their own block, each delivered once |
 
 ## 3. Journeys
 
-1. Xiaoliang starts loommux with `just loommux`, which runs
-   `loommux --server --config .loommux`. Every value the daemon uses, and why,
-   is in `.loommux/config.py`; the justfile recipe is one command.
+1. Xiaoliang starts loommux with `just loommux`, which runs `loommux --server`
+   in the workbench. The daemon logs that it uses the workbench's `.loommux/`.
+   Every value it uses, and why, is in `.loommux/config.py`; the justfile
+   recipe is one command. A Claude Code that starts loommux over stdio in a
+   project below the workbench finds the same directory, as it finds the
+   workbench's `CLAUDE.md`.
 2. An agent's first cell opens a main kernel. The kernel already holds the
    environment the startup files set up, such as the vitals alarm, and the
    agent's first cell is `In [1]`.
@@ -82,19 +87,34 @@ Each rule below is one other tools reached before; loommux takes it as it is.
 
 ## 4. The Configuration Directory
 
-### 4.1 Authorization
+### 4.1 Finding it
 
-`--config DIR` names the directory. A relative path is read from the directory
-loommux is started in, as every command-line path is. The directory must exist;
+Without `--config`, loommux looks at the launch directory and then at each
+ancestor in turn, and uses the first `.loommux` that is a directory. When none
+is found, every setting has its default and the workspace is the launch
+directory.
+
+`--config DIR` names the directory instead, and nothing is searched. A relative
+path is read from the launch directory, as every command-line path is. The
+directory must exist.
+
 `config.py` and `startup/` are each optional, so a directory with neither
 configures nothing and is accepted.
 
-loommux never looks for a configuration directory by itself: not in the launch
-directory, not in its ancestors. The control-plane design (section 2.3) records
-why: workspace resolution once searched upward for a Python file, so any file in
-the tree could change the workspace and run before the kernel existed. Under
-stdio the launch directory is whatever project the MCP host opened. The person
-who writes `--config` into a command is the one who allows the directory to run.
+As it starts, the daemon logs one line: the directory and whether it was found
+or named, or that there is none. Which configuration applies is then a fact in
+the log, as `git rev-parse --show-toplevel` answers which repository a command
+is in.
+
+An earlier version of this design never searched. Its reason was that a file in
+the tree could change the workspace and run before any kernel existed, so only
+a command that named the directory could allow it to run. That reason guards the
+tree from the person who starts loommux, and they are the same person: loommux
+is started by its owner, in a directory of theirs, by a command or an MCP
+configuration they wrote, and the kernels it opens run whatever that person
+types. Starting a program in a directory is already the act of trusting it, as
+it is for just with a justfile, for pytest with a `conftest.py`, and for Claude
+Code with the hooks in `.claude/`.
 
 ### 4.2 `config.py`
 
@@ -191,8 +211,8 @@ is exactly what it exists to remove. loommux runs whatever the directory holds;
 this is the rule for whoever writes it.
 
 The user's own IPython profile is still never read (control-plane design,
-section 6.3). The configuration directory is an input someone named, not one
-found in a home directory.
+section 6.3). What configures a kernel is the `.loommux/` of the tree loommux
+runs in, not IPython's per-user state.
 
 ## 6. Notices
 
@@ -271,10 +291,10 @@ and `status` had to warn that the kernel's own count must never be used.
 What the kept records offered is kept elsewhere already: Claude Code stores
 every tool call and every result in its transcript, which the transcripts SDK
 reads back. The one exception is an output body omitted by the 5,000-token
-limit, which only loommux holds; restart loses it, and an agent that will need
-it writes it to a file first. Restarting is starting again, as it is in a
-notebook. The process replacement that stands for an interrupt on Windows is a
-new process too, and starts again the same way.
+limit, which only loommux holds, and restart loses it with the rest.
+Restarting is starting again, as it is in a notebook. The process replacement
+that stands for an interrupt on Windows is a new process too, and starts again
+the same way.
 
 ### 7.3 Removed
 
@@ -295,7 +315,8 @@ retention decide a kernel's life.
 
 | Alternative | Why not |
 | --- | --- |
-| Discover `.loommux/` in the launch directory, as just finds a justfile | under stdio the launch directory is any project the host opened; the control-plane design removed exactly this (section 4.1) |
+| Name the directory only with `--config`, never discover it | it guards the tree from its own owner, who is the person starting loommux (section 4.1) |
+| Look only in the launch directory, not its ancestors | a Claude Code that starts loommux in a project below the workbench would miss the workbench's environment; `.git`, `pyproject.toml` and `CLAUDE.md` are all found upward |
 | Keep the environment variables as an override layer over the file | one value with two entrances; a test that needs other values writes its own directory |
 | Let IPython run the startup files through `exec_files` | their failures would have no owner and reach nobody (section 5.2) |
 | Keep notices as the last printed line | the 5,000-token limit omits them with the output they end |
@@ -307,9 +328,9 @@ retention decide a kernel's life.
 
 | ID | Behavior | Proved by |
 | --- | --- | --- |
-| E1 | `--config` settings take effect, and `resolve_workspace` sets the workspace and `explicit_config` | `tests/test_config.py`, `tests/test_workspace_config.py` |
+| E1 | the directory's settings take effect, and `resolve_workspace` sets the workspace and `explicit_config` | `tests/test_config.py`, `tests/test_workspace_config.py` |
 | E2 | a missing or non-directory path, a raising file, an unknown name and an invalid value each stop the start with their status | `tests/test_config.py` |
-| E3 | without `--config`, defaults apply and a `.loommux/` in the launch directory is not read | `tests/test_config.py` |
+| E3 | without `--config`, the nearest `.loommux/` at or above the launch directory is used and none means defaults; `--config` overrides and the discovered one is not run; the start logs which | `tests/test_config.py`, `tests/mcp/test_entrypoints.py` |
 | E4 | IPython's count agrees with loommux's; after restart the next cell is `In [1]` and earlier records are gone | `tests/session/test_session.py` |
 | E5 | a notice arrives after omitted output, stays out of the output streams, is delivered once, labeled when it is another execution's, and is bounded | `tests/session/test_notices.py`, `tests/mcp/test_presentation.py` |
 | E6 | a forwarded cell relays its child's notices | `tests/mcp/test_kernel_control.py` |

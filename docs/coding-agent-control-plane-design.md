@@ -57,9 +57,10 @@ IPython 的默认行为会读取用户级 profile，持久保存输入历史，�
 这些状态不是通过八个 tools 建立或观察的对象。它们可能写入用户 home、保留大型
 对象，或在不同 server session 之间引入不可见差异。
 
-workspace 解析曾通过从 launch cwd 向上搜索同名 Python 文件实现。目录树中出现
-一个文件即可改变 workspace，并在 kernel 创建前执行 Python。项目目录不是
-自动获得执行 server 配置代码权限的来源。
+workspace 解析曾由向上找到的独立文件 `loommux_workspace.py` 决定。它与 server
+的其他设置分处两个入口，启动时也看不出用的是哪一个。现在 resolver 与全部设置
+同在一个配置目录的 `config.py` 里，daemon 启动时记下用的是哪个目录
+（[Kernel Environment Design](kernel-environment-design.md) 第 4.1 节）。
 
 IOPub 文本事件可以携带 ANSI terminal formatting。实际 Python 库可以在非 TTY
 的 Jupyter 路径中产生这类格式。仅依赖 `NO_COLOR` 或移除某个环境变量不能保证
@@ -114,7 +115,7 @@ Streamable HTTP，默认 bind 为 `127.0.0.1:8801/mcp`。workspace 在两种启�
 
 | 层 | 输入来源 | 负责对象 | 不可控制对象 |
 | --- | --- | --- | --- |
-| Host workspace 层 | MCP host 的 cwd 与 `--config` 目录中的 resolver。 | kernel workspace。 | kernel interpreter、IPython policy。 |
+| Host workspace 层 | MCP host 的 cwd 与配置目录中的 resolver。 | kernel workspace。 | kernel interpreter、IPython policy。 |
 | Kernel bootstrap 层 | `loommux` 内置 coding-agent policy。 | kernel command、私有 runtime root、受控 child environment。 | 项目业务环境语义。 |
 | Execution 层 | 八个 MCP tools。 | execution 生命周期、kernel 控制、日志读取。 | workspace 的运行时切换。 |
 | Output projection 层 | IOPub text 与展示 events。 | stream、combined log 与有序图像内容。 | 终端屏幕渲染。 |
@@ -128,15 +129,14 @@ projection 层不启动或控制 kernel。任何实现不得让一个层通过�
 
 ### 5.1 Canonical surface
 
-`loommux --config DIR` 所指配置目录中的 `config.py` 是 workspace resolver 的唯一
-配置入口。配置目录的规格见
+配置目录中的 `config.py` 是 workspace resolver 的唯一配置入口。配置目录是从
+launch cwd 向上找到的最近 `.loommux/`，或 `--config DIR` 所指的目录；规格见
 [Kernel Environment Design](kernel-environment-design.md) 第 4 节。
 
-未给出 `--config`，或 `config.py` 没有定义 `resolve_workspace` 时，workspace
+没有配置目录，或 `config.py` 没有定义 `resolve_workspace` 时，workspace
 等于解析后的 launch cwd。此路径是 MCP host 启动 server process 时指定的 cwd。
 
-`config.py` 定义 `resolve_workspace` 时，它是 host 明确授权执行的 Python
-resolver，使用下列 public surface：
+`config.py` 定义 `resolve_workspace` 时，它使用下列 public surface：
 
 ```python
 from pathlib import Path
@@ -152,13 +152,14 @@ kernel 环境，不注册 tool，不修改 output policy。
 
 ### 5.2 授权规则
 
-workspace 树及其祖先目录中的文件不具有自动配置权。`loommux` 不搜索
-`loommux_workspace.py` 或 `.loommux`，不搜索 `.git`、`.codex`、`.claude`、
-`pyproject.toml` 或其他目录标记。
+配置目录的授权来自启动 loommux 的人。在一个目录里启动它，或在 MCP 配置里写下
+它的启动命令，就是让这棵树里最近的 `.loommux/` 生效，如同在一个目录里运行
+just、pytest 或 Claude Code。启动它的人就是这棵树的主人，它打开的 kernel 本来
+就执行这个人写下的任何代码。
 
-`--config DIR` 是唯一的执行授权。MCP host 的所有者可将配置目录放在任意受信任
-位置，例如工作台仓库、用户配置目录或企业配置仓库。该位置不是 `loommux` 的
-隐式约定，必须由启动命令明确给出。
+`loommux` 只认 `.loommux`，不把 `.git`、`.codex`、`.claude`、`pyproject.toml`
+或其他工具的目录标记当作自己的配置。`--config DIR` 指定任意位置的配置目录，
+此时不再搜索。
 
 官方 examples 提供 Codex 配置目录 `examples/config/codex/`。它的 resolver
 从 launch cwd 向上寻找最近 `.codex` 目录并返回其父目录；不存在该标记时返回
@@ -318,7 +319,7 @@ text transcript，不写入文本行日志，也不以 Base64 文本替代。它
 下图描述对象之间的方向关系。
 
 ```text
-MCP host cwd + optional resolver in the --config directory
+MCP host cwd + optional resolver in the configuration directory
         |
         v
 workspace resolver -----> workspace + workspace_resolution
@@ -363,9 +364,8 @@ run_cell ---------------------------------------------------+
 1. 八个 tools 保持第 2.2 节定义的职责，且不增加 profile selector。
 2. `loommux` 正整数 `execution` 是唯一公开执行坐标，且等于 IPython 给同一个
    cell 的 execution count。
-3. 未授权 resolver 时，workspace 等于 launch cwd，workspace 树中的 Python 不会
-   自动执行。
-4. 授权 resolver 的失败阻止 tool 暴露，不得产生错误 workspace。
+3. 配置目录没有定义 resolver 时，workspace 等于 launch cwd。
+4. resolver 的失败阻止 tool 暴露，不得产生错误 workspace。
 5. kernel 的 IPython history、output cache、用户 home profile 与
    `PYTHONSTARTUP` 不成为 session 的隐式输入或持久输出。
 6. start 与 reset 的 kernel 都满足第 6 节的同一 policy。
@@ -396,22 +396,27 @@ reset 后旧记录不再可读，下一个 accepted cell 的 execution 为 1。�
 
 ### 10.2 Default workspace 与显式 resolver
 
-**初始条件：** 创建一个 launch cwd、其嵌套目录和祖先目录中的同名
-`loommux_workspace.py` 与 `.loommux/config.py`。它们在执行时会创建一个可观察
-标记文件。
+**初始条件：** 一个上方没有任何 `.loommux/` 的目录树；树根放一个
+`.loommux/config.py`，其 resolver 返回指定子目录，并在执行时创建一个可观察
+标记文件；另有一个树外的配置目录。
 
-**动作：** 不给 `--config` 启动 server，并调用 `status` 与
+**动作：** 在树外的空目录中不给 `--config` 启动 server，并调用 `status` 与
 `run_cell("import os; print(os.getcwd())")`。
 
 **验收：** `workspace`、kernel cwd 都等于 launch cwd；`workspace_resolution`
-等于 `launch_cwd`；标记文件不存在。
+等于 `launch_cwd`。
 
-**动作：** 以 `--config` 指向一个配置目录，其 `config.py` 的 resolver 返回指定
-子目录；随后启动 server 并重复状态与 cwd 观察。
+**动作：** 在树中一个嵌套目录里不给 `--config` 启动 server，重复状态与 cwd
+观察。
 
 **验收：** `workspace`、kernel cwd 都等于 resolver 返回目录；
-`workspace_resolution` 等于 `explicit_config`；不给 `--config` 的启动不会执行此
-resolver。
+`workspace_resolution` 等于 `explicit_config`；启动日志写明用的是树根的
+`.loommux/`。
+
+**动作：** 在同一嵌套目录里以 `--config` 指向树外的配置目录启动 server。
+
+**验收：** 生效的是树外目录；树根 `.loommux/config.py` 没有执行，标记文件
+不存在。
 
 ### 10.3 Resolver 失败
 
@@ -444,7 +449,8 @@ workspace 是 launch cwd。该行为只在显式选择 example 时发生。
 内部可观察的 IPython directory 与 `JUPYTER_CONFIG_DIR` 指向 session private
 runtime root；`HistoryManager.enabled` 为 false；displayhook cache size 为零；
 reset 前后的 private runtime root 不相同，旧 root 已清理。
-`--config` 目录的 `startup/` 是有人明确给出的输入，不属于本场景排除的隐式状态。
+配置目录的 `startup/` 属于启动 loommux 的那棵树，不属于本场景排除的用户级
+隐式状态。
 
 ### 10.6 Terminal text
 
@@ -471,7 +477,7 @@ reset 前后的 private runtime root 不相同，旧 root 已清理。
 
 | 文件 | 职责 |
 | --- | --- |
-| `src/loommux/config.py` | 读取、验证并加载 `--config` 目录：设置、resolver 与 startup 目录。 |
+| `src/loommux/config.py` | 找到、读取、验证并加载配置目录：设置、resolver 与 startup 目录。 |
 | `src/loommux/workspace_resolver.py` | launch cwd、显式 resolver 和 workspace resolution。 |
 | `src/loommux/kernel/launch.py` | `KernelLaunch`、private runtime root、kernel command 与 child environment。 |
 | `src/loommux/kernel/session.py` | 启动 `KernelLaunch`、接收 IOPub、规范化文本并采集展示 data bundle 与提醒。 |
