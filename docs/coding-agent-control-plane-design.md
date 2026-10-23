@@ -23,7 +23,8 @@ coding agent 不持续观看终端屏幕。它发起一个工具调用，读取�
 一个 server process 拥有一个 kernel。kernel namespace 中的变量、导入和
 定义在该 process 的生命周期内持续存在。每一次被接受的 Python cell 都拥有
 由 `loommux` 分配的正整数 `execution`。该整数是 agent 观察一次执行的唯一
-公共坐标。
+公共坐标，也是 IPython 给同一个 cell 的 execution count
+（[Kernel Environment Design](kernel-environment-design.md) 第 7 节）。
 
 ### 2.2 八工具控制闭环
 
@@ -39,7 +40,7 @@ coding agent 不持续观看终端屏幕。它发起一个工具调用，读取�
 | `search_output` | 在一个 execution 的指定文本流中定位匹配文本。 | 不改变 kernel 状态。 |
 | `wait` | 在给定等待时长内等待一个 execution 进入可观察状态。 | 不终止 execution。 |
 | `interrupt` | 向当前运行的 execution 请求中断。 | 不重启 kernel。 |
-| `restart` | 替换 kernel，并保留既有 execution 的可读记录。 | 不保留旧 kernel namespace。 |
+| `restart` | 替换 kernel，清空 execution 记录；下一个 cell 的 `execution` 为 1。 | 不保留旧 kernel namespace，也不保留旧记录。 |
 
 正常工作流是：`run_cell` 创建 execution；完成的小输出直接成为观察面；
 运行中的 execution 由 `wait`、`execution_status`、
@@ -113,7 +114,7 @@ Streamable HTTP，默认 bind 为 `127.0.0.1:8801/mcp`。workspace 在两种启�
 
 | 层 | 输入来源 | 负责对象 | 不可控制对象 |
 | --- | --- | --- | --- |
-| Host workspace 层 | MCP host 的 cwd 与显式 resolver 路径。 | kernel workspace。 | kernel interpreter、IPython policy。 |
+| Host workspace 层 | MCP host 的 cwd 与 `--config` 目录中的 resolver。 | kernel workspace。 | kernel interpreter、IPython policy。 |
 | Kernel bootstrap 层 | `loommux` 内置 coding-agent policy。 | kernel command、私有 runtime root、受控 child environment。 | 项目业务环境语义。 |
 | Execution 层 | 八个 MCP tools。 | execution 生命周期、kernel 控制、日志读取。 | workspace 的运行时切换。 |
 | Output projection 层 | IOPub text 与展示 events。 | stream、combined log 与有序图像内容。 | 终端屏幕渲染。 |
@@ -127,13 +128,15 @@ projection 层不启动或控制 kernel。任何实现不得让一个层通过�
 
 ### 5.1 Canonical surface
 
-`LOOMMUX_WORKSPACE_CONFIG` 是 workspace resolver 的唯一配置入口。
+`loommux --config DIR` 所指配置目录中的 `config.py` 是 workspace resolver 的唯一
+配置入口。配置目录的规格见
+[Kernel Environment Design](kernel-environment-design.md) 第 4 节。
 
-环境变量未设置时，workspace 等于解析后的 launch cwd。此路径是 MCP host 启动
-server process 时指定的 cwd。
+未给出 `--config`，或 `config.py` 没有定义 `resolve_workspace` 时，workspace
+等于解析后的 launch cwd。此路径是 MCP host 启动 server process 时指定的 cwd。
 
-环境变量设置时，其值必须是绝对路径，且必须指向一个普通文件。该文件是 host
-明确授权执行的 Python resolver。resolver 使用下列 public surface：
+`config.py` 定义 `resolve_workspace` 时，它是 host 明确授权执行的 Python
+resolver，使用下列 public surface：
 
 ```python
 from pathlib import Path
@@ -150,16 +153,16 @@ kernel 环境，不注册 tool，不修改 output policy。
 ### 5.2 授权规则
 
 workspace 树及其祖先目录中的文件不具有自动配置权。`loommux` 不搜索
-`loommux_workspace.py`，不搜索 `.git`、`.codex`、`.claude`、`pyproject.toml`
-或其他目录标记。
+`loommux_workspace.py` 或 `.loommux`，不搜索 `.git`、`.codex`、`.claude`、
+`pyproject.toml` 或其他目录标记。
 
-`LOOMMUX_WORKSPACE_CONFIG` 的绝对路径是唯一的执行授权。MCP host 的所有者可将
-resolver 放在任意受信任位置，例如用户配置目录、企业配置仓库或受控的宿主配置
-目录。该位置不是 `loommux` 的隐式约定，必须由 host 明确提供。
+`--config DIR` 是唯一的执行授权。MCP host 的所有者可将配置目录放在任意受信任
+位置，例如工作台仓库、用户配置目录或企业配置仓库。该位置不是 `loommux` 的
+隐式约定，必须由启动命令明确给出。
 
-官方 examples 提供 generic resolver 与 Codex resolver。Codex resolver 可以
+官方 examples 提供 Codex 配置目录 `examples/config/codex/`。它的 resolver
 从 launch cwd 向上寻找最近 `.codex` 目录并返回其父目录；不存在该标记时返回
-launch cwd。该行为属于示例 resolver，不属于 `loommux` 默认行为。
+launch cwd。该行为属于示例配置，不属于 `loommux` 默认行为。
 
 ### 5.3 解释器规则
 
@@ -168,15 +171,15 @@ kernel interpreter 始终是 server process 的 `sys.executable`。这是已经�
 
 ### 5.4 失败表面
 
-resolver 配置错误必须在 MCP tools 暴露前使 server 初始化失败。不得静默回退到
-launch cwd。
+配置目录与 resolver 的错误必须在 MCP tools 暴露前使 server 初始化失败。不得静默
+回退到 launch cwd。配置目录本身的失败状态（`config_not_found`、
+`config_not_directory`、`config_load_failed`、`config_unknown_setting`、
+`config_invalid_setting`）见 Kernel Environment Design 第 4.2 节；resolver 的
+失败状态如下。
 
 | 状态 | 条件 |
 | --- | --- |
-| `workspace_config_not_absolute` | `LOOMMUX_WORKSPACE_CONFIG` 不是绝对路径。 |
-| `workspace_config_not_found` | 配置路径不存在。 |
-| `workspace_config_not_file` | 配置路径不是普通文件。 |
-| `workspace_config_load_failed` | resolver 文件无法加载或执行。 |
+| `workspace_config_load_failed` | resolver 执行时抛出异常。 |
 | `workspace_config_invalid_return` | resolver 未返回 `str` 或 `Path`。 |
 | `workspace_not_found` | 解析后的 workspace 不存在。 |
 | `workspace_not_directory` | 解析后的 workspace 不是目录。 |
@@ -298,7 +301,7 @@ execution 的 `stdout` 与 `stderr`，normalizer 分别维护足以识别跨 chu
 
 `result` stream 的 `text/plain` 保持其文本内容。向 `combined` 追加该内容时，
 `loommux` 使用稳定的 `Out[<execution>]:` 前缀。前缀中的整数是 `loommux`
-execution，不是 IPython kernel-local execution count。
+execution，也就是 IPython 给这个 cell 的 execution count。
 
 ### 7.4 图像展示投影
 
@@ -315,7 +318,7 @@ text transcript，不写入文本行日志，也不以 Base64 文本替代。它
 下图描述对象之间的方向关系。
 
 ```text
-MCP host cwd + optional explicit resolver
+MCP host cwd + optional resolver in the --config directory
         |
         v
 workspace resolver -----> workspace + workspace_resolution
@@ -346,20 +349,20 @@ run_cell ---------------------------------------------------+
 | workspace 与 workspace resolution | server process | server process 生命周期 | `status` |
 | kernel namespace | kernel session | start 至 shutdown 或 reset | `run_cell` 的后续 cell |
 | private runtime root | `KernelSession` | 一个 kernel session | 不作为常规 MCP 输出公开 |
-| execution records 与 output logs | adapter | server process 生命周期 | execution status、read、search、wait |
-| ordered display events | execution record | server process 生命周期 | `run_cell` 与 `wait` 的 MCP content |
+| execution records 与 output logs | `IPythonSession` | 一个 kernel 进程：start 至 shutdown 或 reset | execution status、read、search、wait |
+| ordered display events | execution record | 同其 execution record | `run_cell` 与 `wait` 的 MCP content |
 | terminal normalizer state | 一个 execution 的 stream 投影 | 该 execution 的 IOPub 处理期间 | 只通过规范化后的日志观察 |
 
 任何状态不得跨越其拥有者的生命周期伪装为另一种状态。特别是 IPython history
-不是 execution record，private runtime root 不是 workspace，kernel-local count
-不是 public execution coordinate。
+不是 execution record，private runtime root 不是 workspace。
 
 ## 9. 对外不变量
 
 下列陈述同时成立时，coding agent control plane 才成立。
 
 1. 八个 tools 保持第 2.2 节定义的职责，且不增加 profile selector。
-2. `loommux` 正整数 `execution` 是唯一公开执行坐标。
+2. `loommux` 正整数 `execution` 是唯一公开执行坐标，且等于 IPython 给同一个
+   cell 的 execution count。
 3. 未授权 resolver 时，workspace 等于 launch cwd，workspace 树中的 Python 不会
    自动执行。
 4. 授权 resolver 的失败阻止 tool 暴露，不得产生错误 workspace。
@@ -388,39 +391,41 @@ public tool surface。私有函数的单元测试可以补充边界覆盖，但�
 
 **验收：** 每一个 accepted cell 都有连续正整数 execution；运行状态和终态可由
 对应 tool 观察；日志可按 stream 读取和搜索；interrupt 只控制当前运行 execution；
-reset 后旧记录仍可读取且新 execution 连续。配置改造不得改变这些观察结果的
-职责边界。
+reset 后旧记录不再可读，下一个 accepted cell 的 execution 为 1。配置改造不得
+改变这些观察结果的职责边界。
 
 ### 10.2 Default workspace 与显式 resolver
 
 **初始条件：** 创建一个 launch cwd、其嵌套目录和祖先目录中的同名
-`loommux_workspace.py`。该同名文件在执行时会创建一个可观察标记文件。
+`loommux_workspace.py` 与 `.loommux/config.py`。它们在执行时会创建一个可观察
+标记文件。
 
-**动作：** 不设置 `LOOMMUX_WORKSPACE_CONFIG` 启动 server，并调用
-`status` 与 `run_cell("import os; print(os.getcwd())")`。
+**动作：** 不给 `--config` 启动 server，并调用 `status` 与
+`run_cell("import os; print(os.getcwd())")`。
 
 **验收：** `workspace`、kernel cwd 都等于 launch cwd；`workspace_resolution`
 等于 `launch_cwd`；标记文件不存在。
 
-**动作：** 设置 `LOOMMUX_WORKSPACE_CONFIG` 为一个绝对路径 resolver。该 resolver
-返回指定子目录；随后启动 server 并重复状态与 cwd 观察。
+**动作：** 以 `--config` 指向一个配置目录，其 `config.py` 的 resolver 返回指定
+子目录；随后启动 server 并重复状态与 cwd 观察。
 
 **验收：** `workspace`、kernel cwd 都等于 resolver 返回目录；
-`workspace_resolution` 等于 `explicit_config`；未设置该变量的启动不会执行此
+`workspace_resolution` 等于 `explicit_config`；不给 `--config` 的启动不会执行此
 resolver。
 
 ### 10.3 Resolver 失败
 
-**动作：** 分别提供相对 resolver 路径、缺失路径、目录路径、加载时抛出异常的
-文件、返回整数的文件、返回缺失路径的文件和返回普通文件的文件。
+**动作：** 分别提供执行时抛出异常的 resolver、返回整数的 resolver、返回缺失
+路径的 resolver 和返回普通文件的 resolver。
 
 **验收：** 每种输入在 tools 暴露前失败，且得到第 5.4 节相应的状态分类；任何
-场景都不回退到 launch cwd 或启动一个部分配置的 kernel。
+场景都不回退到 launch cwd 或启动一个部分配置的 kernel。配置目录本身的失败由
+Kernel Environment Design 第 10 节验收。
 
 ### 10.4 Codex resolver example
 
 **初始条件：** 创建嵌套 launch cwd，其中某个祖先目录含 `.codex`，并将官方
-Codex example 作为显式 resolver。
+Codex 配置目录 `examples/config/codex/` 作为 `--config`。
 
 **动作：** 启动 server 并观察 workspace。
 
@@ -439,6 +444,7 @@ workspace 是 launch cwd。该行为只在显式选择 example 时发生。
 内部可观察的 IPython directory 与 `JUPYTER_CONFIG_DIR` 指向 session private
 runtime root；`HistoryManager.enabled` 为 false；displayhook cache size 为零；
 reset 前后的 private runtime root 不相同，旧 root 已清理。
+`--config` 目录的 `startup/` 是有人明确给出的输入，不属于本场景排除的隐式状态。
 
 ### 10.6 Terminal text
 
@@ -465,18 +471,18 @@ reset 前后的 private runtime root 不相同，旧 root 已清理。
 
 | 文件 | 职责 |
 | --- | --- |
+| `src/loommux/config.py` | 读取、验证并加载 `--config` 目录：设置、resolver 与 startup 目录。 |
 | `src/loommux/workspace_resolver.py` | launch cwd、显式 resolver 和 workspace resolution。 |
-| `src/loommux/host_workspace_config.py` | 读取、验证和加载 `LOOMMUX_WORKSPACE_CONFIG`。 |
-| `src/loommux/coding_agent_kernel.py` | `KernelLaunch`、private runtime root、kernel command 与 child environment。 |
-| `src/loommux/terminal_text.py` | terminal text normalizer 及其跨 chunk 状态。 |
-| `src/loommux/kernel_session.py` | 启动 `KernelLaunch`、接收 IOPub、规范化文本并采集展示 data bundle。 |
-| `src/loommux/adapter.py` | execution 生命周期、文本与图像 MCP 投影、公开状态与 bootstrap 的集成。 |
-| `src/loommux/execution.py` | 已规范化文本、logs 与有序展示事件。 |
-| `src/loommux/mcp_result_policy.py` | text/image MCP content 的 ToolResult 构造。 |
+| `src/loommux/kernel/launch.py` | `KernelLaunch`、private runtime root、kernel command 与 child environment。 |
+| `src/loommux/kernel/session.py` | 启动 `KernelLaunch`、接收 IOPub、规范化文本并采集展示 data bundle 与提醒。 |
+| `src/loommux/execution/terminal.py` | terminal text normalizer 及其跨 chunk 状态。 |
+| `src/loommux/execution/record.py` | 已规范化文本、logs、有序展示事件与提醒。 |
+| `src/loommux/session.py` | execution 生命周期、编号、startup 文件与公开状态。 |
+| `src/loommux/mcp/result.py`、`src/loommux/mcp/presentation.py` | text/image MCP content 与提醒的 ToolResult 构造。 |
 | `tests/` | 本文第 10 节的真实 kernel 与 MCP 验收。 |
 
-旧的自动上溯 workspace 配置入口不属于该结构。generic 与 Codex resolver 作为
-examples 保留，不作为 package runtime 输入。
+旧的自动上溯 workspace 配置入口不属于该结构。Codex resolver 作为配置目录示例
+保留，不作为 package runtime 输入。
 
 README、workspace 配置文档、tool docstring 与输出设计文档必须引用本文定义的
 workspace surface、kernel policy 和 terminal text invariant。它们可以面向不同
