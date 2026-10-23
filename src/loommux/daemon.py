@@ -1,27 +1,6 @@
-"""Control a Loommux daemon from Python: the daemon's buttons and any kernel's.
+"""Control a Loommux daemon from Python; :class:`Daemon` is the map.
 
-Every Loommux kernel holds one :class:`Daemon` as ``loommux``, bound to the
-daemon that started it::
-
-    loommux.kernels()                  # every kernel, one row each
-    loommux.self                       # this kernel
-    build = loommux.create("build")    # a child kernel of this main kernel, opened if missing
-    loommux["/other-task/build"]       # another main kernel's child kernel; [] never opens
-    loommux.recycle("build")
-    loommux.notify("⚠ memory is low")  # to the agent, apart from this cell's output
-
-The daemon keeps the registry, so birth, death and names are its buttons; a
-:class:`Kernel` handle observes and controls one kernel. A name is a path:
-``/main/child`` from the root, a bare name from the caller's main kernel
-(docs/kernel-control-surface-design.md). Outside a kernel, ``Daemon()``
-connects to ``LOOMMUX_CONTROL_URL`` or to ``http://127.0.0.1:8801`` and reads
-every name from the root. The client speaks the daemon's HTTP control plane,
-so a mistake made through it stays in the calling process and can never stop
-the daemon's event loop.
-
-A kernel's identity is its environment, which its child processes inherit:
-a script started from a kernel acts as that kernel, holding what it opens on
-that kernel's behalf.
+The rules behind it are in docs/kernel-control-surface-design.md.
 """
 
 from __future__ import annotations
@@ -55,7 +34,51 @@ class DaemonError(RuntimeError):
 
 
 class Daemon:
-    """A client of one Loommux daemon's HTTP control plane."""
+    """A client of the Loommux daemon, as the ``docker`` command is of dockerd.
+
+    Every Loommux kernel, child kernels included, holds one as ``loommux``,
+    bound to the daemon that started it. Outside a kernel, ``Daemon()``
+    connects to ``LOOMMUX_CONTROL_URL`` or to ``http://127.0.0.1:8801``.
+
+    The daemon keeps the registry, so a kernel's birth, death and name are
+    its buttons. A :class:`Kernel` it hands out has the eight operations of
+    the MCP tools, with their names and parameters, so what an agent does to
+    its main kernel through the tools, code does to any kernel::
+
+        # the daemon's buttons
+        loommux.kernels()                  # every kernel, as the console lists them
+        loommux["build"]                   # find by name, path or id; never opens
+        build = loommux.create("build")    # open a child kernel of this main kernel, or find it
+        loommux.rename(loommux.self, "report")
+        loommux.recycle("build", force=False)
+        loommux.recycle_idle(); loommux.recycle_all()
+
+        # a kernel's buttons
+        n = build.run_cell("make()", wait_seconds=0)["execution"]
+        build.wait(n, timeout_seconds=600)
+        build.read_output(n, line_range="-20:")["text"]
+        build.search_output("error", n, ignore_case=True)["text"]
+        build.interrupt(); build.restart()
+
+        loommux.notify("⚠ memory is low")  # to the agent, apart from this cell's output
+
+    A name is a path. ``/main`` and ``/main/child`` are read from the root.
+    A bare name is read from the caller's main kernel: that main kernel's own
+    name or one of its child kernels'; outside a kernel it is a main kernel's.
+    An id names its kernel anywhere. Names change and ids do not, so a
+    reference that lasts keeps the id. Only an MCP session opens a main kernel
+    (``%%loommux --attach NAME --create``), because only its lease keeps one.
+
+    ``identity`` is the kernel this process is, read from its environment,
+    or ``None`` outside a kernel; a script started from a kernel inherits it
+    and acts as that kernel. ``url`` is the daemon's HTTP origin, or ``None``
+    under a stdio daemon, which serves no control plane.
+
+    The client speaks the daemon's HTTP control plane, so a mistake made
+    through it stays in the calling process and never stops the daemon's
+    event loop. A request the daemon refuses, or a daemon that cannot be
+    reached, raises :class:`DaemonError`.
+    """
 
     def __init__(self, url: str | None = None) -> None:
         self.identity = KernelIdentity.from_environ()
@@ -236,9 +259,11 @@ class Kernel:
         return self._session("POST", "/executions", json={"source": freeform, "wait_seconds": wait_seconds}, timeout=wait_seconds + _CONTROL_TIMEOUT_SECONDS)
 
     def execution_status(self, execution: int | None = None) -> dict[str, Any]:
+        """As the ``execution_status`` tool, for this kernel."""
         return self._session("GET", f"/executions/{_selected(execution)}")
 
     def read_output(self, execution: int | None = None, stream: str = "combined", line_range: str | None = None, max_chars: int | None = None) -> dict[str, Any]:
+        """As the ``read_output`` tool, for this kernel; the lines are ``["text"]``."""
         params = {"stream": stream} | _present(line_range=line_range, max_chars=max_chars)
         return self._session("GET", f"/executions/{_selected(execution)}/output", params=params)
 
@@ -253,14 +278,17 @@ class Kernel:
         ignore_case: bool = False,
         max_chars: int | None = None,
     ) -> dict[str, Any]:
+        """As the ``search_output`` tool, for this kernel; the marked lines are ``["text"]``."""
         params = {"query": query, "stream": stream, "query_mode": query_mode, "context_before": str(context_before), "context_after": str(context_after)}
         params |= {"ignore_case": "true"} if ignore_case else {}
         return self._session("GET", f"/executions/{_selected(execution)}/search", params=params | _present(max_chars=max_chars))
 
     def wait(self, execution: int | None = None, timeout_seconds: float = 30) -> dict[str, Any]:
+        """As the ``wait`` tool, for this kernel: running out of time ends this call, never the cell."""
         return self._session("POST", f"/executions/{_selected(execution)}/wait", json={"timeout_seconds": timeout_seconds}, timeout=timeout_seconds + _CONTROL_TIMEOUT_SECONDS)
 
     def interrupt(self) -> dict[str, Any]:
+        """As the ``interrupt`` tool, for this kernel: the cell it is running now."""
         return self.daemon._request("POST", f"/api/resources/{self.id}/interrupt")["result"]
 
     def restart(self) -> dict[str, Any]:
