@@ -33,13 +33,38 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - A named main kernel records its own retention. Snapshots report
   `retention_remaining_seconds` while it is what keeps the kernel, the console
   shows it as 保留, and the `Kernels` table as its `kept` column.
+- `loommux --config DIR` names a configuration directory shaped like an
+  IPython profile: `config.py`, run once in the daemon, whose plain names are
+  the settings (`lease_mode`, `named_activity_timeout_seconds`, …) and whose
+  `resolve_workspace(launch_cwd)` chooses the workspace; and `startup/`. A
+  public name that is not a setting, or a setting with a wrong value, stops
+  the start with `config_unknown_setting` or `config_invalid_setting`. The
+  directory is never discovered; `examples/config/codex/` and
+  `examples/lease-aware-client/config/` are examples.
+- The `.py` and `.ipy` files of `startup/` run in every kernel process (open,
+  restart, the Windows interrupt replacement) in name order before its first
+  cell, with `store_history=False`, so they take no execution number. A file
+  that raises, or runs past 60 seconds and is interrupted, becomes a
+  `Startup · NAME failed: …` notice and the next file still runs.
+- `loommux.notify(text)` speaks to the agent apart from a cell's output, from
+  the cell or its `pre_run_cell` / `post_run_cell` hooks. A notice never
+  enters an output stream and is never omitted by the 5,000-token limit:
+  every tool result ends with the notices no result has delivered, each once,
+  labeled `In [N] · ` when it belongs to another cell and `Startup · ` when a
+  startup file spoke it, before `Kernel:` and `Lease alert`; structured
+  results carry `notices`. A notice is cut at 500 characters, a cell keeps
+  ten. A forwarded cell speaks its child kernel's notices again as
+  `build · …`, and the control plane's combined follow hands an execution's
+  notices over with its final state.
+- Snapshots report `idle_since`, when the kernel last became idle, `null`
+  while a cell runs; the `Kernels` table shows it as its `idle` column.
 
 ### Changed
 
 - A named main kernel whose connection-lease sessions all left is no longer
   retired about a minute later. The departed lease is still released when the
   reconnect grace ends, and the kernel then keeps itself for the named window
-  (`LOOMMUX_NAMED_TTL_SECONDS`, 24 hours) after that lease's last renewal; it
+  (`named_activity_timeout_seconds`, 24 hours) after that lease's last renewal; it
   is retired when the window ends, busy or not (a running cell gets the orphan
   grace). Switching away with `--attach` clears it. An unnamed
   `private-<session>` kernel is retired with its lease as before; renaming it
@@ -59,12 +84,34 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - A session works in the main kernel that holds its lease, so the lease is
   its binding. A generated `private-<session>` name that another session's
   kernel already has is numbered instead of shared.
+- **Breaking:** a loommux execution number is the number IPython gives the
+  same cell, so `In [N]` in a result is `In[N]` and `_iN` inside the kernel.
+  `restart` therefore clears the execution records and the next cell is
+  `In [1]`; reading an execution from before the restart answers
+  `execution_not_found`. What a tool result showed stays in the client's
+  transcript; write output you will need after a restart to a file first.
+- **Breaking:** `ResourceServerSettings.from_environ()` is replaced by
+  `from_values()`, which reads `config.py` names, and `create_mcp()` takes a
+  `LoommuxConfig`; a `ServerFactory` receives it as its third argument.
 
 ### Removed
 
 - **Breaking:** `ResourceAddress`, `resolve_address`, and `named_address`
   from `loommux.resource`; `KernelRequest` and `connection_request` describe
   what a call asks for, and `LeasePolicy.timeout_for` takes `named=`.
+- **Breaking:** the environment no longer configures loommux.
+  `LOOMMUX_LEASE_MODE`, `LOOMMUX_PRIVATE_TTL_SECONDS`,
+  `LOOMMUX_NAMED_TTL_SECONDS`, `LOOMMUX_HEARTBEAT_INTERVAL_SECONDS`,
+  `LOOMMUX_HEARTBEAT_TIMEOUT_SECONDS`, `LOOMMUX_CONNECTION_GRACE_SECONDS`,
+  `LOOMMUX_SWEEP_INTERVAL_SECONDS` and `LOOMMUX_ORPHAN_GRACE_SECONDS` are
+  `config.py` names now, and `LOOMMUX_WORKSPACE_CONFIG` is `resolve_workspace`
+  in `config.py`; `loommux.host_workspace_config` and the
+  `workspace_config_not_absolute`, `workspace_config_not_found` and
+  `workspace_config_not_file` statuses are gone with it. The
+  `examples/workspace-resolvers/` files moved to `examples/config/codex/`.
+- **Breaking:** `kernel_execution_count` from `status`, `execution_count`
+  from the kernel part of responses, and `execution_count_at_submit` from
+  `execution_status`; they existed only to tell two counts apart.
 
 ### Fixed
 

@@ -267,7 +267,7 @@ Every kernel knows which resource it is and where its daemon listens
 a client of that daemon as `loommux`:
 
 ```python
-loommux.kernels()             # this home: name, id, state, busy, pid, executions, leases, scope, home
+loommux.kernels()             # this home: name, id, state, busy, idle, pid, executions, leases, scope, home
 loommux.self                  # this kernel
 lab = loommux["lab"]          # this home's child kernel, by name or id; opened on first use
 job = lab.run("train()", wait=5)
@@ -275,6 +275,7 @@ job.wait(600)                 # its state; job.output() reads its combined outpu
 lab.restart()
 loommux["lab"].recycle(force=True)
 loommux.self.rename("report-cleanup")   # returns the name received; report-cleanup-2 if taken
+loommux.notify("⚠ memory is low")      # to the agent, apart from this cell's output
 ```
 
 A kernel opened this way is a child kernel of the asking kernel's home: the
@@ -283,6 +284,16 @@ a client lease and is released with it, and its name belongs to the home, so
 another session's kernels neither list nor reach it. A kernel already running a
 cell refuses `run()` with `DaemonError` whose `status` is `busy`; cells are
 never queued.
+
+`loommux.notify(text)` is how code in a kernel, an alarm in a `post_run_cell`
+hook for instance, tells the agent something about this moment. A notice is
+not output: no output stream holds it and the 5,000-token limit never omits it.
+The next tool result ends with every notice no result has delivered, each
+once, labeled `In [N] · ` when another cell spoke it and `Startup · ` when a
+startup file did. A notice is cut at 500 characters and a cell keeps ten; a
+cell forwarded with `--kernel build` speaks build's notices again as
+`build · …`. The `idle` column, and `idle_since` in each snapshot, say how long
+a kernel has run nothing.
 
 The client speaks the HTTP control plane, so anything it does stays outside
 the daemon process. Outside a kernel, `loommux.daemon.Daemon()` connects to
@@ -322,7 +333,7 @@ IPython profile directory:
 ```text
 .loommux/
     config.py        settings and resolve_workspace, read once when the daemon starts
-    startup/         files every kernel runs when it starts
+    startup/         *.py and *.ipy files every kernel runs before its first cell
 ```
 
 `config.py` is an ordinary Python module whose plain names are the settings:
@@ -342,7 +353,20 @@ It may import modules and define helpers. Any other public name stops the start
 with `config_unknown_setting`, so a misspelled setting is reported rather than
 left at its default. A relative `DIR` is read from the directory loommux starts
 in; loommux never finds one by itself. The environment does not configure
-loommux. See [Kernel Environment Design](docs/kernel-environment-design.md).
+loommux.
+
+The files of `startup/` run in name order in every kernel process: when a main
+or child kernel opens, after `restart`, and after the replacement that stands
+for an interrupt on Windows. They run as loommux's own requests with
+`store_history=False`, so they take no execution number, and in the user
+namespace, so what they define is there for the first cell; an `.ipy` file may
+use magics such as `%run`. A file that succeeds is silent. One that raises, or
+runs past 60 seconds and is interrupted, becomes a notice,
+`Startup · NAME failed: …`, and the next file still runs. The directory is read
+at each start, so a changed file applies to the next kernel. It is the place
+for environment, things that work only if nobody has to remember to start
+them; tools are one line to load when needed. See [Kernel Environment
+Design](docs/kernel-environment-design.md).
 
 ## Execution Model
 
@@ -577,10 +601,11 @@ build_report()
 its final state after the kernel reports IOPub `idle`.
 
 `restart` is stronger: it stops the existing kernel and starts a
-replacement in the same workspace with the same interpreter. A running record
-is marked `killed`. Reset does not erase stored executions, their output, or
-the sequence counter, so historical records can still be read by their
-integer `execution` value and the next accepted cell receives the next number.
+replacement in the same workspace with the same interpreter, which runs the
+startup files again. A running cell is stopped. The execution records go with
+the old process and the next cell is `In [1]`, as IPython numbers it; what a
+tool result showed stays in the client's transcript, and output needed after a
+restart belongs in a file written before it.
 
 Stopping the loommux server retires all resources. Their kernels, namespaces,
 execution-record tables, output streams, and sequences are not persisted to
@@ -608,7 +633,8 @@ The runtime is deliberately divided into narrow responsibilities:
 loommux/
     session.py
         Owns one persistent IPython namespace, execution identity, selection,
-        waiting, control operations, and historical execution records.
+        waiting, control operations, execution records, startup files, and
+        the notices not yet delivered.
     kernel/
         launch.py
             Builds the interpreter command, child environment, and private root.
@@ -627,6 +653,12 @@ loommux/
             Removes terminal controls while preserving chunk boundaries.
     cell_header.py
         Parses the %%loommux cell header for the daemon and the kernel.
+    config.py
+        Reads the --config directory: settings, resolve_workspace, startup/.
+    workspace_resolver.py
+        Resolves the kernel workspace before tools are exposed.
+    notice.py
+        The notice channel's MIME type and bounds, shared by kernel and daemon.
     kernel_extension.py
         IPython extension every kernel loads: interprets the cell header and
         places the daemon client in the namespace as ``loommux``.
@@ -645,10 +677,6 @@ loommux/
             Select MCP transport and expose the installed command.
 ```
 
-The workspace authorization and resolution modules remain at the package
-boundary until their independent configuration work is complete. They are
-deliberately not mixed into this structural change.
-
 The top-level `loommux` package imports only the protocol-neutral Python
 session API. FastMCP is entered explicitly through `loommux.mcp`; the runtime
 does not depend on its transport consumer.
@@ -657,6 +685,7 @@ The current public contract is documented in [Coding Agent Control Plane
 Design](docs/coding-agent-control-plane-design.md).
 Focused references cover the [cell header](docs/cell-header-design.md),
 [main kernel binding](docs/kernel-binding-design.md),
+[kernel environment](docs/kernel-environment-design.md),
 [freeform cell input](docs/ipython-mcp-freeform-run-cell-design.md),
 [complete-output control](docs/ipython-mcp-full-output-directive-design.md),
 [workspace configuration](docs/workspace-configuration.md), and the
