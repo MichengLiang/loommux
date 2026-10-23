@@ -235,7 +235,7 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
             uv run pytest
 
         ``build`` 是这个会话主 kernel 名下的子 kernel，不存在时首次使用就开出，
-        跟着主 kernel 活、跟着它回收；主 kernel 名下的子 kernel 存在命名空间的隔离。
+        跟着主 kernel 活、跟着它回收；主 kernel 与其他主 kernel 之间的子 kernel 存在命名空间的隔离。
         中断这个 cell 会一并中断它。
         每个 kernel 里都有 ``loommux`` 对象：``loommux.kernels()`` 列出所有 kernel，
         ``loommux["build"].run(code)`` 在后台提交并返回 job。
@@ -244,7 +244,7 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
         ---------
 
         第一个 cell 用 ``--attach 名字 --create`` 给它命名意味着向 loommux 申请持久资源，最长24小时动态刷新。
-        名字推荐描述这次任务的一个短语，不带空格::
+        名字必须使用描述这次任务的一个短语，不带空格::
 
             %%loommux --attach 主kernel绑定设计 --create
             import pandas as pd
