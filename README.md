@@ -367,7 +367,8 @@ runs past 60 seconds and is interrupted, becomes a notice,
 at each start, so a changed file applies to the next kernel. It is the place
 for environment, things that work only if nobody has to remember to start
 them; tools are one line to load when needed. See [Kernel Environment
-Design](docs/kernel-environment-design.md).
+Design](docs/kernel-environment-design.md), and the [tutorial](docs/kernel-environment-tutorial.md)
+that builds a small environment step by step.
 
 ## Execution Model
 
