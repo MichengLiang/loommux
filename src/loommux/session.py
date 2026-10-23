@@ -18,6 +18,11 @@ OUTPUT_STREAMS = {"combined", "stdout", "stderr", "result", "traceback"}
 # blocking session call shares the server's thread pool.
 MAX_FOLLOW_WAIT_SECONDS = 1.0
 _FOLLOW_POLL_SECONDS = 0.05
+STARTUP_SUFFIXES = (".py", ".ipy")
+# A startup file runs before the kernel takes its first cell, so one that never
+# ends would hold that cell back for good.
+STARTUP_FILE_SECONDS = 60.0
+_STARTUP_INTERRUPT_SECONDS = 5.0
 
 
 class IPythonSession:
@@ -26,9 +31,13 @@ class IPythonSession:
     The session is transport-neutral. It exposes execution facts and control
     operations to callers such as an IPython manager, a test harness, or an MCP
     consumer; it does not construct protocol responses.
+
+    ``startup_directory`` holds the files every kernel process of this session
+    runs before its first cell (docs/kernel-environment-design.md, section 5).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, startup_directory: Path | None = None) -> None:
+        self.startup_directory = startup_directory
         self.workspace: Path | None = None
         self.workspace_resolution: str | None = None
         self.python_path: Path | None = None
@@ -43,6 +52,8 @@ class IPythonSession:
         # none. Cells run one at a time, so only the newest record can still be
         # running and everything before it is final.
         self._noticed_through = 0
+        # What the current kernel process's startup files said, until a result delivers it.
+        self._startup_notices: list[str] = []
         self._lock = threading.RLock()
 
     def close(self) -> None:
@@ -283,6 +294,8 @@ class IPythonSession:
         """
         taken: list[dict[str, Any]] = []
         with self._lock:
+            taken.extend({"execution": None, "text": text} for text in self._startup_notices)
+            self._startup_notices = []
             number = self._noticed_through + 1
             while (record := self.executions.get(number)) is not None and not record.is_running:
                 if not record.notices_delivered:
@@ -412,10 +425,47 @@ class IPythonSession:
                 kernel.start()
             except Exception:
                 continue
-            return kernel
+            return self._started(kernel)
         kernel = self._new_kernel_session(workspace, python_path)
         kernel.start()
+        return self._started(kernel)
+
+    def _started(self, kernel: KernelSession) -> KernelSession:
+        """Run the startup files in a new kernel process, and keep what they said."""
+        notices = self._run_startup_files(kernel)
+        with self._lock:
+            # The previous process's undelivered startup notices go with it.
+            self._startup_notices = notices
         return kernel
+
+    def _run_startup_files(self, kernel: KernelSession) -> list[str]:
+        """Each file is loommux's own request, so whatever it prints or raises has an owner.
+
+        IPython's own exec_files run while the kernel initializes, before any
+        request exists, where a failure would reach nobody. A request that
+        stores no history also takes no number, so the first cell is In [1].
+        """
+        directory = self.startup_directory
+        if directory is None or not directory.is_dir():
+            return []
+        notices: list[str] = []
+        for path in sorted(path for path in directory.iterdir() if path.suffix in STARTUP_SUFFIXES and path.is_file()):
+            # Never registered as an execution: number 0 is no cell's.
+            record = Execution(execution=0, kernel_pid=kernel.pid or 0)
+            kernel.submit(record, _startup_source(path), store_history=False)
+            if not record.done.wait(STARTUP_FILE_SECONDS):
+                kernel.interrupt()
+                stopped = record.done.wait(_STARTUP_INTERRUPT_SECONDS)
+                notices += [*record.notice_texts(), f"{path.name} failed: it did not finish within {STARTUP_FILE_SECONDS:g} s and was interrupted"]
+                if not stopped:
+                    # The kernel still runs it; nothing else can be sent.
+                    break
+                continue
+            notices += record.notice_texts()
+            if record.error is not None:
+                detail = ": ".join(str(part) for part in (record.error.get("ename"), record.error.get("evalue")) if part)
+                notices.append(f"{path.name} failed: {detail}")
+        return notices
 
     @staticmethod
     def _validate_timeout(timeout_seconds: float) -> dict[str, Any] | None:
@@ -428,3 +478,10 @@ class IPythonSession:
     @staticmethod
     def _workspace_error(status: str, message: str, workspace: Path, python_path: Path) -> dict[str, Any]:
         return {"ok": False, "status": status, "message": message, "workspace": str(workspace), "python": str(python_path)}
+
+
+def _startup_source(path: Path) -> str:
+    """The request that runs one startup file in the user namespace, as IPython's startup/ would."""
+    if path.suffix == ".ipy":
+        return f"get_ipython().safe_execfile_ipy({str(path)!r}, raise_exceptions=True)"
+    return f"get_ipython().safe_execfile({str(path)!r}, get_ipython().user_ns, raise_exceptions=True)"

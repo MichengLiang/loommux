@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
@@ -190,6 +191,7 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, confi
         manager = KernelResourceManager(
             resolution.workspace,
             resolution.workspace_resolution,
+            session_factory=functools.partial(IPythonSession, startup_directory=configured.startup_directory),
             policy_manager=policy_manager,
             connections=connections,
             sweep_interval_seconds=settings.sweep_interval_seconds,

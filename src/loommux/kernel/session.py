@@ -72,11 +72,12 @@ class KernelSession:
         self._collector = threading.Thread(target=self._collect_iopub, name="loommux-iopub-collector", daemon=True)
         self._collector.start()
 
-    def submit(self, execution: Execution, source: str) -> None:
+    def submit(self, execution: Execution, source: str, *, store_history: bool = True) -> None:
+        """Send ``source``; a request that stores no history takes no IPython number."""
         with self._lock:
             if self.client is None:
                 raise RuntimeError("kernel client is not started")
-            execution.msg_id = self.client.execute(source)
+            execution.msg_id = self.client.execute(source, store_history=store_history)
             self.current_execution = execution
 
     def interrupt(self) -> None:
