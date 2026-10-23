@@ -38,6 +38,22 @@ fails if the console stops answering, and then requires every kernel and file
 descriptor to be released. Unit tests cannot show either failure: both
 appeared only after minutes of mixed load.
 
+## What tests assert
+
+Tests assert behavior: what a tool accepts and returns, which kernel a call
+runs in, when a kernel is kept or retired, in what order output arrives. They
+do not assert the wording of MCP tool descriptions, docstrings, help text, or
+documents. A text is its own authority, written and reviewed by whoever
+changes it; a test that copies its phrases holds a second copy of the same
+knowledge, turns red on every rewording, and finds no defect.
+
+What a text claims that a machine can check is tested by running it. Every
+`%%loommux` header example in the tool descriptions must be accepted by the
+real header parser (`tests/mcp/test_server.py`), so the grammar and the
+examples an agent copies cannot drift apart. When a test needs a text the code
+produces, such as the `%%loommux?` help, it imports the constant
+(`HEADER_HELP`) instead of repeating it.
+
 Use clear commit messages and describe the behavioral reason for non-obvious
 code or protocol choices. Do not add access tokens, kernel output containing
 secrets, local workspace configuration, or generated build artifacts to a
