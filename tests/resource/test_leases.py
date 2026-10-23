@@ -328,6 +328,37 @@ def test_a_kernel_the_session_switched_away_from_keeps_no_retention(
     asyncio.run(scenario())
 
 
+def test_only_a_named_main_kernel_is_kept_after_its_session_left(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        registry = ConnectionRegistry()
+        manager = connection_manager(tmp_path, registry)
+        policy = make_policy(mode=LeaseMode.CONNECTION, timeout=60, grace=0.03)
+        throwaway, renamed = make_client("throwaway"), make_client("renamed")
+        kernels = []
+        for client in (throwaway, renamed):
+            registry.stream_opened(client.client_id)
+            async with manager.operation(client, policy) as admitted:
+                kernels.append(admitted.resource)
+        unnamed, named_later = kernels
+        assert not unnamed.named and not named_later.named
+        await manager.rename(named_later.resource_id, "task")
+        for client, resource in ((throwaway, unnamed), (renamed, named_later)):
+            resource.client_leases[client.client_id].requested_at -= 3600
+            registry.stream_closed(client.client_id, now=monotonic() - 1)
+
+        # B13: the generated name records no retention and goes with its lease;
+        # the renamed kernel asked to be kept.
+        assert await manager.sweep_once() == 1
+        assert (unnamed.lifecycle, unnamed.closing_reason, unnamed.retained_until) == (ResourceLifecycle.STOPPED, "lease expired", None)
+        assert named_later.lifecycle is ResourceLifecycle.RUNNING
+        assert named_later.retained_until is not None
+        await manager.stop()
+
+    asyncio.run(scenario())
+
+
 def test_connection_lease_without_a_stream_alerts_and_keeps_the_activity_window(
     tmp_path: Path,
 ) -> None:

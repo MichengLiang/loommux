@@ -68,8 +68,12 @@ def test_a_main_kernel_whose_session_left_keeps_itself_until_a_new_host_attaches
     async def scenario(origin: str) -> None:
         async with LeaseAwareClient(f"{origin}/mcp", "first") as first:
             assert await texts(first, "%%loommux --attach task --create\nkept = 'still here'") == ["In [1]:", "Kernel: task (opened)"]
-        # Past the reconnect grace the session has left: B8, its lease is
-        # released without an alert and the kernel keeps its own retention.
+            # A throwaway host that never names its kernel leaves beside it.
+            async with LeaseAwareClient(f"{origin}/mcp", "throwaway") as throwaway:
+                assert (await texts(throwaway, "1"))[1].endswith("(opened)")
+        # Past the reconnect grace both sessions have left: B8, the lease is
+        # released without an alert and the named kernel keeps its own
+        # retention; B13, the unnamed one is gone.
         await asyncio.sleep(0.8)
         [resource] = await wait_for_resource_count(origin, 1)
         assert (resource["name"], resource["lease_count"]) == ("task", 0)

@@ -160,9 +160,11 @@ class KernelResource:
     a kernel use the private window.
 
     ``retained_until`` is the monotonic instant until which a main kernel no
-    lease holds is kept. It is recorded when a connection lease is released
-    because its session left: the kernel waits for a session, not the
-    session's lease, so one value replaces a lease kept per departure.
+    lease holds is kept. It is recorded when a connection lease on a named
+    main kernel is released because its session left: the kernel waits for a
+    session, not the session's lease, so one value replaces a lease kept per
+    departure. An unnamed kernel records none; naming it asks for it to be
+    kept (kernel-binding-design.md section 7).
     """
 
     resource_id: str

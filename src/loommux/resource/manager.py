@@ -578,7 +578,9 @@ class KernelResourceManager:
                     self._report_alert_locked(resource, lease, verdict)
                     if lease.active_operations == 0 and verdict.expired(now):
                         del resource.client_leases[client_id]
-                        if verdict.standing is LeaseStanding.DISCONNECTED:
+                        # Only a session returning by name consumes a
+                        # retention, and nobody returns to a generated name.
+                        if verdict.standing is LeaseStanding.DISCONNECTED and resource.named:
                             self._retain_locked(resource, lease)
             self.connections.prune(
                 keep={
