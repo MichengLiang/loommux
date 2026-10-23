@@ -208,66 +208,54 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
 
     @mcp.tool(output_schema=None, meta=_FULL_BODY_TOOL_META)
     async def run_cell(freeform: str, ctx: Context) -> ToolResult:
-        """向持久 IPython kernel 提交一个原始 IPython cell。
+        """向持久 IPython kernel 提交一个 IPython cell。
 
         请你使用 IPython 的思想来优雅使用本系列工具。
 
         输入
         ----
 
-        接受一段 IPython cell 源码，直接写代码即可。变量、导入和其他 namespace
-        状态与当前持久 IPython 会话中的后续 cell 共享。
+        一格 IPython cell，变量、导入和其他 namespace 状态与当前持久 IPython 会话中的后续 cell 共享。
 
-        cell 头
+        loommux cell magic
         -------
-
-        需要控制这一个 cell 时，在第一行写 ``%%loommux`` 头，它是普通的
-        IPython cell magic 语法::
 
             %%loommux --wait 120 --full-output
             build_report()
 
-        ``--wait SECONDS`` 把本次调用的等待上限从默认 10 秒改为正有限秒数；
-        等待到期不会中断仍在运行的 cell。``--full-output`` 让这次 execution 在
-        终态时直接交付完整 combined 正文，不受默认 5,000-token 交付阈值限制；
-        在明确需要完整阅读某些文件、资料时使用，避免反复阅读的开销。选项只作用
-        于这一个 cell。头的下一行可以接另一个 cell magic，例如 ``%%bash``。
-        无效的头返回 ``invalid_cell_header``，不分配 execution，也不提交 kernel。
+        ``--wait SECONDS``:覆盖本次调用的等待上限；
+        ``--full-output``:让本次 execution 在终态时返回完整 combined 正文，突破默认 5,000-token 阈值限制；
+        在明确需要完整阅读某些文件、资料时使用，避免反复阅读的开销。选项只作用于这一个 cell。
+        loommux cell magic 的下一行可以接另一个 cell magic，例如 ``%%bash``。
 
-        头里用 ``--kernel NAME`` 写另一个 kernel 的名字，把这个 cell 交给它::
+        ``--kernel NAME`` 写另一个 kernel 的名字，把这个 cell 交给它::
 
             %%loommux --kernel build --wait 120
             %%bash
             uv run pytest
 
         ``build`` 是这个会话主 kernel 名下的子 kernel，不存在时首次使用就开出，
-        跟着主 kernel 活、跟着它回收；名字只在这个家里有效，别的会话有自己的
-        ``build``。它的输出实时转回这个 cell，它的错误也让这个 cell 以一行
-        ``ForwardedCellError`` 结束；中断这个 cell 会一并中断它。每个 kernel
-        里都有 ``loommux`` 对象：``loommux.kernels()`` 列出这个家的 kernel，
+        跟着主 kernel 活、跟着它回收；主 kernel 名下的子 kernel 存在命名空间的隔离。
+        中断这个 cell 会一并中断它。
+        每个 kernel 里都有 ``loommux`` 对象：``loommux.kernels()`` 列出所有 kernel，
         ``loommux["build"].run(code)`` 在后台提交并返回 job。
 
         主 kernel
         ---------
 
-        会话在一台主 kernel 里工作。第一个 cell 用 ``--attach 名字 --create``
-        给它起名，名字是描述这次任务的一个短语，不带空格::
+        第一个 cell 用 ``--attach 名字 --create`` 给它命名意味着向 loommux 申请持久资源，最长24小时动态刷新。
+        名字推荐描述这次任务的一个短语，不带空格::
 
             %%loommux --attach 主kernel绑定设计 --create
             import pandas as pd
 
-        没有就开出，有就进去，命名空间与 execution 编号都还在；换了宿主之后
-        第一个 cell 照样这样写。不带 ``--create`` 时名字不存在返回
-        ``kernel_not_found``。``--attach 名字`` 随时把会话换过去，放下手上那台。
-        结果末尾的 ``Kernel:`` 一行写明名字与来历，``status`` 第一行也是名字。
-        有会话连着主 kernel 就一直在，没有时从最后一次调用起保留 24 小时。
+        ``--attach 名字`` 可重新切换会曾命名到的持久资源。
         任务变了，在任意 cell 里顺手写 ``loommux.self.rename("新名字")``。
 
         图像展示
         --------
 
-        IPython ``display()`` 产生的 PNG、JPEG、WEBP 或单帧 GIF 图像会按输出
-        顺序直接交付给agent。
+        使用 IPython ``display()`` 即可看图, 对 PNG、JPEG、WEBP 或单帧 GIF 图像有效
 
         执行编号与后续操作
         --------------------
@@ -295,15 +283,11 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
         状态范围
         --------
 
-        第一行是这个会话主 kernel 的名字：上下文被压缩、记不清名字时，
-        在这里找回，之后用 ``--attach 名字`` 回到它。
-
         还返回当前 IPython 工作台启动时解析的 workspace、其
         ``workspace_resolution`` 来源
         类别、Python 解释器、kernel PID、kernel 是否已启动，以及 kernel 是否
         正忙。``workspace_resolution`` 只能是 ``launch_cwd`` 或
-        ``explicit_config``；它不公开 resolver 的路径或内容，也不公开 kernel
-        session 的 private runtime root。忙碌时 ``current_execution`` 是正在
+        ``explicit_config``；忙碌时 ``current_execution`` 是正在
         运行的正整数执行编号；空闲时 ``recent_execution`` 是最近一次被接受的
         执行编号。kernel-local execution count 只用于诊断，不能用来选择
         loommux execution。
@@ -325,7 +309,7 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
 
     @mcp.tool(output_schema=None)
     async def execution_status(ctx: Context, execution: int | None = None) -> ToolResult:
-        """返回一个 execution 的状态与元数据，不返回完整输出正文。
+        """返回一个 execution 的状态与元数据。
 
         选择规则
         --------
@@ -335,8 +319,7 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
         两者都不存在时返回 ``execution_not_found``。
 
         Args:
-            execution: 要查看的正整数执行编号。省略时使用当前记录，随后
-                使用最近记录。
+            execution: 要查看的正整数执行编号。
 
         Returns:
             选中记录的 ``execution``、status、时间戳、提交时 kernel 元数据、
@@ -437,8 +420,8 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
         ------------
 
         当所选 execution 的 cell 头含 ``--full-output`` 且已达到终态时，本工具
-        直接返回完整 combined 正文，不应用默认 5,000-token 省略；仍在运行的
-        execution 继续返回 running，而非不完整正文。
+        直接返回完整 combined 正文，可以突破 5,000-token 省略；仍在运行的
+        execution 继续返回 running。
 
         Args:
             execution: 要等待的正整数执行编号。省略时使用当前记录，随后
@@ -458,7 +441,6 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None) -> Fa
         中断语义
         --------
 
-        该工具只作用于当前 running 记录。信号已发送不等同于记录已终态：
         kernel 到达 IOPub ``idle`` 后，记录才会报告 ``interrupted``、
         ``error`` 或其他最终状态。kernel 空闲时返回 idle。
 
