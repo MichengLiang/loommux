@@ -12,6 +12,11 @@ first cell, and `loommux.notify`, which speaks to the agent apart from a cell's
 output. The rules behind each piece are in the
 [Kernel Environment Design](kernel-environment-design.md).
 
+The finished directory is
+[examples/kernel-environment](../examples/kernel-environment/README.md). Its
+`tour.py` runs everything below against a real loommux and prints what the
+agent sees at each step: `uv run python examples/kernel-environment/tour.py`.
+
 ## 1. The configuration directory
 
 Create `.loommux/` at the root of the tree you work in:
@@ -64,9 +69,9 @@ def _end(result):
     # started a cell through them.
     if _started is None:
         return
-    took = timedelta(seconds=time.monotonic() - _started)
+    took = timedelta(seconds=round(time.monotonic() - _started))
     if took >= _LONG:
-        loommux.notify(f"⏱ this cell ran {took.total_seconds() / 60:.0f} minutes")
+        loommux.notify(f"⏱ this cell ran {took}")
 
 
 get_ipython().events.register("pre_run_cell", _start)
@@ -135,7 +140,7 @@ With both files in place, a cell that crosses both thresholds ends like this:
 ```text
 In [3]:
 
-⏱ this cell ran 12 minutes
+⏱ this cell ran 0:12:41
 build has run nothing since 2026-10-23T20:30:03.526315+00:00; loommux.recycle('build') if it is done
 ```
 

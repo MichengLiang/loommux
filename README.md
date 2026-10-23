@@ -382,7 +382,8 @@ at each start, so a changed file applies to the next kernel. It is the place
 for environment, things that work only if nobody has to remember to start
 them; tools are one line to load when needed. See [Kernel Environment
 Design](docs/kernel-environment-design.md), and the [tutorial](docs/kernel-environment-tutorial.md)
-that builds a small environment step by step.
+that builds a small environment step by step; [examples/kernel-environment](examples/kernel-environment/README.md)
+is that environment, with a tour that runs it.
 
 ## Execution Model
 
