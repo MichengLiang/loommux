@@ -52,6 +52,9 @@ loommux = "loommux.mcp.server:main"
 
 [dependency-groups]
 dev = [
+    # scripts/stress.py and the example tour run on AnyIO; fastmcp brings it,
+    # but what this repository's own code imports, it declares.
+    "anyio>=4.15.1",
     "basedpyright>=1.39.10",
     "pillow>=12.3.0",
     "pytest>=9.1.1",

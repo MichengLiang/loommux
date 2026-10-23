@@ -10,7 +10,6 @@ checks it; a step that does not see what it expects stops the tour.
 
 from __future__ import annotations
 
-import asyncio
 import shutil
 import socket
 import subprocess
@@ -21,6 +20,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+import anyio
 import httpx
 from fastmcp import Client
 
@@ -37,7 +37,7 @@ def main() -> None:
             [found] = [line for line in log.read_text(encoding="utf-8").splitlines() if line.startswith("loommux: configuration")]
             show(found)
             expect(found, f"configuration {project / '.loommux'} (found from the launch directory)")
-            asyncio.run(tour(origin, project))
+            anyio.run(tour, origin, project)
 
 
 async def tour(origin: str, project: Path) -> None:
