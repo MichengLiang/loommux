@@ -166,6 +166,10 @@ ignore = [
     "D",      # 也可以考虑忽略 Docstrings
     "S101",   # 允许使用 assert (测试必备)
 ]
+# Startup files run in a kernel's user namespace, where IPython and loommux
+# have already defined get_ipython and loommux. They are also the tutorial's
+# code, read line by line, so hook signatures stay unannotated.
+"examples/**/.loommux/startup/*.py" = ["F821", "ANN"]
 
 [tool.ruff.format]
 quote-style = "double"
