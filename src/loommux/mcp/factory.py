@@ -246,9 +246,10 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, confi
         别的主 kernel 名下的写全称 ``/主kernel名/build``。
         这个 cell 就是 ``loommux.create("build")`` 再在它上面 ``run_cell``，在这里等它、接着它的输出；
         所以中断这个 cell，build 的这次执行也被中断。
-        每个 kernel 里都有 ``loommux`` 对象：``loommux.kernels()`` 列出所有 kernel，
-        ``loommux.recycle("build")`` 回收；``loommux["build"]`` 取到的 kernel 有与这组工具同名同参的方法，
-        如 ``run_cell(code, wait_seconds=0)`` 在后台提交，之后 ``wait(n)``、``read_output(n)``。
+        每个 kernel 里都有 ``loommux``：守护进程的客户端，好比 ``docker`` 命令之于 dockerd。
+        守护进程管 kernel 的生死与名字：列出、查找、开子 kernel、改名、回收；
+        ``loommux["build"]`` 取到的 kernel 有与这组工具同名同参的方法，你对主 kernel 做的事，对任何一台都能做。
+        细节在对象上：``loommux?``、``help(loommux)``。
 
         什么时候用呢？
         1. 同时想利用Kernel本身（如果Shellwork合适优先使用）去跑长任务的同时，还想要使用主Kernel去做别的事情使用。
