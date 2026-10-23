@@ -42,7 +42,7 @@ same thing in every cell:
 A main kernel lives while a client is connected to it. Once none is, a named
 main kernel is kept for 24 hours after the last call, and an unnamed
 `private-…` one is retired: giving a kernel a name is what asks for it to be
-kept. A kernel renames itself with one line, `loommux.self.rename("new-name")`,
+kept. A kernel renames itself with one line, `loommux.rename(loommux.self, "new-name")`,
 inside any cell.
 
 ## 2. Where The Shape Comes From
@@ -59,7 +59,7 @@ rules as they are; every row below is one of them.
 | Several clients may attach to one workspace | several tmux clients on one session; several Jupyter frontends on one kernel | `--attach` never asks who else is there |
 | Attach finds by name and does not create; creating is an explicit switch on the same command | `tmux new-session -A -s NAME`, `screen -R NAME`, `zellij attach --create NAME` | `--attach NAME`, `--attach NAME --create` |
 | Where the client lives and where one command runs are separate | tmux `-t TARGET`, `docker exec NAME CMD` beside `docker attach` | `--attach` beside `--kernel` |
-| A workspace can be renamed | `tmux rename-session`, `docker rename` | `loommux.self.rename()` |
+| A workspace can be renamed | `tmux rename-session`, `docker rename` | `loommux.rename()` |
 | An idle workspace nobody is connected to is culled after a timeout; activity resets it | Jupyter Server `cull_idle_timeout`, with `cull_connected = False` | a named main kernel 24 hours after the last call, never while connected |
 
 Two consequences follow before any loommux-specific reasoning. A cell header
@@ -79,7 +79,7 @@ windows.
 | Work | ordinary cells; `%%loommux --kernel build` for a side kernel | `--kernel` always forwards one cell |
 | The host closes; a new host resumes the conversation | the same first cell, `%%loommux --attach 主kernel绑定设计 --create` | `--attach` finds the kernel by name, whoever is or was connected |
 | A cell ran before the agent remembered its kernel | `%%loommux --attach 主kernel绑定设计` | `--attach` works on any call; the kernel let go of is released |
-| The task changed direction | `loommux.self.rename("新的任务名")` inside a cell | a kernel renames itself |
+| The task changed direction | `loommux.rename(loommux.self, "新的任务名")` inside a cell | a kernel renames itself |
 | The person running loommux looks after everything | the console at `/` | every kernel stays visible and controllable there |
 
 The agent writes the same first cell whether the kernel is new or waiting for
@@ -184,16 +184,18 @@ no main kernel; an `--attach` in a cell still moves the session.
 
 ## 6. Names
 
-Every name follows the existing label rule: printable, at most 256 characters.
+Every name follows the existing label rule: printable, at most 256 characters,
+and without `/`, which separates a main kernel from its child kernel in a path
+([Kernel Control Surface Design](kernel-control-surface-design.md) section 5).
 A cell header splits its line with shell-word rules, so a name with spaces needs
 quotes; a task phrase without spaces needs none.
 
 | Kind | Unique among | Assigned by |
 | --- | --- | --- |
 | main kernel | all main kernels, including ones still starting | `--attach NAME --create`, connection header, rename |
-| child kernel | the kernels of one home | `loommux["name"]`, `%%loommux --kernel name`, rename |
+| child kernel | the kernels of one home | `loommux.create("name")`, `%%loommux --kernel name`, rename |
 
-`loommux.self.rename(name)` renames the kernel that runs it and returns the
+`loommux.rename(loommux.self, name)` renames the kernel that runs it and returns the
 name it received. A name another kernel already has is numbered, `name-2`,
 because two kernels may not answer to one name; renaming is the only place
 numbering remains. Inside a home the main kernel and the asking kernel resolve
@@ -241,7 +243,7 @@ so no session will attach to it, and keeping the kernel would only hold its
 memory for a day, once for every throwaway host the owner closes. Naming is
 therefore the request to be kept: `--attach NAME --create` in the first cell
 asks for it at the start, when the agent can still ask, and
-`loommux.self.rename()` asks for it later. The same `named` flag already chose
+`loommux.rename()` asks for it later. The same `named` flag already chose
 the 24-hour rather than the 80-minute window under activity leases; here it
 chooses between keeping and not keeping.
 
@@ -276,20 +278,12 @@ decides when a missing stream becomes a lease alert.
 
 ## 8. What A Kernel Sees
 
-| Expression, inside a kernel | Meaning |
-| --- | --- |
-| `loommux.kernels()` | this home: its main kernel and child kernels |
-| `loommux["build"]` | the child kernel `build` of this home, opened on first use; this home's main kernel or this kernel by its own name or id |
-| `loommux.self.rename(name)` | rename this kernel |
-
-Outside a kernel, `loommux.daemon.Daemon()` acts for the person running
-loommux: `kernels()` lists every kernel, and `daemon[name]` resolves a main
-kernel by name or any kernel by id. It opens nothing, because nothing outside a
-kernel can hold a new kernel.
-
-Scoping is a view, not a permission: the control plane and the console still
-address every kernel by id. Snapshots report a main kernel's remaining
-retention, which the console and `kernels()` show beside its live leases.
+Inside a kernel and outside one, the `loommux` client presses the daemon's
+buttons and any kernel's, and reads a bare name from the caller's main kernel
+([Kernel Control Surface Design](kernel-control-surface-design.md)).
+`kernels()` lists every kernel; each child kernel's row names its home.
+Snapshots report a main kernel's remaining retention, which the console and
+`kernels()` show beside its live leases.
 
 ## 9. What The Agent Is Told
 
@@ -356,7 +350,7 @@ row was found the same way, by asking what a kept unnamed kernel is for.
 | B7 | Two homes each open `build`; they are different kernels, and neither home lists the other's |
 | B8 | A connection lease whose session left is released after the reconnect grace without an alert; its named main kernel stays for the named window after the lease's last renewal, and its snapshot reports the remaining retention |
 | B9 | A kernel the session switched away from keeps no retention |
-| B10 | `loommux.self.rename()` renames, numbers a taken name, and the next header with the new name is the kernel's own |
+| B10 | `loommux.rename()` renames, numbers a taken name, and the next header with the new name is the kernel's own |
 | B11 | A change of main kernel ends the result with one `Kernel:` block; `status` shows the name |
 | B12 | `scripts/stress.py` passes |
 | B13 | An unnamed main kernel whose session left is retired with the lease, and one renamed before it left is kept like any named kernel |

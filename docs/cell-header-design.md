@@ -31,7 +31,8 @@ kernel interprets it, and IPython history keeps it.
 
 Loommux is the daemon that owns every kernel. Each kernel therefore also
 receives a `loommux` object, a client of that daemon, through which code in any
-kernel can list, address, run, interrupt, restart, and recycle kernels.
+kernel presses the daemon's buttons and any kernel's
+([Kernel Control Surface Design](kernel-control-surface-design.md)).
 
 The interpreters form a tree, and every layer reads only its next hop:
 
@@ -53,8 +54,8 @@ names the only rule it needs.
 | Run elsewhere | `%%loommux --kernel build --wait 60` then `%%bash` and the command | `--kernel` names the kernel |
 | Name the session's main kernel, or return to it | first cell `%%loommux --attach 任务名 --create` | only the daemon reads `--attach` |
 | Move the session to another main kernel | `%%loommux --attach 任务名` | `--attach` works on any call |
-| Manage kernels | `loommux.kernels()`, `loommux["build"].restart()` | `loommux` is a Python object |
-| Background work in another kernel | `job = loommux["build"].run(code)` | `run` returns a job handle |
+| Manage kernels | `loommux.kernels()`, `loommux["build"].restart()`, `loommux.recycle("build")` | `loommux` is a Python object |
+| Background work in another kernel | `loommux.create("build").run_cell(code, wait_seconds=0)` | the result carries the execution number |
 
 "This kernel" is a design concept, not an author-facing word. There is no
 reserved kernel name for it: an author who writes the receiving kernel's own
@@ -191,18 +192,11 @@ operation that needs the daemon raises an error saying so.
 `loommux.daemon.Daemon` is an HTTP client of the control plane. The extension
 places one, bound to this kernel, in the user namespace as `loommux`.
 Outside a kernel, `Daemon()` uses `LOOMMUX_CONTROL_URL` or
-`http://127.0.0.1:8801`.
-
-| Expression | Meaning |
-| --- | --- |
-| `loommux.kernels()` | the kernels of this home: its main kernel and child kernels, with name, id, state, scope, and home |
-| `loommux["build"]` | handle of this home's child kernel `build`, opened on first use; this kernel's and its main kernel's own names resolve to them |
-| `loommux.self` | handle of this kernel |
-| `kernel.rename(name)` | rename a kernel and return the name it received; renaming this kernel changes which header names are its own from the next cell |
-| `kernel.run(code, wait=10)` | submit `code`; returns a `Job` |
-| `kernel.interrupt()`, `kernel.restart()`, `kernel.recycle(force=False)` | control operations |
-| `job.wait(timeout)`, `job.status()`, `job.output(stream, lines)`, `job.follow(offset)`, `job.interrupt()` | follow one execution |
-| `loommux.close()` | close the HTTP connections; the extension's unload calls it, and a later request reopens them |
+`http://127.0.0.1:8801`. Its buttons, the daemon's and a kernel's, and how a
+name finds a kernel are in the
+[Kernel Control Surface Design](kernel-control-surface-design.md).
+`loommux.close()` closes the HTTP connections; the extension's unload calls
+it, and a later request reopens them.
 
 The client sends requests with `trust_env=False`: the control plane is always
 on loopback, and an inherited `ALL_PROXY` would route loopback traffic into a
@@ -222,10 +216,10 @@ kernel has it, and no special "daemon kernel" is needed.
 
 `%%loommux --kernel build` in kernel A:
 
-1. resolves `build` in A's home, opening a child kernel if none is registered
-   (section 8);
-2. submits the body unchanged to `build`;
-3. relays `build`'s combined output into A's cell as it arrives, by character
+1. finds `build` from A's context, opening a child kernel if none is
+   registered: `loommux.create("build")`;
+2. submits the body unchanged to `build`: `run_cell`;
+3. relays `build`'s combined output into A's cell as it arrives with `follow`, by character
    offset into the append-only combined log, until the execution ends; each
    follow request returns as soon as new text exists or the execution ends,
    and holds a daemon worker thread for at most one second. A request costs
@@ -237,12 +231,16 @@ kernel has it, and no special "daemon kernel" is needed.
    whose display is one line naming the kernel and the exception, because the
    traceback itself has already been relayed.
 
+Written out in Python, the magic is section 6 of the
+[Kernel Control Surface Design](kernel-control-surface-design.md).
+
 Consequences that the implementation must preserve:
 
 - **No MCP change.** From the MCP tools' view, a forwarding cell is an ordinary
   cell of A. `wait`, `read_output`, and `search_output` work unchanged, and an
   expired `--wait` leaves the forwarding running.
-- **Interrupts travel down.** Interrupting A delivers `KeyboardInterrupt` to the
+- **Interrupts travel down.** A waits on `build` in the foreground, so
+  interrupting A delivers `KeyboardInterrupt` to the
   magic, which interrupts `build`, keeps relaying until `build` finishes or ten
   seconds pass, and then raises a `KeyboardInterrupt` that displays as one line.
   Its class name stays `KeyboardInterrupt`, which is how A's execution record
@@ -259,17 +257,16 @@ Consequences that the implementation must preserve:
 ## 8. Homes
 
 A kernel opened by another kernel is a child kernel of the opener's main
-kernel, its home, and lives as long as that main kernel holds a client lease
+kernel, its home, and lives as long as that main kernel is kept
 ([Main Kernel Binding Design](kernel-binding-design.md) section 3.2). A child
-kernel opening a kernel opens it in the same home. Names resolve inside the
-home, so forwarding to `build` reaches this home's `build`, never another
-session's. An unanchored child kernel follows the leaseless path: it is
+kernel opening a kernel opens it in the same home. A bare name is read from the
+caller's main kernel, so forwarding to `build` reaches this main kernel's
+`build`; another's is `/其他主/build`. An unanchored child kernel follows the leaseless path: it is
 recycled when idle, and orphaned with a grace period when work is still
 running.
 
 Snapshots name a resource's scope (`main` or `child`) and its home, and the
-console shows them. Handles obtained outside any kernel resolve a main kernel
-by name or any kernel by id, and open nothing; creation needs a home.
+console shows them.
 
 ## 9. Reversed Decisions
 
@@ -311,7 +308,7 @@ by name or any kernel by id, and open nothing; creation needs a home.
 | H9 | `--create` parses only with `--attach` |
 | K1 | Kernels receive id, name, and control URL; a stdio daemon's kernels report that no control plane exists |
 | K2 | `loommux.kernels()`, `loommux.self`, interrupt, restart, and recycle work from inside a kernel over HTTP |
-| P1 | `loommux["build"].run()` opens a child kernel and its job waits, reports status, and reads output |
+| P1 | `loommux.create("build")` opens a child kernel whose `run_cell`, `wait`, `execution_status` and `read_output` answer |
 | P2 | A child kernel is released with its main kernel, including one opened from another child kernel |
 | F1 | `%%loommux --kernel build` relays output, ends in the target's state, and shows a one-line error |
 | F2 | Interrupting the forwarding cell interrupts the target |

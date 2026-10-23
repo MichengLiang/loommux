@@ -314,7 +314,7 @@ A main kernel is anchored while a client lease holds it or its retention has
 not ended, and a child kernel exactly while its main kernel is anchored. A
 session switching away with `--attach` clears the retention of the kernel it
 lets go of. A kernel that opens another kernel
-by name (`loommux["lab"]` in the kernel, `POST /api/resources/ensure` on the
+by name (`loommux.create("lab")` in the kernel, `POST /api/resources` on the
 wire) opens a child kernel of its own home; a child kernel asking opens one in
 the same home, so a home has one level. The home is part of the resource from
 the moment it is registered, so no sweep can find a new child kernel without
