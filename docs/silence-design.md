@@ -6,7 +6,7 @@ length: return when the execution has printed nothing for a while.
 ## 1. Decision
 
 ```text
-%%loommux --wait 600 --silence 30
+%%loommux --wait 260 --silence 35
 %%bash
 pnpm exec playwright test
 ```
@@ -25,8 +25,8 @@ that call (section 4.4).
 A result that returns for silence says so and shows where the output stopped:
 
 ```text
-In [7]:
-Running, silent for 30 s: use wait() for completion, read_output() for collected output, or search_output() to locate text.
+In [7] · 75.0 s:
+Running, silent for 35 s: use wait() for completion, read_output() for collected output, or search_output() to locate text.
 Last lines:
   ✓ 41 passed (12.3s)
   waiting for http://localhost:5173 …

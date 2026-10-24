@@ -526,7 +526,7 @@ for the grammar and its reasons.
 `--kernel NAME` in the header hands the cell to that kernel:
 
 ```python
-%%loommux --kernel build --wait 120
+%%loommux --kernel build --wait 75 --silence 25
 %%bash
 uv run pytest
 ```
@@ -648,7 +648,7 @@ of `read_output` and `search_output`.
 The full-output and wait options are independent and may be combined:
 
 ```python
-%%loommux --wait 120 --full-output
+%%loommux --wait 38 --full-output
 build_report()
 ```
 

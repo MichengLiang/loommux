@@ -202,7 +202,7 @@ def _header_magic(line: str, cell: str, *, daemon: Daemon) -> None:
         # nested run_cell, which cannot run top-level await.
         raise UsageError(
             f"a %%{HEADER_MAGIC} header naming this kernel must be the cell's only header, on its first line; "
-            f"write every option there, as in %%{HEADER_MAGIC} --kernel build --wait 60"
+            f"write every option there, as in %%{HEADER_MAGIC} --kernel build --wait 75 --silence 25"
         )
     forward(daemon, header, cell, sys.stdout.write)
 

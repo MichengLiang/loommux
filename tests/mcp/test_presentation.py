@@ -36,6 +36,11 @@ def test_the_first_line_shows_the_duration_in_milliseconds_below_a_second_and_se
     assert isinstance(rich.content[0], TextContent) and rich.content[0].text == f"{first_line}\n"
 
 
+def test_execution_status_says_how_long_the_execution_ran() -> None:
+    status = {"ok": True, "execution": 7, "status": "completed", "elapsed_seconds": 54.3387, "kernel_pid": 9}
+    assert format_tool_result_text("execution_status", status).splitlines()[:2] == ["execution 7: completed", "elapsed: 54.3 s"]
+
+
 def test_execution_states_name_the_integer_coordinate() -> None:
     running = {"ok": True, "execution": 5, "status": "running", "output_omitted_reason": "running"}
     large = {

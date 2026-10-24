@@ -60,7 +60,7 @@ build.interrupt()
    `run_cell`, `follow` and, if this cell is interrupted, `interrupt`.
 2. The agent wants `build` to run while its own main kernel keeps working. It
    writes `build.run_cell(code, wait_seconds=0)` and later
-   `build.wait(n, timeout_seconds=600, silence_seconds=60)` and `build.read_output(n)`, the same
+   `build.wait(n, timeout_seconds=380, silence_seconds=45)` and `build.read_output(n)`, the same
    calls its MCP tools make on its main kernel.
 3. The vitals alarm in a main kernel lists every kernel and keeps the rows
    whose `home` is its own name: its child kernels.

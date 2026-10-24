@@ -193,14 +193,14 @@ def _with_execution_input(status: Mapping[str, Any], body: str) -> str:
     return header if not body else f"{header}\n{body}"
 
 
-def format_execution_input(execution: int | str, elapsed_seconds: object = None) -> str:
+def format_execution_input(execution: int | str, elapsed_seconds: float | None = None) -> str:
     """Render the execution coordinate used by every result mode, with how long it has run.
 
     The duration is the measurement an agent holds its next ``--wait`` against
     (silence-design 4.6): whole milliseconds below a second, seconds with one
     decimal from there, never minutes, so it reads directly against seconds.
     """
-    if not isinstance(elapsed_seconds, int | float) or isinstance(elapsed_seconds, bool):
+    if elapsed_seconds is None:
         return f"In [{execution}]:"
     return f"In [{execution}] · {format_duration(elapsed_seconds)}:"
 
@@ -248,6 +248,9 @@ def _python_status_surface(status: Mapping[str, Any]) -> str:
 def _execution_status_surface(status: Mapping[str, Any]) -> str:
     execution = _execution_number(status)
     lines = [f"execution {execution}: {status.get('status', 'unknown')}"]
+    elapsed = status.get("elapsed_seconds")
+    if elapsed is not None:
+        lines.append(f"elapsed: {format_duration(elapsed)}")
     error = status.get("error")
     if isinstance(error, Mapping):
         lines.append(_error_sentence(execution, status).removesuffix("."))
