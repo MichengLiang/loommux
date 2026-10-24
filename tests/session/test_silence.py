@@ -74,6 +74,16 @@ def test_when_both_timers_expire_together_the_result_says_silent(session: IPytho
         stop(session, first["execution"])
 
 
+def test_a_running_result_shows_the_time_since_submission_not_since_the_call(session: IPythonSession) -> None:
+    # S11: the number to hold against the estimate is the whole run so far.
+    first = session.run_cell("import time\nprint('started')\ntime.sleep(30)", wait_seconds=20, silence_seconds=1)
+    try:
+        again = session.wait(first["execution"], 1, silence_seconds=1)
+        assert first["elapsed_seconds"] >= 1 and again["elapsed_seconds"] >= first["elapsed_seconds"] + 1
+    finally:
+        stop(session, first["execution"])
+
+
 def test_without_a_written_silence_both_waits_take_the_default(session: IPythonSession, monkeypatch: pytest.MonkeyPatch) -> None:
     # S7: what a call writes reaches the wait and what it leaves out is the default. The clock
     # itself is S1 to S3's, proved with one-second silences, so no test sits out a default.

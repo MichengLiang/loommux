@@ -53,7 +53,7 @@ async def tour(origin: str, project: Path) -> None:
         step("1. The first cell names the main kernel; the startup files ran before it and took no number")
         # The startup files' thresholds are ten and thirty minutes; a tour cannot wait that long.
         seen = await call("run_cell", freeform="%%loommux --attach 巡览 --create\n_LONG = timedelta(seconds=2)\n_IDLE = timedelta(seconds=2)\nprint('hooks from startup/:', _end.__name__, _idle_children.__name__)")
-        expect(seen, "In [1]:", "hooks from startup/: _end _idle_children", "Kernel: 巡览 (opened)")
+        expect(seen, "In [1] ·", "hooks from startup/: _end _idle_children", "Kernel: 巡览 (opened)")
 
         step("2. --kernel build runs one cell in a child kernel, opened on first use")
         seen = await call("run_cell", freeform="%%loommux --kernel build\nanswer = 6 * 7\nanswer")
@@ -81,7 +81,7 @@ async def tour(origin: str, project: Path) -> None:
         seen = await call("restart")
         expect(seen, "Python kernel restarted.", "Startup · 30-typo.py failed: SyntaxError")
         seen = await call("run_cell", freeform="'still here'")
-        expect(seen, "In [1]:", "'still here'")
+        expect(seen, "In [1] ·", "'still here'")
 
 
 @contextmanager

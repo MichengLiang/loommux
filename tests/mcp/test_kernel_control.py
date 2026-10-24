@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from fastmcp import Client
+from result_text import untimed
 from server_harness import reserve_port, running_server, wait_for_resource_count
 
 from loommux.client import LeaseAwareClient
@@ -26,11 +27,11 @@ def test_the_header_the_wait_tool_and_a_kernels_methods_share_one_silence(tmp_pa
     async def scenario(origin: str) -> None:
         async with LeaseAwareClient(f"{origin}/mcp", "agent") as agent:
             first = await agent.call_tool("run_cell", {"freeform": "%%loommux --wait 20 --silence 1\nimport time\nprint('compiled')\ntime.sleep(30)"})
-            assert first.content[0].text.startswith("In [1]:\nRunning, silent for 1 s: ")
+            assert untimed(first.content[0].text).startswith("In [1]:\nRunning, silent for 1 s: ")
             assert first.content[0].text.endswith("Last lines:\n  compiled")
             started = asyncio.get_running_loop().time()
             again = await agent.call_tool("wait", {"timeout_seconds": 20, "silence_seconds": 1})
-            assert again.content[0].text.startswith("In [1]:\nRunning, silent for 1 s: ")
+            assert untimed(again.content[0].text).startswith("In [1]:\nRunning, silent for 1 s: ")
             assert asyncio.get_running_loop().time() - started >= 0.9
             await agent.call_tool("interrupt", {})
             await agent.call_tool("wait", {"timeout_seconds": 10})
@@ -101,10 +102,10 @@ def test_notices_reach_the_agent_from_its_kernel_and_through_a_forwarded_cell(tm
             later = await agent.call_tool("status", {})
 
         # The notice comes before the Kernel: line the first call also carries, in one envelope.
-        assert [block.text for block in own.content][0] == "In [1]:\nOut[1]: 'main'\n"
+        assert [untimed(block.text) for block in own.content][0] == "In [1]:\nOut[1]: 'main'\n"
         assert own.content[1].text.startswith("\n<loommux-notice>\nfrom the main kernel\nKernel: private-")
         # The child's own Out label is its own count; the notice names the child.
-        assert [block.text for block in forwarded.content] == ["In [2]:\nOut[1]: 'child'\n", "\n<loommux-notice>\nbuild · from the child\n</loommux-notice>"]
+        assert [untimed(block.text) for block in forwarded.content] == ["In [2]:\nOut[1]: 'child'\n", "\n<loommux-notice>\nbuild · from the child\n</loommux-notice>"]
         assert all("from the" not in block.text for block in later.content)
 
     workspace = tmp_path / "workspace"

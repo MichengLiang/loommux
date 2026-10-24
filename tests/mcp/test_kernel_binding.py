@@ -7,6 +7,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from result_text import untimed
 from server_harness import reserve_port, running_server, wait_for_resource_count
 
 from loommux.client import LeaseAwareClient
@@ -16,7 +17,7 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="external Stream
 
 async def texts(client: LeaseAwareClient, source: str) -> list[str]:
     result = await client.call_tool("run_cell", {"freeform": source})
-    return [block.text for block in result.content]
+    return [untimed(block.text) for block in result.content]
 
 
 def envelope(*lines: str) -> str:

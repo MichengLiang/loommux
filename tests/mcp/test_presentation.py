@@ -18,6 +18,24 @@ def test_completed_result_projects_only_ipython_visible_output() -> None:
     assert format_tool_result_text("run_cell", silent) == "In [7]:"
 
 
+@pytest.mark.parametrize(
+    ("elapsed", "first_line"),
+    [
+        (0.0004, "In [9] · 0 ms:"),
+        (0.2704, "In [9] · 270 ms:"),
+        (0.9996, "In [9] · 1.0 s:"),
+        (54.34, "In [9] · 54.3 s:"),
+        (1263.44, "In [9] · 1263.4 s:"),
+    ],
+)
+def test_the_first_line_shows_the_duration_in_milliseconds_below_a_second_and_seconds_above(elapsed: float, first_line: str) -> None:
+    # S10, on both rendering paths: plain text and rich content.
+    status = {"ok": True, "execution": 9, "status": "completed", "result_text": "", "output_text": "done\n", "output_omitted": False, "elapsed_seconds": elapsed}
+    assert format_tool_result_text("wait", status) == f"{first_line}\ndone\n"
+    rich = make_tool_result("run_cell", {**status, "_presentation": (PresentationText("done\n"),)}, "content")
+    assert isinstance(rich.content[0], TextContent) and rich.content[0].text == f"{first_line}\n"
+
+
 def test_execution_states_name_the_integer_coordinate() -> None:
     running = {"ok": True, "execution": 5, "status": "running", "output_omitted_reason": "running"}
     large = {

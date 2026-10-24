@@ -57,6 +57,11 @@ class Execution:
     # from it. Set before normalization, since a line redrawn in place with \r is
     # activity even when the normalized log does not grow; a notice is not output.
     last_output_monotonic: float = field(default_factory=time.monotonic, repr=False)
+    # The duration every result shows is measured on the same monotonic clock, from
+    # submission to the end; the wall-clock timestamps above jump when the clock is
+    # corrected (silence-design 4.6).
+    submitted_monotonic: float = field(default_factory=time.monotonic, repr=False)
+    completed_monotonic: float | None = field(default=None, repr=False)
     logs: ExecutionLogs = field(default_factory=ExecutionLogs, init=False)
     presentation: list[PresentationElement] = field(default_factory=list, init=False)
     # Notices are not output: no stream and no token limit sees them. They are
@@ -191,12 +196,14 @@ class Execution:
             self.status = "interrupted"
         self.completed_at = time.time()
         self.updated_at = self.completed_at
+        self.completed_monotonic = time.monotonic()
         self.done.set()
 
     def kill(self) -> None:
         self.status = "killed"
         self.completed_at = time.time()
         self.updated_at = self.completed_at
+        self.completed_monotonic = time.monotonic()
         self.done.set()
 
     def record_kernel_exit(self, returncode: int | None) -> None:
@@ -217,6 +224,12 @@ class Execution:
         return self.status == "running"
 
     @property
+    def elapsed_seconds(self) -> float:
+        """How long it ran, or has run so far, since submission."""
+        end = time.monotonic() if self.completed_monotonic is None else self.completed_monotonic
+        return end - self.submitted_monotonic
+
+    @property
     def result_text(self) -> str:
         return "\n".join(self._result_parts)
 
@@ -229,6 +242,7 @@ class Execution:
             "ok": self.status not in {"error", "killed"},
             "execution": self.execution,
             "status": self.status,
+            "elapsed_seconds": self.elapsed_seconds,
             "stdout": "" if omitted else self.logs.stdout.text,
             "stderr": "" if omitted else self.logs.stderr.text,
             "result_text": "" if omitted else self.result_text,
@@ -253,6 +267,7 @@ class Execution:
             "submitted_at": self.submitted_at,
             "updated_at": self.updated_at,
             "completed_at": self.completed_at,
+            "elapsed_seconds": self.elapsed_seconds,
             "kernel_pid": self.kernel_pid,
             "error": self.error_summary,
             "output_total_lines": output_total_lines,

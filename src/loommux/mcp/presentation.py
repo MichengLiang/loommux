@@ -37,24 +37,23 @@ def _is_tool_failure(tool_name: str, status: Mapping[str, Any]) -> bool:
 
 
 def _execution_surface(status: Mapping[str, Any]) -> str:
-    execution = _execution_number(status)
     state = str(status.get("status", "unknown"))
     output = _optional_string(status.get("output_text")) or ""
     if state == "running":
-        return _with_execution_input(execution, _running_surface(status))
+        return _with_execution_input(status, _running_surface(status))
     if state == "error":
-        return _with_execution_input(execution, output or _error_detail(status))
+        return _with_execution_input(status, output or _error_detail(status))
     if state == "interrupted":
         return _with_execution_input(
-            execution,
+            status,
             output or "Interrupted: use read_output() to read its output or search_output() to locate text.",
         )
     if state == "killed":
         body = _append_control_line(output, "Killed: restart() stopped this execution.")
-        return _with_execution_input(execution, body)
+        return _with_execution_input(status, body)
     if status.get("output_omitted_reason") == "token_limit_exceeded":
-        return _with_execution_input(execution, format_output_token_limit_notice(status))
-    return _with_execution_input(execution, output)
+        return _with_execution_input(status, format_output_token_limit_notice(status))
+    return _with_execution_input(status, output)
 
 
 def _running_surface(status: Mapping[str, Any]) -> str:
@@ -188,15 +187,27 @@ def _error_detail(status: Mapping[str, Any]) -> str:
     return "Error: use read_output() to inspect its traceback or search_output() to locate text."
 
 
-def _with_execution_input(execution: str, body: str) -> str:
+def _with_execution_input(status: Mapping[str, Any], body: str) -> str:
     """Project the accepted MCP cell as IPython's input-side coordinate."""
-    header = format_execution_input(execution)
+    header = format_execution_input(_execution_number(status), status.get("elapsed_seconds"))
     return header if not body else f"{header}\n{body}"
 
 
-def format_execution_input(execution: int | str) -> str:
-    """Render the stable loommux execution coordinate used by every result mode."""
-    return f"In [{execution}]:"
+def format_execution_input(execution: int | str, elapsed_seconds: object = None) -> str:
+    """Render the execution coordinate used by every result mode, with how long it has run.
+
+    The duration is the measurement an agent holds its next ``--wait`` against
+    (silence-design 4.6): whole milliseconds below a second, seconds with one
+    decimal from there, never minutes, so it reads directly against seconds.
+    """
+    if not isinstance(elapsed_seconds, int | float) or isinstance(elapsed_seconds, bool):
+        return f"In [{execution}]:"
+    return f"In [{execution}] · {format_duration(elapsed_seconds)}:"
+
+
+def format_duration(seconds: float) -> str:
+    milliseconds = round(seconds * 1000)
+    return f"{milliseconds} ms" if milliseconds < 1000 else f"{seconds:.1f} s"
 
 
 def _append_control_line(output: str, control: str) -> str:

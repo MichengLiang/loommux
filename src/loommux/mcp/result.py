@@ -71,7 +71,7 @@ def _rich_execution_content(
         return None
     # Rich MCP content bypasses the plain-text execution formatter, so it must
     # project the same input coordinate explicitly before the first rich block.
-    content: list[TextContent | ImageContent] = [TextContent(type="text", text=f"{format_execution_input(execution)}\n")]
+    content: list[TextContent | ImageContent] = [TextContent(type="text", text=f"{format_execution_input(execution, status.get('elapsed_seconds'))}\n")]
     text_omitted = status.get("output_omitted_reason") == "token_limit_exceeded"
     if text_omitted:
         content.append(

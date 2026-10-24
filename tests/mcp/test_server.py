@@ -12,6 +12,7 @@ import httpx
 import pytest
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
+from result_text import untimed
 
 from loommux.cell_header import CellHeaderError, read_cell_header
 from loommux.config import LoommuxConfig, load_config
@@ -75,7 +76,7 @@ async def test_the_default_workspace_is_the_launch_directory_and_status_says_so(
     assert status.data is None
     assert f"workspace: {launch_cwd}" in status.content[0].text
     assert "workspace_resolution: launch_cwd" in status.content[0].text
-    assert cwd.content[0].text == f"In [1]:\n{launch_cwd}\n"
+    assert untimed(cwd.content[0].text) == f"In [1]:\n{launch_cwd}\n"
 
 
 async def test_explicit_resolver_controls_server_workspace_and_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -95,7 +96,7 @@ async def test_explicit_resolver_controls_server_workspace_and_status(tmp_path: 
     assert status.data is None
     assert f"workspace: {workspace}" in status.content[0].text
     assert "workspace_resolution: explicit_config" in status.content[0].text
-    assert cwd.content[0].text == f"In [1]:\n{workspace}\n"
+    assert untimed(cwd.content[0].text) == f"In [1]:\n{workspace}\n"
 
 
 async def test_configured_resolution_errors_prevent_server_startup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -167,7 +168,7 @@ async def test_result_modes_share_content_but_only_structured_exposes_structured
     assert structured.structured_content is not None
     assert structured.structured_content["execution"] == 1
     assert default.structured_content is None
-    assert structured.content[0].text == default.content[0].text == "In [1]:"
+    assert untimed(structured.content[0].text) == untimed(default.content[0].text) == "In [1]:"
 
 
 async def test_standard_ping_renews_an_existing_resource_lease(
@@ -190,10 +191,10 @@ async def test_mcp_projects_input_coordinate_display_result_and_traceback(worksp
         structured_error = await structured_client.call_tool("run_cell", {"freeform": "1 / 0"})
         default_error = await default_client.call_tool("run_cell", {"freeform": "1 / 0"})
 
-    assert structured_silent.content[0].text == default_silent.content[0].text == "In [1]:"
-    assert structured_result.content[0].text == default_result.content[0].text == "In [2]:\nOut[2]: 1\n"
-    assert structured_error.content[0].text.startswith("In [3]:\n")
-    assert default_error.content[0].text.startswith("In [3]:\n")
+    assert untimed(structured_silent.content[0].text) == untimed(default_silent.content[0].text) == "In [1]:"
+    assert untimed(structured_result.content[0].text) == untimed(default_result.content[0].text) == "In [2]:\nOut[2]: 1\n"
+    assert untimed(structured_error.content[0].text).startswith("In [3]:\n")
+    assert untimed(default_error.content[0].text).startswith("In [3]:\n")
     assert "ZeroDivisionError" in structured_error.content[0].text
     assert "ZeroDivisionError" in default_error.content[0].text
 
@@ -215,7 +216,7 @@ print('after-image', flush=True)
     # The session's first call ends with the envelope naming its main kernel,
     # after the rich content as after plain text.
     assert [block.type for block in response.content] == ["text", "text", "text", "image", "text", "text", "image", "text", "text"]
-    texts = [block.text for block in response.content if block.type == "text"]
+    texts = [untimed(block.text) for block in response.content if block.type == "text"]
     assert texts[:-1] == [
         "In [1]:\n",
         "before-image\n",
@@ -239,7 +240,7 @@ async def test_result_modes_share_marked_complete_long_output(default_client: Cl
     default = await default_client.call_tool("run_cell", {"freeform": source})
 
     expected = f"In [1]:\n{TOKEN_HEAVY_MANY_LINES}"
-    assert structured.content[0].text == default.content[0].text == expected
+    assert untimed(structured.content[0].text) == untimed(default.content[0].text) == expected
     assert structured.structured_content is not None
     assert structured.structured_content["output_omitted"] is False
     assert default.structured_content is None
@@ -252,7 +253,7 @@ async def test_token_light_many_line_result_is_delivered_under_the_token_limit(d
     default = await default_client.call_tool("run_cell", {"freeform": source})
 
     expected = f"In [1]:\n{TOKEN_LIGHT_MANY_LINES}"
-    assert structured.content[0].text == default.content[0].text == expected
+    assert untimed(structured.content[0].text) == untimed(default.content[0].text) == expected
     assert structured.structured_content is not None
     assert structured.structured_content["output_omitted"] is False
     assert {"output_total_tokens", "output_token_limit", "output_token_encoding"}.isdisjoint(structured.structured_content)
@@ -264,8 +265,8 @@ async def test_token_limited_result_reports_one_human_readable_size_and_exact_st
         structured = await structured_client.call_tool("run_cell", {"freeform": source})
     default = await default_client.call_tool("run_cell", {"freeform": source})
 
-    assert structured.content[0].text == default.content[0].text
-    notice = structured.content[0].text
+    assert untimed(structured.content[0].text) == untimed(default.content[0].text)
+    notice = untimed(structured.content[0].text)
     assert notice.startswith("In [1]:\nOutput omitted: 301 lines")
     assert f"{len(TOKEN_HEAVY_MANY_LINES):,} characters" in notice
     assert "64.96 KiB" in notice
@@ -296,7 +297,7 @@ async def test_shared_factory_binds_every_tool_to_the_integer_contract(default_c
     assert "execution 1: completed" in status.content[0].text
     assert read.content[0].text == "factory"
     assert "M 1 | factory" in search.content[0].text
-    assert wait.content[0].text == "In [1]:\nfactory\n"
+    assert untimed(wait.content[0].text) == "In [1]:\nfactory\n"
     assert interrupt.content[0].text == "Python kernel is idle."
     assert reset.content[0].text == "Python kernel restarted."
 
@@ -345,7 +346,7 @@ async def test_real_mcp_eight_tool_loop_starts_the_count_again_after_reset(works
     assert reset.data["status"] == "restarted"
     assert old_record.data["status"] == "execution_not_found"
     assert after_reset.data["execution"] == 1
-    assert after_reset.content[0].text == "In [1]:\nafter-reset\n"
+    assert untimed(after_reset.content[0].text) == "In [1]:\nafter-reset\n"
 
 
 def test_mcp_result_mode_only_changes_structured_content() -> None:

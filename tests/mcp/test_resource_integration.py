@@ -5,6 +5,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from result_text import untimed
 from server_harness import reserve_port, running_server, wait_for_resource_count
 
 from loommux.client import LeaseAwareClient
@@ -26,14 +27,14 @@ def test_http_resources_are_private_shareable_and_lease_reclaimed(
                 "run_cell",
                 {"freeform": "private_value = 7\nprint(private_value)"},
             )
-            assert first_result.content[0].text == "In [1]:\n7\n"
+            assert untimed(first_result.content[0].text) == "In [1]:\n7\n"
 
         async with LeaseAwareClient(server_url, "private-b") as second:
             isolated = await second.call_tool(
                 "run_cell",
                 {"freeform": "print(globals().get('private_value'))"},
             )
-            assert isolated.content[0].text == "In [1]:\nNone\n"
+            assert untimed(isolated.content[0].text) == "In [1]:\nNone\n"
 
         async with LeaseAwareClient(
             server_url,
@@ -54,7 +55,7 @@ def test_http_resources_are_private_shareable_and_lease_reclaimed(
                 "run_cell",
                 {"freeform": "print(shared_value)"},
             )
-            assert shared.content[0].text == "In [2]:\n11\n"
+            assert untimed(shared.content[0].text) == "In [2]:\n11\n"
 
         async with LeaseAwareClient(
             server_url,
@@ -70,8 +71,8 @@ def test_http_resources_are_private_shareable_and_lease_reclaimed(
                 "run_cell",
                 {"freeform": "print('second')"},
             )
-            assert first.content[0].text == "In [1]:\nfirst\n"
-            assert second.content[0].text == "In [2]:\nsecond\n"
+            assert untimed(first.content[0].text) == "In [1]:\nfirst\n"
+            assert untimed(second.content[0].text) == "In [2]:\nsecond\n"
             assert persistent.heartbeat_count >= 4
 
         await wait_for_resource_count(origin, 0)
@@ -106,7 +107,7 @@ def test_open_standalone_stream_holds_a_connection_lease_past_every_window(
         assert lease["standing"] == "connected"
         assert lease["alert"] is False
         assert [block.type for block in kept.content] == ["text"]
-        assert kept.content[0].text == "In [2]:\n5\n"
+        assert untimed(kept.content[0].text) == "In [2]:\n5\n"
         await wait_for_resource_count(origin, 0, timeout=5)
 
     workspace = tmp_path / "workspace"
