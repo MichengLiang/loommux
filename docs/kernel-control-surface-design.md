@@ -184,7 +184,7 @@ uses only the two panels:
 
 ```python
 target = loommux.create("build")               # the daemon's: find or open
-n = target.run_cell(body, wait_seconds=0.05)["execution"]
+n = target.run_cell(body, wait_seconds=0)["execution"]
 offset = 0
 while True:                                    # the kernel's: follow its output
     state = target.follow(n, offset)

@@ -82,10 +82,10 @@ The rest of the line is split with POSIX shell-word rules and parsed by one
   cell on, by the same rule; it cannot appear together with `--kernel`,
   because both name where the cell runs;
 - `--create`: a flag, valid only with `--attach`;
-- `--wait SECONDS`: a positive finite number of seconds;
-- `--silence SECONDS`: a positive finite number of seconds; the call also
-  returns once the cell has printed nothing for that long
-  ([Waiting Until It Goes Quiet](silence-design.md));
+- `--wait SECONDS`: a positive finite number of seconds, ten when omitted;
+- `--silence SECONDS`: a positive finite number of seconds, ten when omitted;
+  the call also returns once the cell has printed nothing for that long
+  ([Waiting Until It Goes Quiet](silence-design.md), section 4.4);
 - `--full-output`: a flag.
 
 Every other token is an error, and option names are never abbreviated, so

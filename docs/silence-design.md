@@ -18,6 +18,10 @@ the call; the cell keeps running unless it finished. The `wait` tool takes
 `silence_seconds` with the same meaning, and so do `Kernel.run_cell` and
 `Kernel.wait` in a kernel.
 
+Both are on by default, at ten seconds each, on every call that waits: a cell
+without a header, the `wait` tool, `Kernel.wait`. Writing one overrides it for
+that call (section 4.4).
+
 A result that returns for silence says so and shows where the output stopped:
 
 ```text
@@ -91,10 +95,36 @@ wasted. This is the read timeout's rule: the gap is measured while reading.
 
 The clock is checked every quarter second; silence is meant in seconds.
 
-### 4.4 Off unless written
+### 4.4 On by default, ten seconds each
 
-Like `--wait`, it applies to the one cell it heads, and without it a call waits
-only for the end or the length.
+A default is not a convenience but the path every call that does not write the
+option takes, so it is chosen by which mistake it makes. A silence that is too
+short returns one call early: the agent sees `Running, silent for 10 s`, the last
+lines, and waits again. A silence that is missing holds the agent through a
+stall for the rest of the length, in real minutes. The first is cheap and
+visible; the second is the problem section 2 starts from. So silence is on
+unless the call says otherwise.
+
+Ten seconds is `--wait`'s own default, and the two meet in a useful way. Silence
+counts from submission and cannot elapse before an equal length does, so a cell
+without a header behaves exactly as before. It starts to matter the moment a
+cell writes a longer `--wait`, which is exactly when the agent expects a long
+run: from then on a stall returns at ten seconds unless the cell also states how
+often the run prints. Writing one estimate invites the other, which is the
+habit section 2 asks for.
+
+The `wait` tool's length is the same ten seconds. It is the same length on the
+other panel (section 4.5); its earlier thirty seconds had no reason of its own.
+
+There is no "off". A run known to be quiet for a while, a heavy import, an epoch
+that logs once every few minutes, writes a silence as long as that stretch; a
+silence as long as the wait never comes first.
+
+The numbers are defined once, beside the header's grammar, and every panel
+takes them from there. A program that leaves an argument out leaves it to the
+cell's header, whose own defaults are these: `Kernel.run_cell(source)` of a cell
+headed `%%loommux --wait 60` waits sixty seconds, as the same cell submitted by
+`run_cell` does.
 
 ### 4.5 One meaning on both panels
 
@@ -106,7 +136,8 @@ only for the end or the length.
 | `Kernel.wait` | `timeout_seconds` | `silence_seconds` |
 | control plane | `wait_seconds`, `timeout_seconds` in the body | `silence_seconds` in the body |
 
-A program's argument overrides the header, as `wait_seconds` already does.
+A program's argument overrides the header; an argument it leaves out leaves the
+header in charge (section 4.4).
 Structured results carry `silent_seconds` when the call returned for silence
 and `recent_lines` while the execution runs.
 
@@ -146,6 +177,9 @@ Go, cargo and the shell itself write as they go.
 | Count silence from the last output in `wait` | a second wait on a quiet run returns at once (section 4.3) |
 | Measure output by the normalized log's growth | an in-place progress bar does not grow it (section 4.2) |
 | Leave buffering to each agent (`python -u`, `flush=True`) | the trap is invisible until it misfires; the environment can close it once (section 5) |
+| Silence off unless written, as first built | a long `--wait` without `--silence` held the agent through a stall; returning one call early costs less (section 4.4) |
+| Thirty seconds for the `wait` tool, ten for `--wait` | the same length on two panels; one number in one place (section 4.4) |
+| A program's arguments default to ten seconds | sent on every call, they overrode the header of a cell submitted from code (section 4.4) |
 
 ## 7. Verification
 
@@ -157,3 +191,5 @@ Go, cargo and the shell itself write as they go.
 | S4 | output redrawn with `\r` resets the clock; a notice does not | `tests/session/test_silence.py` |
 | S5 | the header, the `wait` tool, `Kernel.run_cell` and `Kernel.wait` accept the same silence | `tests/mcp/test_kernel_control.py` |
 | S6 | a Python child under `%%bash` streams its lines as they are printed | `tests/session/test_silence.py`, which fails without `PYTHONUNBUFFERED` |
+| S7 | without a written silence, a wait returns after ten quiet seconds | `tests/session/test_silence.py` |
+| S8 | `Kernel.run_cell` without arguments waits as the cell's header says | `tests/mcp/test_kernel_control.py` |
