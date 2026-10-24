@@ -225,21 +225,33 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, confi
         一格 IPython cell，变量、导入和其他 namespace 状态与当前持久 IPython 会话中的后续 cell 共享。
 
         loommux cell magic
-        -------
+        ------------------
 
-            %%loommux --wait 120 --full-output
-            build_report()
+        cell 第一行写 ``%%loommux``，给这一次调用加参数；选项只作用于这一个 cell，
+        下一行可以接另一个 cell magic，例如 ``%%bash``::
 
-        ``--wait SECONDS``:覆盖本次调用的等待上限；
-        ``--silence SECONDS``:这个 cell 已有这么久没有输出时也交回控制权，cell 照常运行；与 ``--wait`` 谁先到按谁。
-        知道大概要跑多久、多久打一行日志时，两个都写，如 ``--wait 600 --silence 30``。
+            %%loommux --wait 600 --silence 30
+            %%bash
+            pnpm exec playwright test
+
+        等待有两个计时器，对应 HTTP 客户端的总超时与 read timeout（CI 里是 job timeout 与 no_output_timeout）：
+
+        ``--wait SECONDS``：这次调用最多等多久；
+        ``--silence SECONDS``：cell 连续这么久没有任何输出就提前返回，从提交起计，每来一条输出就重新计时。
+
+        cell 跑完立即返回；计时器先到时，结果写明 running 与原因，附最后几行输出。
+        到点只交还控制权，cell 照常运行：接着用 ``wait`` 等（同样两个计时器），或 ``read_output``、``interrupt``。
+
+        不写时两个都是 10 秒，几秒内结束的 cell 不用写。要跑更久，就把心里的两个预估写出来：
+        大概要跑多久，多久打一行日志。上面的 e2e 约几分钟、每个用例一行；训练每个 epoch 约五分钟
+        才打一行时，写 ``--wait 3600 --silence 600``。只写 ``--wait`` 时静默仍是 10 秒，安静的长任务会在 10 秒处先回来。
+
         ``--full-output``:让本次 execution 在终态时返回完整 combined 正文，突破默认 5,000-token 阈值限制；
-        在明确需要完整阅读某些文件、资料时使用，避免反复阅读的开销。选项只作用于这一个 cell。
-        loommux cell magic 的下一行可以接另一个 cell magic，例如 ``%%bash``。
+        在明确需要完整阅读某些文件、资料时使用，避免反复阅读的开销。
 
         ``--kernel NAME`` 写另一个 kernel 的名字，把这个 cell 交给它::
 
-            %%loommux --kernel build --wait 120
+            %%loommux --kernel build --wait 600 --silence 60
             %%bash
             uv run pytest
 
@@ -409,14 +421,24 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, confi
 
     @mcp.tool(output_schema=None, meta=_FULL_BODY_TOOL_META)
     async def wait(ctx: Context, execution: int | None = None, timeout_seconds: float = DEFAULT_WAIT_SECONDS, silence_seconds: float = DEFAULT_SILENCE_SECONDS) -> ToolResult:
-        """等待一个 execution 结束，或在指定时限到达时返回其当前状态。
+        """等待一个 execution 结束，或两个计时器之一到点。
 
-        选择与等待
+        两个计时器
         ----------
 
-        ``execution`` 的选择规则与 ``execution_status`` 相同。等待
-        到期只结束本次工具调用，不中断 Python cell。后续可再次调用本工具，
-        或用 ``read_output`` 查看已到达的输出。
+        与 cell 头的 ``--wait`` / ``--silence`` 相同，对应 HTTP 客户端的总超时与 read timeout：
+        ``timeout_seconds`` 是这次调用最多等多久；``silence_seconds`` 是 execution 连续这么久
+        没有新输出就提前返回，从这次调用开始计。默认都是 10 秒。
+
+        到点只结束这次调用，cell 照常运行，结果写明 running 与原因，附最后几行输出；
+        之后可以再调用本工具，或用 ``read_output``、``interrupt``。
+        按剩下部分的预估来写，例如还要几分钟、每几十秒打一行：
+        ``wait(timeout_seconds=600, silence_seconds=60)``。
+
+        选择
+        ----
+
+        ``execution`` 的选择规则与 ``execution_status`` 相同。
 
         完整输出交付
         ------------
@@ -428,9 +450,8 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, confi
         Args:
             execution: 要等待的正整数执行编号。省略时使用当前记录，随后
                 使用最近记录。
-            timeout_seconds: 本次调用最多等待的正数秒数；默认 30 秒。
-            silence_seconds: 给出时，这次等待中 execution 已有这么久没有新输出也返回，
-                cell 照常运行；与 ``timeout_seconds`` 谁先到按谁。
+            timeout_seconds: 这次调用最多等待的秒数，正数。
+            silence_seconds: execution 连续这么久没有新输出就返回，正数；从这次调用开始计。
 
         Returns:
             选中 execution 的当前状态和可返回的输出表面。未找到记录或
