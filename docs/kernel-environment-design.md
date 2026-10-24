@@ -382,4 +382,4 @@ retention decide a kernel's life.
 | E6 | a forwarded cell relays its child's notices | `tests/mcp/test_kernel_control.py` |
 | E7 | startup files run at open and restart, take no number, and a failing one becomes a notice while the next still runs | `tests/session/test_startup.py` |
 | E8 | `idle_since` is `null` while a cell runs and set after it | `tests/session/test_session.py` |
-| E9 | the notices, `Kernel:` and `Lease alert` of a result are one `<loommux-notice>` block that starts a line, after output that does not end with a newline too; a result with nothing to say has none | `tests/mcp/test_presentation.py` |
+| E9 | the notices, `Kernel:` and `Lease alert` of a result are one `<loommux-notice>` block that starts a line, after output that does not end with a newline too; a result with nothing to say has none | `tests/mcp/test_presentation.py`; end to end, joined as Claude Code joins it, `examples/kernel-environment/tour.py` step 3 |
