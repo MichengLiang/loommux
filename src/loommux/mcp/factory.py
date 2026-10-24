@@ -230,7 +230,7 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, confi
         cell 第一行写 ``%%loommux``，给这一次调用加参数；选项只作用于这一个 cell，
         下一行可以接另一个 cell magic，例如 ``%%bash``::
 
-            %%loommux --wait 600 --silence 30
+            %%loommux --wait 260 --silence 35
             %%bash
             pnpm exec playwright test
 
@@ -242,16 +242,21 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, confi
         cell 跑完立即返回；计时器先到时，结果写明 running 与原因，附最后几行输出。
         到点只交还控制权，cell 照常运行：接着用 ``wait`` 等（同样两个计时器），或 ``read_output``、``interrupt``。
 
-        不写时两个都是 10 秒，几秒内结束的 cell 不用写。要跑更久，就把心里的两个预估写出来：
-        大概要跑多久，多久打一行日志。上面的 e2e 约几分钟、每个用例一行；训练每个 epoch 约五分钟
-        才打一行时，写 ``--wait 3600 --silence 600``。只写 ``--wait`` 时静默仍是 10 秒，安静的长任务会在 10 秒处先回来。
+        不写时两个都是 10 秒，几秒内结束的 cell 不用写。要跑更久，就按这次具体在跑的东西估两个整数秒，
+        不写 30、120、600 这类凑整的数：``--wait`` 是略高于预期、超过就该回来看看的上限；
+        ``--silence`` 是健康运行里两行输出之间最长的间隔。上面的 e2e 上次跑了 212 秒，最慢的用例 23 秒；
+        训练 12 个 epoch、每个约 280 秒才打一行时，写 ``--wait 3500 --silence 320``。
+        只写 ``--wait`` 时静默仍是 10 秒，安静的长任务会在 10 秒处先回来。
+
+        每个结果第一行写着这次执行跑了多久，如 ``In [7] · 54.3 s:``，还在跑时是从提交到现在；
+        下一次估计照着它修正。
 
         ``--full-output``:让本次 execution 在终态时返回完整 combined 正文，突破默认 5,000-token 阈值限制；
         在明确需要完整阅读某些文件、资料时使用，避免反复阅读的开销。
 
         ``--kernel NAME`` 写另一个 kernel 的名字，把这个 cell 交给它::
 
-            %%loommux --kernel build --wait 600 --silence 60
+            %%loommux --kernel build --wait 75 --silence 25
             %%bash
             uv run pytest
 
@@ -432,8 +437,8 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, confi
 
         到点只结束这次调用，cell 照常运行，结果写明 running 与原因，附最后几行输出；
         之后可以再调用本工具，或用 ``read_output``、``interrupt``。
-        按剩下部分的预估来写，例如还要几分钟、每几十秒打一行：
-        ``wait(timeout_seconds=600, silence_seconds=60)``。
+        结果第一行写着它从提交到现在跑了多久；对照预期估出剩下的整数秒，例如
+        ``wait(timeout_seconds=170, silence_seconds=35)``。
 
         选择
         ----

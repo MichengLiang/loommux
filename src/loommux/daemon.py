@@ -56,7 +56,7 @@ class Daemon:
 
         # a kernel's buttons
         n = build.run_cell("make()", wait_seconds=0)["execution"]
-        build.wait(n, timeout_seconds=600, silence_seconds=60)
+        build.wait(n, timeout_seconds=380, silence_seconds=45)
         build.read_output(n, line_range="-20:")["text"]
         build.search_output("error", n, ignore_case=True)["text"]
         build.interrupt(); build.restart()
