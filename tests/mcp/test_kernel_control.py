@@ -37,13 +37,20 @@ def test_the_header_the_wait_tool_and_a_kernels_methods_share_one_silence(tmp_pa
 
             seen = await output(
                 agent,
+                "import time\n"
                 "build = loommux.create('build')\n"
                 "r = build.run_cell(\"import time\\nprint('a')\\ntime.sleep(30)\", wait_seconds=20, silence_seconds=1)\n"
                 "w = build.wait(r['execution'], 20, silence_seconds=1)\n"
                 "build.interrupt()\n"
-                "print(r['status'], r['silent_seconds'] >= 1, r['recent_lines'], w['status'], w['silent_seconds'] >= 1)",
+                "build.wait(r['execution'], 10)\n"
+                # S8: without arguments the cell's own header decides the wait.
+                "started = time.monotonic()\n"
+                "h = build.run_cell(\"%%loommux --wait 1 --silence 5\\nimport time\\ntime.sleep(30)\")\n"
+                "took = time.monotonic() - started\n"
+                "build.interrupt()\n"
+                "print(r['status'], r['silent_seconds'] >= 1, r['recent_lines'], w['status'], w['silent_seconds'] >= 1, h['status'], 0.9 < took < 4)",
             )
-            assert seen == "running True ['a'] running True\n"
+            assert seen == "running True ['a'] running True running True\n"
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -113,7 +120,7 @@ def test_a_kernel_opens_runs_and_holds_kernels_that_leave_with_it(tmp_path: Path
             opened = await output(agent, "build = loommux.create('build')\nprint(build.name, build.snapshot['scope'], build.snapshot['home'] == loommux.self.name)")
             assert opened == "build child True\n"
 
-            started = await output(agent, "n = build.run_cell(\"import time\\nprint('a', flush=True)\\ntime.sleep(0.5)\\nprint('b')\\n6 * 7\", wait_seconds=0.05)['execution']\nprint(n, build.execution_status(n)['status'])")
+            started = await output(agent, "n = build.run_cell(\"import time\\nprint('a', flush=True)\\ntime.sleep(0.5)\\nprint('b')\\n6 * 7\", wait_seconds=0)['execution']\nprint(n, build.execution_status(n)['status'])")
             assert started == "1 running\n"
             finished = await output(
                 agent,
@@ -127,7 +134,7 @@ def test_a_kernel_opens_runs_and_holds_kernels_that_leave_with_it(tmp_path: Path
             busy = await output(
                 agent,
                 "from loommux.daemon import DaemonError\n"
-                "long = build.run_cell('import time; time.sleep(1)', wait_seconds=0.05)['execution']\n"
+                "long = build.run_cell('import time; time.sleep(1)', wait_seconds=0)['execution']\n"
                 "try:\n    build.run_cell('1')\nexcept DaemonError as error:\n    print(error.status, error)\n"
                 # None selects the current execution, then the most recent, as in the tools.
                 "print(build.wait(timeout_seconds=10)['execution'] == long, build.execution_status()['status'])",
@@ -174,7 +181,7 @@ def drive_from_outside(daemon: Daemon, build_id: str) -> None:
     assert repr(build) == f"<loommux kernel build {build.id[:8]}>"
     assert build.status()["name"] == "build"
 
-    n = build.run_cell("import time\nprint('outside', flush=True)\ntime.sleep(0.3)\n'done'", wait_seconds=0.05)["execution"]
+    n = build.run_cell("import time\nprint('outside', flush=True)\ntime.sleep(0.3)\n'done'", wait_seconds=0)["execution"]
     followed = build.follow(n, 0, wait=1)
     assert followed["text"] == "outside\n"
     assert build.execution_status(n)["status"] in {"running", "completed"}
@@ -182,7 +189,7 @@ def drive_from_outside(daemon: Daemon, build_id: str) -> None:
     assert build.read_output(n, "result")["text"].endswith("'done'")
     assert build.search_output("OUTSIDE", n, ignore_case=True, context_after=1)["matched_lines"] == 1
 
-    sleeper = build.run_cell("import time; time.sleep(30)", wait_seconds=0.05)["execution"]
+    sleeper = build.run_cell("import time; time.sleep(30)", wait_seconds=0)["execution"]
     assert build.interrupt()["status"] == "interrupt_sent"
     assert build.wait(sleeper, timeout_seconds=10)["status"] == "interrupted"
     assert build.restart()["status"] == "restarted"

@@ -10,6 +10,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from loommux.cell_header import DEFAULT_SILENCE_SECONDS, DEFAULT_WAIT_SECONDS, CellHeaderError, read_cell_header
 from loommux.identity import CONTROL_URL_ENV, KernelIdentity
 from loommux.notice import NOTICE_MIME
 
@@ -249,17 +250,18 @@ class Kernel:
         self.daemon._learn(resource)
         return resource
 
-    def run_cell(self, freeform: str, *, wait_seconds: float = 10.0, silence_seconds: float | None = None) -> dict[str, Any]:
-        """Submit ``freeform`` as one cell and wait up to ``wait_seconds``; its state either way.
+    def run_cell(self, freeform: str, *, wait_seconds: float | None = None, silence_seconds: float | None = None) -> dict[str, Any]:
+        """Submit ``freeform`` as one cell and wait as the ``run_cell`` tool does; its state either way.
 
         The result's ``execution`` is the number the other operations take.
+        ``wait_seconds`` and ``silence_seconds`` are ``--wait`` and ``--silence``;
+        one left out is the cell header's, whose defaults are the tool's.
         ``wait_seconds=0`` returns at once and leaves the cell running. A
         kernel already running a cell refuses with ``DaemonError`` whose
-        ``status`` is ``busy``: cells are never queued. ``silence_seconds``
-        also returns once the cell has printed nothing that long, as ``--silence``.
+        ``status`` is ``busy``: cells are never queued.
         """
-        body = {"source": freeform, "wait_seconds": wait_seconds} | _silence(silence_seconds)
-        return self._session("POST", "/executions", json=body, timeout=wait_seconds + _CONTROL_TIMEOUT_SECONDS)
+        body = {"source": freeform} | _given(wait_seconds=wait_seconds, silence_seconds=silence_seconds)
+        return self._session("POST", "/executions", json=body, timeout=_header_wait(freeform, wait_seconds) + _CONTROL_TIMEOUT_SECONDS)
 
     def execution_status(self, execution: int | None = None) -> dict[str, Any]:
         """As the ``execution_status`` tool, for this kernel."""
@@ -286,9 +288,9 @@ class Kernel:
         params |= {"ignore_case": "true"} if ignore_case else {}
         return self._session("GET", f"/executions/{_selected(execution)}/search", params=params | _present(max_chars=max_chars))
 
-    def wait(self, execution: int | None = None, timeout_seconds: float = 30, silence_seconds: float | None = None) -> dict[str, Any]:
+    def wait(self, execution: int | None = None, timeout_seconds: float = DEFAULT_WAIT_SECONDS, silence_seconds: float = DEFAULT_SILENCE_SECONDS) -> dict[str, Any]:
         """As the ``wait`` tool, for this kernel: running out of time or into silence ends this call, never the cell."""
-        body = {"timeout_seconds": timeout_seconds} | _silence(silence_seconds)
+        body = {"timeout_seconds": timeout_seconds, "silence_seconds": silence_seconds}
         return self._session("POST", f"/executions/{_selected(execution)}/wait", json=body, timeout=timeout_seconds + _CONTROL_TIMEOUT_SECONDS)
 
     def interrupt(self) -> dict[str, Any]:
@@ -364,6 +366,17 @@ def _present(**values: object) -> dict[str, str]:
     return {name: str(value) for name, value in values.items() if value is not None}
 
 
-def _silence(silence_seconds: float | None) -> dict[str, float]:
+def _given(**values: float | None) -> dict[str, float]:
     # A JSON body keeps the number a number; _present is for query strings.
-    return {} if silence_seconds is None else {"silence_seconds": silence_seconds}
+    return {name: value for name, value in values.items() if value is not None}
+
+
+def _header_wait(freeform: str, wait_seconds: float | None) -> float:
+    """How long the daemon may hold this submission, for the HTTP timeout."""
+    if wait_seconds is not None:
+        return wait_seconds
+    try:
+        return read_cell_header(freeform).wait_seconds
+    except CellHeaderError:
+        # The daemon refuses the header before it waits at all.
+        return DEFAULT_WAIT_SECONDS

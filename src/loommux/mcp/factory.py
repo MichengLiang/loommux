@@ -12,7 +12,7 @@ from fastmcp import Context, FastMCP
 from fastmcp.server.http import StarletteWithLifespan
 from fastmcp.tools import ToolResult
 
-from loommux.cell_header import CellHeaderError, read_cell_header
+from loommux.cell_header import DEFAULT_SILENCE_SECONDS, DEFAULT_WAIT_SECONDS, CellHeaderError, read_cell_header
 from loommux.config import LoommuxConfig
 from loommux.mcp.control import install_control_routes
 from loommux.mcp.lease_ping import install_lease_aware_ping_handler
@@ -408,7 +408,7 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, confi
         return await call("search_output", ctx, lambda session: session.search_output(query, execution, stream, query_mode, context_before, context_after, ignore_case, max_chars))
 
     @mcp.tool(output_schema=None, meta=_FULL_BODY_TOOL_META)
-    async def wait(ctx: Context, execution: int | None = None, timeout_seconds: float = 30, silence_seconds: float | None = None) -> ToolResult:
+    async def wait(ctx: Context, execution: int | None = None, timeout_seconds: float = DEFAULT_WAIT_SECONDS, silence_seconds: float = DEFAULT_SILENCE_SECONDS) -> ToolResult:
         """等待一个 execution 结束，或在指定时限到达时返回其当前状态。
 
         选择与等待

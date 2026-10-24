@@ -63,6 +63,19 @@ def test_wait_counts_silence_from_its_own_start_on_a_quiet_stretch(session: IPyt
         stop(session, first["execution"])
 
 
+# Two ten-second silences in a row: past the suite's fifteen-second default.
+@pytest.mark.timeout(60)
+def test_without_a_written_silence_a_wait_returns_after_ten_quiet_seconds(session: IPythonSession) -> None:
+    # S7: a long --wait alone no longer holds the caller through a stall, on either panel.
+    first, elapsed = timed(lambda: session.run_cell("%%loommux --wait 30\nimport time\nprint('started')\ntime.sleep(60)"))
+    try:
+        assert first["status"] == "running" and 10 <= first["silent_seconds"] < 12 and elapsed < 12
+        again, elapsed = timed(lambda: session.wait(first["execution"], 30))
+        assert again["status"] == "running" and 10 <= again["silent_seconds"] and elapsed < 12
+    finally:
+        stop(session, first["execution"])
+
+
 def test_a_redrawn_line_resets_the_clock_and_a_notice_does_not(session: IPythonSession) -> None:
     # S4
     redrawn = session.run_cell("import sys, time\nfor i in range(8):\n    sys.stdout.write(f'\\r{i * 10}%')\n    sys.stdout.flush()\n    time.sleep(0.3)", wait_seconds=20, silence_seconds=1)

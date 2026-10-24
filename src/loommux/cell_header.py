@@ -22,7 +22,12 @@ from loommux.identity import label_problem
 
 HEADER_MAGIC = "loommux"
 _HEADER_PREFIX = f"%%{HEADER_MAGIC}"
-DEFAULT_INITIAL_WAIT_SECONDS = 10.0
+# Every panel that waits takes its defaults from here: the header, the wait tool,
+# the control plane and Kernel.wait. Both are on and equal (silence-design 4.4):
+# a missing silence holds the agent through a stall, an early one costs one call.
+# The tool descriptions state these numbers.
+DEFAULT_WAIT_SECONDS = 10.0
+DEFAULT_SILENCE_SECONDS = 10.0
 
 
 class CellHeaderError(ValueError):
@@ -40,13 +45,12 @@ class CellHeader:
     main kernel that does not exist; it is never set without ``attach``.
     """
 
-    wait_seconds: float = DEFAULT_INITIAL_WAIT_SECONDS
+    wait_seconds: float = DEFAULT_WAIT_SECONDS
     full_output: bool = False
     kernel: str | None = None
     attach: str | None = None
     create: bool = False
-    # None: the call waits only for the end or wait_seconds (silence-design 4.4).
-    silence_seconds: float | None = None
+    silence_seconds: float = DEFAULT_SILENCE_SECONDS
 
 
 class _HeaderParser(argparse.ArgumentParser):
@@ -86,10 +90,10 @@ _TARGET.add_argument("--attach", type=_kernel_name, metavar="NAME")
 # zellij attach --create: an attach that silently opened an empty kernel would
 # hide that the one the agent meant is gone.
 _PARSER.add_argument("--create", action="store_true")
-_PARSER.add_argument("--wait", type=_positive_seconds, default=DEFAULT_INITIAL_WAIT_SECONDS, metavar="SECONDS")
+_PARSER.add_argument("--wait", type=_positive_seconds, default=DEFAULT_WAIT_SECONDS, metavar="SECONDS")
 # A second condition on the same wait, never a switch that changes --wait: a cell
 # printing forever never goes quiet, and the call would lose its bound.
-_PARSER.add_argument("--silence", type=_positive_seconds, default=None, metavar="SECONDS")
+_PARSER.add_argument("--silence", type=_positive_seconds, default=DEFAULT_SILENCE_SECONDS, metavar="SECONDS")
 _PARSER.add_argument("--full-output", action="store_true")
 
 
@@ -149,10 +153,11 @@ Write it as the first line of a cell:
                  this cell on, letting go of its current one
 --create         with --attach, open NAME when no main kernel has that name
 --wait SECONDS   wait up to SECONDS for this cell before run_cell returns
-                 (default {DEFAULT_INITIAL_WAIT_SECONDS:g}); an expired wait leaves the cell running
+                 (default {DEFAULT_WAIT_SECONDS:g}); an expired wait leaves the cell running
 --silence SECONDS
                  also return once the cell has printed nothing for SECONDS,
                  leaving it running; whichever of the two comes first
+                 (default {DEFAULT_SILENCE_SECONDS:g})
 --full-output    deliver the complete combined output when the cell ends
 
 The options describe this one cell only, except that --attach moves the

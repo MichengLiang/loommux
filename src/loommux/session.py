@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from loommux.cell_header import CellHeaderError, read_cell_header
+from loommux.cell_header import DEFAULT_SILENCE_SECONDS, DEFAULT_WAIT_SECONDS, CellHeaderError, read_cell_header
 from loommux.execution import Execution
 from loommux.identity import KernelIdentity
 from loommux.kernel.session import KernelSession
@@ -108,8 +108,9 @@ class IPythonSession:
     def run_cell(self, freeform: str, *, wait_seconds: float | None = None, silence_seconds: float | None = None) -> dict[str, Any]:
         """Submit one cell exactly as written; ``wait_seconds`` and ``silence_seconds`` override the header's.
 
-        A program states its wait as arguments, while the header still decides
-        complete-output delivery and is validated either way.
+        A program states its wait as arguments; one it leaves out is the
+        header's, and the header decides complete-output delivery and is
+        validated either way.
         """
         if not isinstance(freeform, str):
             return {"ok": False, "status": "invalid_code", "message": "freeform must be a string"}
@@ -124,7 +125,7 @@ class IPythonSession:
             header.silence_seconds if silence_seconds is None else silence_seconds,
         )
 
-    def _submit_python_cell(self, source: str, timeout_seconds: float, full_output_requested: bool = False, silence_seconds: float | None = None) -> dict[str, Any]:
+    def _submit_python_cell(self, source: str, timeout_seconds: float, full_output_requested: bool, silence_seconds: float) -> dict[str, Any]:
         if not isinstance(source, str):
             return {"ok": False, "status": "invalid_code", "message": "code must be a string"}
         # Zero is a program's "submit and return": the header's --wait is positive by its own grammar.
@@ -212,7 +213,7 @@ class IPythonSession:
             result.update({"execution": record.execution, "stream": stream})
         return result
 
-    def wait(self, execution: int | None = None, timeout_seconds: float = 30, silence_seconds: float | None = None) -> dict[str, Any]:
+    def wait(self, execution: int | None = None, timeout_seconds: float = DEFAULT_WAIT_SECONDS, silence_seconds: float = DEFAULT_SILENCE_SECONDS) -> dict[str, Any]:
         if (error := self._validate_timeout(timeout_seconds) or self._validate_silence(silence_seconds)) is not None:
             return error
         called = time.monotonic()
@@ -504,9 +505,7 @@ class IPythonSession:
         return None if valid else {"ok": False, "status": "invalid_timeout", "message": message}
 
     @staticmethod
-    def _validate_silence(silence_seconds: float | None) -> dict[str, Any] | None:
-        if silence_seconds is None:
-            return None
+    def _validate_silence(silence_seconds: float) -> dict[str, Any] | None:
         try:
             silence = float(silence_seconds)
         except (TypeError, ValueError):
@@ -525,7 +524,7 @@ def _startup_source(path: Path) -> str:
     return f"get_ipython().safe_execfile({str(path)!r}, get_ipython().user_ns, raise_exceptions=True)"
 
 
-def _await(record: Execution, timeout_seconds: float, silence_seconds: float | None, *, since: float) -> float | None:
+def _await(record: Execution, timeout_seconds: float, silence_seconds: float, *, since: float) -> float | None:
     """Wait for the execution's end, ``timeout_seconds``, or silence, whichever comes first.
 
     Returns how long the execution had been silent when silence ended the wait,
@@ -536,13 +535,10 @@ def _await(record: Execution, timeout_seconds: float, silence_seconds: float | N
         now = time.monotonic()
         if now >= deadline:
             return None
-        step = deadline - now
-        if silence_seconds is not None:
-            quiet = now - max(since, record.last_output_monotonic)
-            if quiet >= silence_seconds:
-                return quiet
-            step = min(step, silence_seconds - quiet, _SILENCE_POLL_SECONDS)
-        record.done.wait(step)
+        quiet = now - max(since, record.last_output_monotonic)
+        if quiet >= silence_seconds:
+            return quiet
+        record.done.wait(min(deadline - now, silence_seconds - quiet, _SILENCE_POLL_SECONDS))
     return None
 
 

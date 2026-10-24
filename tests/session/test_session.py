@@ -435,7 +435,7 @@ def test_public_execution_responses_exclude_header_policy(session: IPythonSessio
 
 
 def test_output_since_follows_a_cell_by_character_offset(session: IPythonSession) -> None:
-    running = session.run_cell("import time\nprint('first', flush=True)\ntime.sleep(0.4)\nprint('second')", wait_seconds=0.05)
+    running = session.run_cell("import time\nprint('first', flush=True)\ntime.sleep(0.4)\nprint('second')", wait_seconds=0)
 
     first = session.output_since(running["execution"], 0, wait_seconds=1)
     rest = session.output_since(running["execution"], first["offset"], wait_seconds=1)

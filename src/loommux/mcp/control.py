@@ -12,6 +12,7 @@ from fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
 
+from loommux.cell_header import DEFAULT_SILENCE_SECONDS, DEFAULT_WAIT_SECONDS
 from loommux.resource import (
     KernelNotFoundError,
     KernelResourceManager,
@@ -165,10 +166,14 @@ def install_control_routes(
         body, error = await _json_object(request)
         if error is not None:
             return error
-        source, wait_seconds, silence = body.get("source"), body.get("wait_seconds", 10), body.get("silence_seconds")
-        if not isinstance(source, str) or not _is_number(wait_seconds) or not (silence is None or _is_number(silence)):
+        # An absent number is the cell header's, as for run_cell (silence-design 4.4).
+        source, wait_seconds, silence = body.get("source"), body.get("wait_seconds"), body.get("silence_seconds")
+        if not isinstance(source, str) or not all(value is None or _is_number(value) for value in (wait_seconds, silence)):
             return JSONResponse({"ok": False, "message": "source must be a string, and wait_seconds and silence_seconds numbers"}, status_code=400)
-        return await _session_call(request, lambda session: session.run_cell(source, wait_seconds=float(wait_seconds), silence_seconds=None if silence is None else float(silence)))
+        return await _session_call(
+            request,
+            lambda session: session.run_cell(source, wait_seconds=None if wait_seconds is None else float(wait_seconds), silence_seconds=None if silence is None else float(silence)),
+        )
 
     @mcp.custom_route("/api/resources/{resource_id}/rename", methods=["POST"])
     async def rename_resource(request: Request) -> Response:
@@ -203,14 +208,14 @@ def install_control_routes(
         body, error = await _json_object(request)
         if error is not None:
             return error
-        timeout, silence = body.get("timeout_seconds", 30), body.get("silence_seconds")
+        timeout, silence = body.get("timeout_seconds", DEFAULT_WAIT_SECONDS), body.get("silence_seconds", DEFAULT_SILENCE_SECONDS)
         try:
             execution = _execution(request)
-            if not _is_number(timeout) or not (silence is None or _is_number(silence)):
+            if not _is_number(timeout) or not _is_number(silence):
                 raise ValueError("timeout_seconds and silence_seconds must be numbers")
         except ValueError as exc:
             return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
-        return await _session_call(request, lambda session: session.wait(execution, float(timeout), None if silence is None else float(silence)))
+        return await _session_call(request, lambda session: session.wait(execution, float(timeout), float(silence)))
 
     @mcp.custom_route("/api/resources/{resource_id}/executions/{execution}/output", methods=["GET"])
     async def read_output(request: Request) -> Response:

@@ -125,7 +125,7 @@ def forward(daemon: Daemon, header: CellHeader, body: str, write: Callable[[str]
         target = daemon.create(header.kernel)
         if daemon.identity is not None and target.id == daemon.identity.kernel_id:
             raise UsageError(f"{header.kernel} is this kernel, renamed from elsewhere; it now reads that name as its own, so run the cell again")
-        execution = target.run_cell(body, wait_seconds=0.05)["execution"]
+        execution = target.run_cell(body, wait_seconds=0)["execution"]
     except DaemonError as exc:
         raise ForwardedCellError(header.kernel, exc.status or "DaemonError", str(exc)) from None
     try:
