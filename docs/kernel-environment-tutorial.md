@@ -138,7 +138,7 @@ get_ipython().events.register("post_run_cell", _idle_children)
 With both files in place, a cell that crosses both thresholds ends like this:
 
 ```text
-In [3]:
+In [3] · 761.3 s:
 <loommux-notice>
 ⏱ this cell ran 0:12:41
 build has run nothing since 2026-10-23T20:30:03.526315+00:00; loommux.recycle('build') if it is done

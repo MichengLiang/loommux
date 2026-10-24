@@ -9,6 +9,12 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- Every `run_cell` and `wait` result says on its first line how long the
+  execution has run, from submission to its end or to now, on the monotonic
+  clock: `In [7] · 54.3 s:`, whole milliseconds below a second. Structured
+  results and `execution_status` carry `elapsed_seconds`. The tool descriptions
+  ask for waits estimated as whole seconds from the run at hand, with this
+  measurement as the correction.
 - `%%loommux --silence SECONDS`: the `run_cell` call also returns once the cell
   has printed nothing for that long, still running; whichever of `--wait` and
   `--silence` comes first ends the call, and neither interrupts the cell. It is

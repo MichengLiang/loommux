@@ -281,7 +281,7 @@ loommux.recycle("lab", force=True)
 
 # a kernel's buttons
 n = lab.run_cell("train()", wait_seconds=0)["execution"]
-lab.wait(n, timeout_seconds=600, silence_seconds=120)
+lab.wait(n, timeout_seconds=1450, silence_seconds=140)
 lab.read_output(n, line_range="-20:")["text"]
 lab.search_output("loss", n)
 lab.interrupt(); lab.restart()
@@ -309,7 +309,7 @@ startup file did. They come in one envelope that starts a line, with the
 `Kernel:` line and the `Lease alert` when a result has them:
 
 ```text
-In [7]:
+In [7] · 54.3 s:
 done
 <loommux-notice>
 ⚠ 体征｜memory 2.1 GiB, past 2 GiB
@@ -470,7 +470,7 @@ A cell that needs its own control begins with a `%%loommux` header, written in
 ordinary IPython cell-magic syntax:
 
 ```python
-%%loommux --wait 600 --silence 30
+%%loommux --wait 260 --silence 35
 %%bash
 pnpm exec playwright test
 ```
@@ -487,12 +487,20 @@ that one cell; the next cell starts from the defaults again.
 has printed nothing for that long, still running, saying how long it has been
 silent and showing its last lines. Whichever comes first ends the call; neither
 interrupts the cell. Both default to 10 seconds, which suits a cell that ends
-in a few; for a longer run, write the two estimates you hold, about how long it
-takes and how often it prints. A cell that writes only a long `--wait` still
-returns after ten quiet seconds.
+in a few; for a longer run, write the two estimates you hold as whole seconds
+worked out from the run at hand rather than round numbers: `--wait` a little
+above how long it took last time, `--silence` the longest gap between its
+lines, such as its slowest test. The example's suite last ran 212 seconds and
+its slowest case 23. A cell that writes only a long `--wait` still returns after
+ten quiet seconds.
+
+Every `run_cell` and `wait` result says on its first line how long the
+execution has run, from submission to its end or to now: `In [7] · 54.3 s:`,
+`In [9] · 270 ms:`. It is the measurement the next estimate starts from
+([Waiting Until It Goes Quiet](docs/silence-design.md), section 4.6).
 
 In the example, a healthy run returns when it finishes; one stuck at second 40 returns at
-second 70 instead of 600. The `wait` tool takes `silence_seconds`, counted from
+second 75 instead of 260. The `wait` tool takes `silence_seconds`, counted from
 the later of the call and the last output, and so do `Kernel.run_cell` and
 `Kernel.wait`; `Kernel.run_cell` leaves an argument it is not given to the
 cell's header. Any running result shows its last few lines. Python processes a
