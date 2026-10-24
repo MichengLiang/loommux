@@ -51,17 +51,18 @@ async def tour(origin: str, project: Path) -> None:
             return text
 
         step("1. The first cell names the main kernel; the startup files ran before it and took no number")
-        # The startup files' thresholds are ten and thirty minutes; a tour cannot wait that long.
-        seen = await call("run_cell", freeform="%%loommux --attach 巡览 --create\n_LONG = timedelta(seconds=2)\n_IDLE = timedelta(seconds=2)\nprint('hooks from startup/:', _end.__name__, _idle_children.__name__)")
-        expect(seen, "In [1] ·", "hooks from startup/: _end _idle_children", "Kernel: 巡览 (opened)")
+        # The idle-children threshold is thirty minutes; a tour cannot wait that long.
+        seen = await call("run_cell", freeform="%%loommux --attach 巡览 --create\n_IDLE = timedelta(seconds=2)\nprint('hooks from startup/:', _moved.__name__, _idle_children.__name__)")
+        expect(seen, "In [1] ·", "hooks from startup/: _moved _idle_children", "Kernel: 巡览 (opened)")
 
         step("2. --kernel build runs one cell in a child kernel, opened on first use")
         seen = await call("run_cell", freeform="%%loommux --kernel build\nanswer = 6 * 7\nanswer")
         expect(seen, "Out[1]: 42")
 
-        step("3. A slow, loud cell: the output is omitted, the two notices are not; they come in the envelope")
-        seen = await call("run_cell", freeform="import time\ntime.sleep(2.5)\nprint('word ' * 30000)")
-        expect(seen, "Output omitted", "\n<loommux-notice>\n⏱ this cell ran", "build has run nothing since", "\n</loommux-notice>")
+        step("3. A loud cell that moves the directory: the output is omitted, the two notices are not; they come in the envelope")
+        # The sleep lets build sit idle past the lowered threshold.
+        seen = await call("run_cell", freeform="import os, time\ntime.sleep(2.5)\nos.chdir('..')\nprint('word ' * 30000)")
+        expect(seen, "Output omitted", f"\n<loommux-notice>\n📁 working directory is now {project}, was {project / 'src'}", "build has run nothing since", "\n</loommux-notice>")
 
         step("4. The daemon's buttons and a kernel's, from Python inside the main kernel")
         seen = await call(

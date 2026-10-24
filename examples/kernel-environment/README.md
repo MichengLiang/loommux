@@ -17,10 +17,10 @@ tour stops if loommux ever stops behaving as shown.
 ```text
 kernel-environment/
     .loommux/
-        config.py                 the daemon's settings: connection leases
+        config.py                    the daemon's settings: connection leases
         startup/
-            10-long-cells.py      tells the agent when a cell ran long
-            20-idle-children.py   asks about child kernels that run nothing
+            10-working-directory.py  tells the agent when a cell moved the working directory
+            20-idle-children.py      asks about child kernels that run nothing
     tour.py
 ```
 
@@ -35,12 +35,12 @@ writes line by line.
 | 0 | starts loommux in `src/` | `loommux: configuration …/.loommux (found from the launch directory)`: the directory is found upward, as git finds `.git` |
 | 1 | `%%loommux --attach 巡览 --create` | `In [1]`, with the startup hooks already defined, and `Kernel: 巡览 (opened)` |
 | 2 | `%%loommux --kernel build` | the child kernel's output, relayed into this cell |
-| 3 | a cell that sleeps and prints 150,000 characters | the output omitted, and after it both notices in the `<loommux-notice>` envelope: the cell ran long, and `build` runs nothing |
+| 3 | a cell that sleeps, moves to the parent directory and prints 150,000 characters | the output omitted, and after it both notices in the `<loommux-notice>` envelope: the directory moved, and `build` runs nothing |
 | 4 | `loommux.kernels()`, `loommux["build"].run_cell(…)`, `loommux.recycle("build")` | every kernel, `build`'s answer, and its retirement: the daemon's buttons and a kernel's |
 | 5 | a typo in a startup file, then `restart` | `Startup · 30-typo.py failed: SyntaxError …`, and the next cell is `In [1]` |
 
-The tour lowers the hooks' thresholds in its first cell, from ten and thirty
-minutes to seconds, so it finishes in about fifteen.
+The tour lowers the idle-children threshold in its first cell, from thirty
+minutes to two seconds, so it finishes in about fifteen.
 
 ## Using it as a starting point
 

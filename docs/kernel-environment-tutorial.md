@@ -43,48 +43,57 @@ loommux: configuration /home/me/project/.loommux (found from the launch director
 
 `--config DIR` names a different directory instead.
 
-## 2. A first startup file: cells that ran long
+## 2. A first startup file: the working directory moved
 
 Files in `startup/` run in name order, in the kernel's user namespace, before
 the agent's first cell. They take no execution number, so the first cell is
 still `In [1]`. `loommux` is already defined there.
 
-`startup/10-long-cells.py` registers two IPython hooks:
+A working directory changed in one cell stays changed for every later one:
+`%cd`, `os.chdir()`, or a library that changes it on the way. A person sees it
+in the prompt; an agent sees no prompt, and no result says where relative
+paths now resolve until one of them misses. `startup/10-working-directory.py`
+says it once, in the cell that moved it:
 
 ```python
-import time
-from datetime import timedelta
+import os
 
-_LONG = timedelta(minutes=10)
-_started: float | None = None
+_before: str | None = None
 
 
-def _start(info):
-    global _started
-    _started = time.monotonic()
+def _remember(info):
+    global _before
+    _before = os.getcwd()
 
 
-def _end(result):
+def _moved(result):
     # The startup request that registers these hooks ends too, without having
     # started a cell through them.
-    if _started is None:
+    if _before is None:
         return
-    took = timedelta(seconds=round(time.monotonic() - _started))
-    if took >= _LONG:
-        loommux.notify(f"⏱ this cell ran {took}")
+    now = os.getcwd()
+    if now != _before:
+        loommux.notify(f"📁 working directory is now {now}, was {_before}; %cd {_before} goes back")
 
 
-get_ipython().events.register("pre_run_cell", _start)
-get_ipython().events.register("post_run_cell", _end)
+get_ipython().events.register("pre_run_cell", _remember)
+get_ipython().events.register("post_run_cell", _moved)
 ```
 
-Two details come from where the file runs:
+The two hooks are a pair: `pre_run_cell` remembers where the cell started,
+`post_run_cell` compares, and the notice comes only from the cell that moved,
+since the next cell starts where this one ended. Two details come from where
+the file runs:
 
 - What it defines lands in the user namespace, beside the agent's own names.
   Names starting with `_` stay out of the way.
 - The file runs inside a request of its own, so `post_run_cell` fires once for
-  that request, right after the hook is registered. `_started` is still `None`
+  that request, right after the hook is registered. `_before` is still `None`
   then, and the hook stays quiet.
+
+A notice says what nothing else says. How long a cell ran, for one, is already
+on the first line of every result, so an environment that repeated it would
+only spend the one place that the 5,000-token limit never cuts.
 
 ## 3. Asking the daemon: child kernels nobody uses
 
@@ -135,12 +144,13 @@ get_ipython().events.register("post_run_cell", _idle_children)
 
 ## 4. What the agent sees
 
-With both files in place, a cell that crosses both thresholds ends like this:
+With both files in place, a cell that moves the directory while a child kernel
+has sat idle ends like this:
 
 ```text
-In [3] · 761.3 s:
+In [3] · 2.6 s:
 <loommux-notice>
-⏱ this cell ran 0:12:41
+📁 working directory is now /home/me/project, was /home/me/project/src; %cd /home/me/project/src goes back
 build has run nothing since 2026-10-23T20:30:03.526315+00:00; loommux.recycle('build') if it is done
 </loommux-notice>
 ```
