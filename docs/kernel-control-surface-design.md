@@ -60,7 +60,7 @@ build.interrupt()
    `run_cell`, `follow` and, if this cell is interrupted, `interrupt`.
 2. The agent wants `build` to run while its own main kernel keeps working. It
    writes `build.run_cell(code, wait_seconds=0)` and later
-   `build.wait(n, timeout_seconds=600)` and `build.read_output(n)`, the same
+   `build.wait(n, timeout_seconds=600, silence_seconds=60)` and `build.read_output(n)`, the same
    calls its MCP tools make on its main kernel.
 3. The vitals alarm in a main kernel lists every kernel and keeps the rows
    whose `home` is its own name: its child kernels.
@@ -99,7 +99,7 @@ cell and never reaches the daemon.
 
 | MCP tool | Python, on a handle | HTTP, under `/api/resources/{id}` |
 | --- | --- | --- |
-| `run_cell(freeform)` | `run_cell(freeform, wait_seconds=10)` | `POST /executions` |
+| `run_cell(freeform)` | `run_cell(freeform, wait_seconds=None, silence_seconds=None)`, the header's when left out | `POST /executions` |
 | `status()` | `status()` | `GET` |
 | `execution_status(execution)` | `execution_status(execution=None)` | `GET /executions/{n}` |
 | `read_output(execution, stream, line_range, max_chars)` | the same | `GET /executions/{n}/output` |

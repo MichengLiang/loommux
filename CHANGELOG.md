@@ -11,7 +11,10 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 - `%%loommux --silence SECONDS`: the `run_cell` call also returns once the cell
   has printed nothing for that long, still running; whichever of `--wait` and
-  `--silence` comes first ends the call, and neither interrupts the cell. Any
+  `--silence` comes first ends the call, and neither interrupts the cell. It is
+  on by default at 10 seconds, the same as `--wait`, so a cell without a header
+  waits as before and one that writes only a long `--wait` returns at a ten-second
+  stall; when both expire together the result says it went silent. Any
   output message counts, before normalization, so a progress bar redrawn with
   `\r` is activity; a notice is not. The `wait` tool, `Kernel.run_cell`,
   `Kernel.wait` and the control plane's two execution routes take
@@ -82,6 +85,12 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Changed
 
+- The `wait` tool waits 10 seconds by default, as `--wait` does, instead of 30;
+  both defaults are defined once in `loommux.cell_header`.
+- `Kernel.run_cell` sends `wait_seconds` and `silence_seconds` only when given,
+  and the control plane's submit route reads an absent one as the cell header's:
+  a cell submitted from code with `%%loommux --wait 60` now waits sixty seconds
+  instead of the client's ten.
 - The `Lease alert` is a line of the result's `<loommux-notice>` envelope, no
   longer a block of its own.
 - A named main kernel whose connection-lease sessions all left is no longer
