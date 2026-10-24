@@ -93,3 +93,13 @@ def test_a_running_result_shows_its_last_lines_when_the_wait_runs_out_too(sessio
 def test_silence_must_be_a_positive_number_of_seconds(session: IPythonSession, silence: object) -> None:
     assert session.run_cell("1", silence_seconds=silence)["status"] == "invalid_silence"  # type: ignore[arg-type]
     assert session.wait(None, 1, silence_seconds=silence)["status"] == "invalid_silence"  # type: ignore[arg-type]
+
+
+def test_a_program_waiting_zero_seconds_submits_and_returns_at_once(session: IPythonSession) -> None:
+    # Kernel.run_cell(code, wait_seconds=0) is documented as submit-and-return.
+    result, elapsed = timed(lambda: session.run_cell("import time\ntime.sleep(3)", wait_seconds=0))
+    assert result["status"] == "running" and elapsed < 1
+    # An interrupt this early can reach the kernel before the cell starts, so let it end.
+    assert session.wait(result["execution"], 10)["status"] == "completed"
+    assert session.run_cell("1", wait_seconds=-1)["status"] == "invalid_timeout"
+    assert session.wait(None, 0)["status"] == "invalid_timeout"

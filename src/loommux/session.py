@@ -127,7 +127,8 @@ class IPythonSession:
     def _submit_python_cell(self, source: str, timeout_seconds: float, full_output_requested: bool = False, silence_seconds: float | None = None) -> dict[str, Any]:
         if not isinstance(source, str):
             return {"ok": False, "status": "invalid_code", "message": "code must be a string"}
-        if (error := self._validate_timeout(timeout_seconds) or self._validate_silence(silence_seconds)) is not None:
+        # Zero is a program's "submit and return": the header's --wait is positive by its own grammar.
+        if (error := self._validate_timeout(timeout_seconds, allow_zero=True) or self._validate_silence(silence_seconds)) is not None:
             return error
         with self._lock:
             if self.workspace is None:
@@ -493,12 +494,14 @@ class IPythonSession:
         return notices
 
     @staticmethod
-    def _validate_timeout(timeout_seconds: float) -> dict[str, Any] | None:
+    def _validate_timeout(timeout_seconds: float, *, allow_zero: bool = False) -> dict[str, Any] | None:
+        message = "timeout_seconds must be 0 or more" if allow_zero else "timeout_seconds must be greater than 0"
         try:
             timeout = float(timeout_seconds)
         except (TypeError, ValueError):
-            return {"ok": False, "status": "invalid_timeout", "message": "timeout_seconds must be greater than 0"}
-        return None if math.isfinite(timeout) and timeout > 0 else {"ok": False, "status": "invalid_timeout", "message": "timeout_seconds must be greater than 0"}
+            timeout = math.nan
+        valid = math.isfinite(timeout) and (timeout >= 0 if allow_zero else timeout > 0)
+        return None if valid else {"ok": False, "status": "invalid_timeout", "message": message}
 
     @staticmethod
     def _validate_silence(silence_seconds: float | None) -> dict[str, Any] | None:
