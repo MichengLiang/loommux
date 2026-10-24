@@ -44,6 +44,8 @@ class CellHeader:
     kernel: str | None = None
     attach: str | None = None
     create: bool = False
+    # None: the call waits only for the end or wait_seconds (silence-design 4.4).
+    silence_seconds: float | None = None
 
 
 class _HeaderParser(argparse.ArgumentParser):

@@ -117,16 +117,16 @@ def test_run_cell_submits_the_cell_as_written_with_the_header_policy(source: str
     class CapturingSession(IPythonSession):
         def __init__(self) -> None:
             super().__init__()
-            self.calls: list[tuple[str, float, bool]] = []
+            self.calls: list[tuple[str, float, bool, float | None]] = []
 
-        def _submit_python_cell(self, source: str, timeout_seconds: float, full_output_requested: bool = False) -> dict[str, object]:
-            self.calls.append((source, timeout_seconds, full_output_requested))
+        def _submit_python_cell(self, source: str, timeout_seconds: float, full_output_requested: bool = False, silence_seconds: float | None = None) -> dict[str, object]:
+            self.calls.append((source, timeout_seconds, full_output_requested, silence_seconds))
             return {"ok": True, "status": "captured"}
 
     session = CapturingSession()
 
     assert session.run_cell(source)["status"] == "captured"
-    assert session.calls == [(source, 2.0, True)]
+    assert session.calls == [(source, 2.0, True, None)]
 
 
 def test_invalid_header_does_not_allocate_or_submit_an_execution() -> None:

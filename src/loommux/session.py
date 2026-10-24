@@ -24,6 +24,11 @@ STARTUP_SUFFIXES = (".py", ".ipy")
 # ends would hold that cell back for good.
 STARTUP_FILE_SECONDS = 60.0
 _STARTUP_INTERRUPT_SECONDS = 5.0
+# Silence is meant in seconds; checking a quarter second apart keeps a long wait cheap.
+_SILENCE_POLL_SECONDS = 0.25
+# What a running result shows of where its output stands (silence-design 1).
+RECENT_LINES = 5
+RECENT_LINE_CHARACTERS = 200
 
 
 class IPythonSession:
@@ -100,11 +105,11 @@ class IPythonSession:
             self._idle_since = datetime.now(UTC)
         return self.status()
 
-    def run_cell(self, freeform: str, *, wait_seconds: float | None = None) -> dict[str, Any]:
-        """Submit one cell exactly as written; ``wait_seconds`` overrides the header's wait.
+    def run_cell(self, freeform: str, *, wait_seconds: float | None = None, silence_seconds: float | None = None) -> dict[str, Any]:
+        """Submit one cell exactly as written; ``wait_seconds`` and ``silence_seconds`` override the header's.
 
-        A program states its wait as an argument, while the header still
-        decides complete-output delivery and is validated either way.
+        A program states its wait as arguments, while the header still decides
+        complete-output delivery and is validated either way.
         """
         if not isinstance(freeform, str):
             return {"ok": False, "status": "invalid_code", "message": "freeform must be a string"}
@@ -116,12 +121,13 @@ class IPythonSession:
             freeform,
             header.wait_seconds if wait_seconds is None else wait_seconds,
             header.full_output,
+            header.silence_seconds if silence_seconds is None else silence_seconds,
         )
 
-    def _submit_python_cell(self, source: str, timeout_seconds: float, full_output_requested: bool = False) -> dict[str, Any]:
+    def _submit_python_cell(self, source: str, timeout_seconds: float, full_output_requested: bool = False, silence_seconds: float | None = None) -> dict[str, Any]:
         if not isinstance(source, str):
             return {"ok": False, "status": "invalid_code", "message": "code must be a string"}
-        if (error := self._validate_timeout(timeout_seconds)) is not None:
+        if (error := self._validate_timeout(timeout_seconds) or self._validate_silence(silence_seconds)) is not None:
             return error
         with self._lock:
             if self.workspace is None:
@@ -150,8 +156,9 @@ class IPythonSession:
                 execution.record_error({"ename": type(exc).__name__, "evalue": str(exc), "traceback": []})
                 execution.finish()
             return self._execution_response(execution)
-        execution.done.wait(float(timeout_seconds))
-        return self._execution_response(execution)
+        # The clock starts at submission: the record was made a moment ago.
+        silent = _await(execution, float(timeout_seconds), silence_seconds, since=execution.last_output_monotonic)
+        return self._execution_response(execution, silent)
 
     def status(self) -> dict[str, Any]:
         with self._lock:
@@ -204,15 +211,17 @@ class IPythonSession:
             result.update({"execution": record.execution, "stream": stream})
         return result
 
-    def wait(self, execution: int | None = None, timeout_seconds: float = 30) -> dict[str, Any]:
-        if (error := self._validate_timeout(timeout_seconds)) is not None:
+    def wait(self, execution: int | None = None, timeout_seconds: float = 30, silence_seconds: float | None = None) -> dict[str, Any]:
+        if (error := self._validate_timeout(timeout_seconds) or self._validate_silence(silence_seconds)) is not None:
             return error
+        called = time.monotonic()
         record = self._select_execution(execution)
         if record is None:
             return {"ok": False, "status": "execution_not_found", "message": "execution was not found", "kernel": self._kernel_status()}
-        if record.is_running:
-            record.done.wait(float(timeout_seconds))
-        return self._execution_response(record)
+        # Silence counts from the later of this call and the last output: measured from
+        # the output alone, waiting again on a quiet stretch would return at once.
+        silent = _await(record, float(timeout_seconds), silence_seconds, since=called)
+        return self._execution_response(record, silent)
 
     def output_since(self, execution: int, offset: int, wait_seconds: float = MAX_FOLLOW_WAIT_SECONDS) -> dict[str, Any]:
         """Combined output after the first ``offset`` characters, for following a cell.
@@ -373,12 +382,17 @@ class IPythonSession:
         record = self._select_execution(execution)
         return (None, {"ok": False, "status": "execution_not_found", "message": "execution was not found"}) if record is None else (record, None)
 
-    def _execution_response(self, record: Execution) -> dict[str, Any]:
+    def _execution_response(self, record: Execution, silent: float | None = None) -> dict[str, Any]:
         result = record.snapshot()
         if not record.is_running and record.has_rich_presentation:
             # This is consumed by the MCP result projection only. Keeping it private prevents
             # Base64 payloads from leaking into status JSON or text logs.
             result["_presentation"] = tuple(record.presentation)
+        if record.is_running:
+            # Where the output stands, so a wait that ended early or ran out shows how far the cell got.
+            result["recent_lines"] = _recent_lines(record)
+            if silent is not None:
+                result["silent_seconds"] = round(silent, 1)
         result["kernel"] = self._kernel_status()
         return result
 
@@ -487,6 +501,16 @@ class IPythonSession:
         return None if math.isfinite(timeout) and timeout > 0 else {"ok": False, "status": "invalid_timeout", "message": "timeout_seconds must be greater than 0"}
 
     @staticmethod
+    def _validate_silence(silence_seconds: float | None) -> dict[str, Any] | None:
+        if silence_seconds is None:
+            return None
+        try:
+            silence = float(silence_seconds)
+        except (TypeError, ValueError):
+            silence = math.nan
+        return None if math.isfinite(silence) and silence > 0 else {"ok": False, "status": "invalid_silence", "message": "silence_seconds must be greater than 0"}
+
+    @staticmethod
     def _workspace_error(status: str, message: str, workspace: Path, python_path: Path) -> dict[str, Any]:
         return {"ok": False, "status": status, "message": message, "workspace": str(workspace), "python": str(python_path)}
 
@@ -496,3 +520,32 @@ def _startup_source(path: Path) -> str:
     if path.suffix == ".ipy":
         return f"get_ipython().safe_execfile_ipy({str(path)!r}, raise_exceptions=True)"
     return f"get_ipython().safe_execfile({str(path)!r}, get_ipython().user_ns, raise_exceptions=True)"
+
+
+def _await(record: Execution, timeout_seconds: float, silence_seconds: float | None, *, since: float) -> float | None:
+    """Wait for the execution's end, ``timeout_seconds``, or silence, whichever comes first.
+
+    Returns how long the execution had been silent when silence ended the wait,
+    else None. Silence counts from the later of ``since`` and its last output.
+    """
+    deadline = time.monotonic() + timeout_seconds
+    while record.is_running:
+        now = time.monotonic()
+        if now >= deadline:
+            return None
+        step = deadline - now
+        if silence_seconds is not None:
+            quiet = now - max(since, record.last_output_monotonic)
+            if quiet >= silence_seconds:
+                return quiet
+            step = min(step, silence_seconds - quiet, _SILENCE_POLL_SECONDS)
+        record.done.wait(step)
+    return None
+
+
+def _recent_lines(record: Execution) -> list[str]:
+    """The last few lines of combined output, each cut short; read from the tail, not the whole log."""
+    log = record.logs.combined
+    tail = log.text_since(max(0, log.character_count - RECENT_LINES * RECENT_LINE_CHARACTERS * 2))
+    lines = [line for line in tail.splitlines() if line.strip()][-RECENT_LINES:]
+    return [line if len(line) <= RECENT_LINE_CHARACTERS else line[: RECENT_LINE_CHARACTERS - 1] + "…" for line in lines]

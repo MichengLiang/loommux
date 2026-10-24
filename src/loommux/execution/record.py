@@ -53,6 +53,10 @@ class Execution:
     msg_id: str | None = None
     interrupt_requested: bool = False
     done: threading.Event = field(default_factory=threading.Event, repr=False)
+    # When an output message last arrived, on the monotonic clock: --silence measures
+    # from it. Set before normalization, since a line redrawn in place with \r is
+    # activity even when the normalized log does not grow; a notice is not output.
+    last_output_monotonic: float = field(default_factory=time.monotonic, repr=False)
     logs: ExecutionLogs = field(default_factory=ExecutionLogs, init=False)
     presentation: list[PresentationElement] = field(default_factory=list, init=False)
     # Notices are not output: no stream and no token limit sees them. They are
@@ -72,6 +76,7 @@ class Execution:
     _output_token_count_is_current: bool = field(default=False, init=False, repr=False)
 
     def append_stdout(self, text: str) -> str:
+        self.last_output_monotonic = time.monotonic()
         normalized = self._stdout_normalizer.normalize(text)
         self.logs.append_stdout(normalized)
         if normalized:
@@ -81,6 +86,7 @@ class Execution:
         return normalized
 
     def append_stderr(self, text: str) -> str:
+        self.last_output_monotonic = time.monotonic()
         normalized = self._stderr_normalizer.normalize(text)
         self.logs.append_stderr(normalized)
         if normalized:
@@ -90,6 +96,7 @@ class Execution:
         return normalized
 
     def append_result_text(self, text: str) -> str:
+        self.last_output_monotonic = time.monotonic()
         normalized = self._result_normalizer.normalize(text)
         if normalized:
             self._result_parts.append(normalized)
@@ -101,6 +108,7 @@ class Execution:
         return normalized
 
     def record_error(self, error: dict[str, Any]) -> str:
+        self.last_output_monotonic = time.monotonic()
         normalized_error = dict(error)
         for key in ("ename", "evalue"):
             if key in normalized_error:
@@ -138,6 +146,7 @@ class Execution:
         The data bundle is retained as supplied because its Base64 and detail fields
         must be diagnosed at the MCP boundary, where delivery limits are known.
         """
+        self.last_output_monotonic = time.monotonic()
         ordinal = self._next_display_ordinal
         self._next_display_ordinal += 1
         if not isinstance(data, dict):

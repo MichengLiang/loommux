@@ -111,6 +111,15 @@ def test_a_binding_change_names_the_kernel_and_how_it_was_chosen(binding: dict, 
     assert format_binding(binding) == text
 
 
+def test_a_running_result_says_why_it_returned_and_where_the_output_stands() -> None:
+    status = {"ok": True, "execution": 7, "status": "running", "silent_seconds": 30.4, "recent_lines": ["✓ 41 passed (12.3s)", "waiting for http://localhost:5173 …"]}
+
+    assert format_tool_result_text("run_cell", status) == (
+        "In [7]:\nRunning, silent for 30 s: use wait() for completion, read_output() for collected output, or search_output() to locate text.\n"
+        "Last lines:\n  ✓ 41 passed (12.3s)\n  waiting for http://localhost:5173 …"
+    )
+
+
 def envelope(*lines: str) -> str:
     """What the environment says in one result: one block that starts a line and is closed."""
     return "\n<loommux-notice>\n" + "\n".join(lines) + "\n</loommux-notice>"

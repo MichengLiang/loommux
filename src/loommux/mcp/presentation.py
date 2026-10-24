@@ -41,7 +41,7 @@ def _execution_surface(status: Mapping[str, Any]) -> str:
     state = str(status.get("status", "unknown"))
     output = _optional_string(status.get("output_text")) or ""
     if state == "running":
-        return _with_execution_input(execution, "Running: use wait() for completion, read_output() for collected output, or search_output() to locate text.")
+        return _with_execution_input(execution, _running_surface(status))
     if state == "error":
         return _with_execution_input(execution, output or _error_detail(status))
     if state == "interrupted":
@@ -55,6 +55,17 @@ def _execution_surface(status: Mapping[str, Any]) -> str:
     if status.get("output_omitted_reason") == "token_limit_exceeded":
         return _with_execution_input(execution, format_output_token_limit_notice(status))
     return _with_execution_input(execution, output)
+
+
+def _running_surface(status: Mapping[str, Any]) -> str:
+    """Still running: why the call returned, and where the output stands."""
+    silent = status.get("silent_seconds")
+    state = "Running" if not isinstance(silent, int | float) else f"Running, silent for {silent:.0f} s"
+    text = f"{state}: use wait() for completion, read_output() for collected output, or search_output() to locate text."
+    lines = status.get("recent_lines")
+    if isinstance(lines, list) and lines:
+        text += "\nLast lines:\n" + "\n".join(f"  {line}" for line in lines)
+    return text
 
 
 def format_output_token_limit_notice(status: Mapping[str, Any]) -> str:
