@@ -83,10 +83,13 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   every tool result ends with the notices no result has delivered, each once,
   labeled `In [N] · ` when it belongs to another cell and `Startup · ` when a
   startup file spoke it, before `Kernel:` and `Lease alert`; structured
-  results carry `notices`. A notice is cut at 500 characters, a cell keeps
-  ten. A forwarded cell speaks its child kernel's notices again as
-  `build · …`, and the control plane's combined follow hands an execution's
-  notices over with its final state.
+  results carry `notices`. A cell still running hands out what it has said so
+  far, so a result that `--silence` or `--wait` returns early already carries
+  it; what the cell says later comes with a later result. A notice is cut at
+  500 characters, a cell keeps ten, and how many it did not keep is said once,
+  after it ends. A forwarded cell speaks its child kernel's notices again as
+  `build · …` as they arrive, and the control plane's combined follow carries
+  the notices said since its previous answer.
 - What the environment says in a tool result, the notices, the `Kernel:` line
   and the `Lease alert`, is one text block that starts a line:
   `<loommux-notice>`, its lines, `</loommux-notice>`. A client such as Claude
