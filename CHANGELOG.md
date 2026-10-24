@@ -9,6 +9,14 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- Each lease in a resource snapshot carries `client_address`, the remote
+  `[host, port]` of its session's open standalone `GET` stream as ASGI reports
+  it, and `null` while no stream is open and under stdio. It is a transport
+  fact: a process on the same machine can look the port up among the sockets it
+  can see and learn which process holds a kernel, for example a kernel opened by
+  a sub-agent that an agent started from its own kernel, where the process tree
+  breaks at the MCP connection. Only the stream's address is kept, since a
+  `POST` may arrive on any pooled connection.
 - Every `run_cell` and `wait` result says on its first line how long the
   execution has run, from submission to its end or to now, on the monotonic
   clock: `In [7] · 54.3 s:`, whole milliseconds below a second. Structured
