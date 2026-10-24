@@ -162,7 +162,8 @@ class Daemon:
         Speak during a cell, including from ``pre_run_cell`` and
         ``post_run_cell`` hooks: the notice belongs to that cell, never enters
         its output streams, and is never omitted with long output. The next
-        tool result ends with it, once. A notice is one short alarm with a
+        tool result ends with it, once, as one line of that result's
+        ``<loommux-notice>`` envelope. A notice is one short alarm with a
         pointer to act on it, cut at 500 characters; a cell keeps its first
         ten. Text spoken while no cell runs belongs to no request and is lost.
         """

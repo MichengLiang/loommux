@@ -77,6 +77,35 @@ _LEASE_ALERT_CAUSES = {
     "stream_lost": "this MCP session's standalone GET stream closed and was not reopened, yet the client keeps sending requests",
 }
 
+NOTICE_TAG = "loommux-notice"
+
+
+def format_environment(status: Mapping[str, Any]) -> str | None:
+    """Everything the environment says in one result, as one envelope; None when it says nothing.
+
+    The notices, then the ``Kernel:`` line, then the ``Lease alert``. The
+    client joins a result's text blocks end to end, so the leading newline and
+    the tag are the only boundary the reader sees between output and the
+    environment (kernel-environment-design 6.4).
+    """
+    lines: list[str] = []
+    notices = status.get("notices")
+    if isinstance(notices, list) and notices:
+        lines.append(format_notices(notices, status.get("execution")))
+    binding = status.get("binding")
+    if isinstance(binding, Mapping):
+        # Present once, on the result whose call changed the session's main kernel.
+        lines.append(format_binding(binding))
+    lease_alert = status.get("lease_alert")
+    if isinstance(lease_alert, Mapping):
+        # On every result of an affected session, so that the model relays it
+        # to the person it works for.
+        lines.append(format_lease_alert(lease_alert))
+    if not lines:
+        return None
+    body = "\n".join(lines)
+    return f"\n<{NOTICE_TAG}>\n{body}\n</{NOTICE_TAG}>"
+
 
 def format_binding(binding: Mapping[str, Any]) -> str:
     """Tell the session which main kernel it now works in, and how it got it."""

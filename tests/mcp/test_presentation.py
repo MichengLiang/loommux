@@ -111,7 +111,12 @@ def test_a_binding_change_names_the_kernel_and_how_it_was_chosen(binding: dict, 
     assert format_binding(binding) == text
 
 
-def test_the_binding_block_follows_the_output_and_precedes_a_lease_alert() -> None:
+def envelope(*lines: str) -> str:
+    """What the environment says in one result: one block that starts a line and is closed."""
+    return "\n<loommux-notice>\n" + "\n".join(lines) + "\n</loommux-notice>"
+
+
+def test_the_binding_line_follows_the_output_and_precedes_a_lease_alert_in_one_envelope() -> None:
     result = make_tool_result(
         "run_cell",
         {"ok": True, "status": "completed", "execution": 1, "output_text": "42\n", "binding": {"name": "lab", "kind": "opened", "executions": 0}, "lease_alert": {"standing": "unbound", "fallback_window_seconds": 30}},
@@ -119,13 +124,14 @@ def test_the_binding_block_follows_the_output_and_precedes_a_lease_alert() -> No
     )
 
     texts = [block.text for block in result.content]
+    assert len(texts) == 2
     assert texts[0] == "In [1]:\n42\n"
-    assert texts[1] == "Kernel: lab (opened)"
-    assert texts[2].startswith("Lease alert (unbound)")
+    assert texts[1].startswith("\n<loommux-notice>\nKernel: lab (opened)\nLease alert (unbound)")
+    assert texts[1].endswith("\n</loommux-notice>")
     assert format_tool_result_text("execution_status", {"ok": True, "execution": 5, "status": "completed", "output_total_lines": 2}).startswith("execution 5: completed")
 
 
-def test_notices_follow_even_an_omitted_output_and_precede_the_binding_and_alert() -> None:
+def test_notices_follow_even_an_omitted_output_and_precede_the_binding_and_alert_in_the_envelope() -> None:
     notices = [
         {"execution": None, "text": "00-vitals.ipy failed: NameError: x"},
         {"execution": 3, "text": "📬 reply"},
@@ -149,17 +155,41 @@ def test_notices_follow_even_an_omitted_output_and_precede_the_binding_and_alert
     )
 
     texts = [block.text for block in result.content]
+    assert len(texts) == 2
     assert texts[0].startswith("In [4]:\nOutput omitted")
     # The shown execution's own notice needs no label; others name their source.
-    assert texts[1] == "Startup · 00-vitals.ipy failed: NameError: x\nIn [3] · 📬 reply\n⚠ memory"
-    assert texts[2] == "Kernel: lab (opened)"
-    assert texts[3].startswith("Lease alert")
+    lines = texts[1].split("\n")
+    assert lines[:6] == ["", "<loommux-notice>", "Startup · 00-vitals.ipy failed: NameError: x", "In [3] · 📬 reply", "⚠ memory", "Kernel: lab (opened)"]
+    assert lines[6].startswith("Lease alert (unbound)")
+    assert lines[7:] == ["</loommux-notice>"]
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        {"output_text": "42"},
+        {"output_omitted_reason": "token_limit_exceeded", "output_total_lines": 1, "output_total_characters": 60_000, "output_total_utf8_bytes": 60_000},
+    ],
+)
+def test_the_envelope_starts_a_line_after_output_that_does_not_end_one(status: dict) -> None:
+    # A client joins a result's blocks end to end; this is what its reader sees.
+    result = make_tool_result("run_cell", {"ok": True, "status": "completed", "execution": 4, "notices": [{"execution": 4, "text": "⚠ memory"}], **status}, "content")
+
+    joined = "".join(block.text for block in result.content)
+    assert joined.endswith(envelope("⚠ memory"))
+    assert joined.splitlines()[-3:] == ["<loommux-notice>", "⚠ memory", "</loommux-notice>"]
+
+
+def test_a_result_with_nothing_to_say_has_no_envelope() -> None:
+    result = make_tool_result("run_cell", {"ok": True, "status": "completed", "execution": 1, "output_text": "42\n"}, "content")
+
+    assert [block.text for block in result.content] == ["In [1]:\n42\n"]
 
 
 def test_a_result_without_an_execution_labels_every_notice() -> None:
     result = make_tool_result("status", {"ok": True, "kernel_started": True, "notices": [{"execution": 2, "text": "done"}]}, "content")
 
-    assert result.content[-1].text == "In [2] · done"
+    assert result.content[-1].text == envelope("In [2] · done")
 
 
 def test_tool_failure_surface_remains_concise() -> None:
@@ -219,7 +249,7 @@ def test_lease_alert_closes_plain_and_rich_results() -> None:
     for result in (plain, rich):
         last = result.content[-1]
         assert isinstance(last, TextContent)
-        assert last.text.startswith("Lease alert (unbound): this MCP session never opened the standalone GET stream")
+        assert last.text.startswith("\n<loommux-notice>\nLease alert (unbound): this MCP session never opened the standalone GET stream")
         assert "4,800 idle seconds" in last.text
 
 

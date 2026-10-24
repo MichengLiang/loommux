@@ -1,6 +1,7 @@
 """How an MCP session chooses, names, and switches its main kernel, against a real HTTP daemon."""
 
 import asyncio
+import re
 import sys
 from pathlib import Path
 
@@ -18,12 +19,17 @@ async def texts(client: LeaseAwareClient, source: str) -> list[str]:
     return [block.text for block in result.content]
 
 
+def envelope(*lines: str) -> str:
+    """What the environment says in one result: one block that starts a line and is closed."""
+    return "\n<loommux-notice>\n" + "\n".join(lines) + "\n</loommux-notice>"
+
+
 @pytest.mark.timeout(90)
 def test_a_session_names_its_main_kernel_and_switches_to_another_by_attaching(tmp_path: Path) -> None:
     async def scenario(origin: str) -> None:
         async with LeaseAwareClient(f"{origin}/mcp", "first") as first, LeaseAwareClient(f"{origin}/mcp", "second") as second:
             # B2, B11: the first cell names the main kernel and runs in it.
-            assert await texts(first, "%%loommux --attach task --create\nvalue = 41\nvalue + 1") == ["In [1]:\nOut[1]: 42\n", "Kernel: task (opened)"]
+            assert await texts(first, "%%loommux --attach task --create\nvalue = 41\nvalue + 1") == ["In [1]:\nOut[1]: 42\n", envelope("Kernel: task (opened)")]
             # Repeating the header changes nothing.
             assert await texts(first, "%%loommux --attach task --create\nprint(loommux.self.name)") == ["In [2]:\ntask\n"]
             status = await first.call_tool("status", {})
@@ -33,7 +39,9 @@ def test_a_session_names_its_main_kernel_and_switches_to_another_by_attaching(tm
             # either: it forwards from the session's new private kernel.
             forwarded_first = await texts(second, "%%loommux --kernel build\nprint(loommux.self.name)")
             assert forwarded_first[0] == "In [1]:\nbuild\n"
-            private = forwarded_first[1].removeprefix("Kernel: ").removesuffix(" (opened)")
+            opened = re.fullmatch(r"\n<loommux-notice>\nKernel: (.+) \(opened\)\n</loommux-notice>", forwarded_first[1])
+            assert opened is not None
+            private = opened.group(1)
             assert private.startswith("private-")
 
             # B4: a missing name opens nothing and allocates no execution.
@@ -43,7 +51,7 @@ def test_a_session_names_its_main_kernel_and_switches_to_another_by_attaching(tm
             # B3: attaching joins task while first is connected to it, and
             # lets go of the private kernel.
             attached = await texts(second, "%%loommux --attach task\nprint(value)")
-            assert attached == ["In [3]:\n41\n", f"Kernel: task (attached; 2 earlier executions; let go of {private})"]
+            assert attached == ["In [3]:\n41\n", envelope(f"Kernel: task (attached; 2 earlier executions; let go of {private})")]
             assert await texts(second, "print(loommux.self.name)") == ["In [4]:\ntask\n"]
             [resource] = await wait_for_resource_count(origin, 1)
             assert (resource["name"], resource["lease_count"]) == ("task", 2)
@@ -67,10 +75,10 @@ def test_a_session_names_its_main_kernel_and_switches_to_another_by_attaching(tm
 def test_a_main_kernel_whose_session_left_keeps_itself_until_a_new_host_attaches_by_name(tmp_path: Path) -> None:
     async def scenario(origin: str) -> None:
         async with LeaseAwareClient(f"{origin}/mcp", "first") as first:
-            assert await texts(first, "%%loommux --attach task --create\nkept = 'still here'") == ["In [1]:", "Kernel: task (opened)"]
+            assert await texts(first, "%%loommux --attach task --create\nkept = 'still here'") == ["In [1]:", envelope("Kernel: task (opened)")]
             # A throwaway host that never names its kernel leaves beside it.
             async with LeaseAwareClient(f"{origin}/mcp", "throwaway") as throwaway:
-                assert (await texts(throwaway, "1"))[1].endswith("(opened)")
+                assert (await texts(throwaway, "1"))[1].endswith(" (opened)\n</loommux-notice>")
         # Past the reconnect grace both sessions have left: B8, the lease is
         # released without an alert and the named kernel keeps its own
         # retention; B13, the unnamed one is gone.
@@ -81,7 +89,7 @@ def test_a_main_kernel_whose_session_left_keeps_itself_until_a_new_host_attaches
 
         # A new host writes the same first cell and finds the kernel by name.
         async with LeaseAwareClient(f"{origin}/mcp", "second") as second:
-            assert await texts(second, "%%loommux --attach task --create\nprint(kept)") == ["In [2]:\nstill here\n", "Kernel: task (attached; 1 earlier execution)"]
+            assert await texts(second, "%%loommux --attach task --create\nprint(kept)") == ["In [2]:\nstill here\n", envelope("Kernel: task (attached; 1 earlier execution)")]
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()

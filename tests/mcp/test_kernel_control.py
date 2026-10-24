@@ -62,11 +62,11 @@ def test_notices_reach_the_agent_from_its_kernel_and_through_a_forwarded_cell(tm
             forwarded = await agent.call_tool("run_cell", {"freeform": "%%loommux --kernel build --wait 30\nloommux.notify('from the child')\n'child'"})
             later = await agent.call_tool("status", {})
 
-        # The notice comes before the Kernel: line the first call also carries.
-        assert [block.text for block in own.content][:2] == ["In [1]:\nOut[1]: 'main'\n", "from the main kernel"]
-        assert own.content[2].text.startswith("Kernel: private-")
+        # The notice comes before the Kernel: line the first call also carries, in one envelope.
+        assert [block.text for block in own.content][0] == "In [1]:\nOut[1]: 'main'\n"
+        assert own.content[1].text.startswith("\n<loommux-notice>\nfrom the main kernel\nKernel: private-")
         # The child's own Out label is its own count; the notice names the child.
-        assert [block.text for block in forwarded.content] == ["In [2]:\nOut[1]: 'child'\n", "build · from the child"]
+        assert [block.text for block in forwarded.content] == ["In [2]:\nOut[1]: 'child'\n", "\n<loommux-notice>\nbuild · from the child\n</loommux-notice>"]
         assert all("from the" not in block.text for block in later.content)
 
     workspace = tmp_path / "workspace"

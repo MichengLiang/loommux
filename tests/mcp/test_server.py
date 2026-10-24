@@ -212,7 +212,7 @@ print('after-image', flush=True)
     async with Client(create_structured_mcp()) as client:
         response = await client.call_tool("run_cell", {"freeform": source})
 
-    # The session's first call ends with the block naming its main kernel,
+    # The session's first call ends with the envelope naming its main kernel,
     # after the rich content as after plain text.
     assert [block.type for block in response.content] == ["text", "text", "text", "image", "text", "text", "image", "text", "text"]
     texts = [block.text for block in response.content if block.type == "text"]
@@ -224,7 +224,7 @@ print('after-image', flush=True)
         "<IPython.core.display.Image object>",
         "after-image\n",
     ]
-    assert texts[-1].startswith("Kernel: private-") and texts[-1].endswith(" (opened)")
+    assert texts[-1].startswith("\n<loommux-notice>\nKernel: private-") and texts[-1].endswith(" (opened)\n</loommux-notice>")
     images = [block for block in response.content if block.type == "image"]
     assert [image.mimeType for image in images] == ["image/png", "image/png"]
     assert [image.meta["detail"] for image in images] == ["low", "original"]

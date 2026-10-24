@@ -98,5 +98,7 @@ async def test_the_configured_startup_directory_reaches_every_kernel_and_its_fai
         second = await client.call_tool("run_cell", {"freeform": "defined_at_start"})
 
     assert first.content[0].text == "In [1]:\nOut[1]: 1\n"
-    assert first.content[1].text == "Startup · hello from startup\nStartup · 20-broken.py failed: NameError: name 'nope' is not defined"
+    # The first call also names the session's main kernel, in the same envelope.
+    assert first.content[1].text.startswith("\n<loommux-notice>\nStartup · hello from startup\nStartup · 20-broken.py failed: NameError: name 'nope' is not defined\nKernel: private-")
+    assert first.content[1].text.endswith(" (opened)\n</loommux-notice>")
     assert [block.text for block in second.content] == ["In [2]:\nOut[2]: 1\n"]
