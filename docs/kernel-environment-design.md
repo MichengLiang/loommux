@@ -57,7 +57,8 @@ Each rule below is one other tools reached before; loommux takes it as it is.
 | Startup files run in name order, `.py` and `.ipy` alike, and are not recorded as input | IPython runs `startup/00-first.py` … with `store_history=False` | each file is one request with `store_history=False` |
 | An unknown option is an error, not a silent default | argparse rejects unknown options; Ruff rejects unknown settings | an unknown name in `config.py` stops the start |
 | Restarting a kernel starts its count again | after a Jupyter Notebook restart the next cell is `In [1]` | records are cleared, the next cell is `In [1]` |
-| A warning travels apart from the program's output, and a repeated one is shown once | Python's `warnings` reach stderr, not stdout, and the default filter shows each once; an andon lamp hangs above the station, not on the product | notices are their own block, each delivered once |
+| A warning travels apart from the program's output, and a repeated one is shown once | Python's `warnings` reach stderr, not stdout, and the default filter shows each once; an andon lamp hangs above the station, not on the product | notices travel outside the output, each delivered once |
+| What the harness says inside a turn is wrapped in a tag that names it, apart from what it wraps | Claude Code wraps its own words in `<system-reminder>`; Anthropic's prompting guidance separates kinds of content with XML tags | the environment's lines are one `<loommux-notice>` envelope |
 
 ## 3. Journeys
 
@@ -244,20 +245,62 @@ has delivered: those of finished executions, and those of the kernel's startup.
 Each is delivered once, in the order spoken. A notice from the execution the
 result shows has no label; one from another execution is labeled `In [N] · `,
 one from the startup files `Startup · `. The notices come after the execution
-content, the omission message included, and before `Kernel:` and
-`Lease alert`. Structured results carry them as `notices` too.
+content, the omission message included, inside the envelope of section 6.4,
+before `Kernel:` and `Lease alert`. Structured results carry them as `notices`
+too.
 
 A cell still running when its call returns has spoken nothing final; its
 notices come with whichever result follows its end, a `wait` or any other call.
 
-### 6.4 Bounds
+### 6.4 The envelope
+
+A tool result is a list of text blocks, and the reader does not see where one
+ends. Claude Code joins a result's blocks end to end, nothing between them; a
+notice in a block of its own, after an omission message that did not end with a
+newline, reached the agent as the tail of that message's last sentence. A block
+of its own separates nothing.
+
+So everything the environment says in one result is one block, opened on a
+line of its own and closed by a tag:
+
+```text
+<loommux-notice>
+⚠ 体征｜内存 2.1 GiB，越过 2 GiB
+build · build has run nothing since 14:02; loommux.recycle('build') if it is done
+Kernel: 提醒包裹设计 (opened)
+</loommux-notice>
+```
+
+The block begins with a newline, so the envelope starts a line whatever came
+before it. Inside are, in order, the notices, the `Kernel:` line and the
+`Lease alert`: what a kernel's environment said and what the daemon said are
+one kind of information, the environment speaking about this moment (section
+6.1), and the reader needs one boundary, not three. Each line keeps the prefix
+that names its speaker, `⚠ 体征｜`, `build · `, `In [N] · `, `Startup · `,
+`Kernel:`, so the tag carries no `from`; it would say the same thing twice. A
+result with nothing to say has no envelope. Structured results keep `notices`,
+`binding` and `lease_alert` as fields.
+
+The envelope is a tag because a tag says whose words these are and where they
+end; Claude Code's `<system-reminder>` and the `<file path=…>` containers of the
+workbench's reading tools are the same shape, and the agent reads it without
+being taught. It is not a fenced code block: a fence marks quoted literal
+material to be read as it is, which is what output is, not what the environment
+telling the agent something is, and output may hold fences of its own. It is
+not `<system-reminder>` or a `developer` role either: those are the host's
+voice and a message role, and a tool speaking in them claims a speaker it is
+not; a reader that learned to distrust host tags inside tool output would
+discount it. The name is `notice`, the word of `loommux.notify` and of the MIME
+type, one word for one thing.
+
+### 6.5 Bounds
 
 This channel passes the context guard, so it carries its own bound in its
 shape. A notice is cut at 500 characters and ends with `…`; an execution keeps
 its first 10 notices and reports how many more it had. A notice is an alarm and
 a pointer to act on it; a report is something the agent asks for.
 
-### 6.5 Child kernels
+### 6.6 Child kernels
 
 No MCP session works in a child kernel, so its notices travel through the
 cell that forwarded to it: when the forwarded cell ends, the forwarding cell
@@ -266,7 +309,7 @@ The control plane's `combined` follow hands an execution's notices over once,
 with its final state. Notices of a child execution nobody followed stay with
 its record.
 
-### 6.6 Restart
+### 6.7 Restart
 
 Restart clears the records, and the notices they had not delivered go with
 them. The startup files of the new process speak anew.
@@ -320,6 +363,9 @@ retention decide a kernel's life.
 | Keep the environment variables as an override layer over the file | one value with two entrances; a test that needs other values writes its own directory |
 | Let IPython run the startup files through `exec_files` | their failures would have no owner and reach nobody (section 5.2) |
 | Keep notices as the last printed line | the 5,000-token limit omits them with the output they end |
+| Give each kind of environment line its own text block | the client joins blocks end to end, so nothing separates them from output that does not end with a newline (section 6.4) |
+| Fence the environment's lines in a Markdown code block | a fence marks quoted material, and output may hold fences (section 6.4) |
+| Wrap them in `<system-reminder>`, or label them `developer` | the voice of the host and of a message role, claimed by a tool (section 6.4) |
 | Exempt the last lines of omitted output from the limit | the last line of output is not necessarily a notice, and any print could ride on it |
 | Keep records across restart and number from 1 again | two cells with one number in one record set |
 | Run startup files only in main kernels | an agent writes cells in a child kernel too, through `--kernel`; a startup file that cares can ask `loommux.self` which kernel it is in |
@@ -336,3 +382,4 @@ retention decide a kernel's life.
 | E6 | a forwarded cell relays its child's notices | `tests/mcp/test_kernel_control.py` |
 | E7 | startup files run at open and restart, take no number, and a failing one becomes a notice while the next still runs | `tests/session/test_startup.py` |
 | E8 | `idle_since` is `null` while a cell runs and set after it | `tests/session/test_session.py` |
+| E9 | the notices, `Kernel:` and `Lease alert` of a result are one `<loommux-notice>` block that starts a line, after output that does not end with a newline too; a result with nothing to say has none | `tests/mcp/test_presentation.py` |
