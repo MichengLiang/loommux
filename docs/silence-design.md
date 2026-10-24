@@ -191,5 +191,5 @@ Go, cargo and the shell itself write as they go.
 | S4 | output redrawn with `\r` resets the clock; a notice does not | `tests/session/test_silence.py` |
 | S5 | the header, the `wait` tool, `Kernel.run_cell` and `Kernel.wait` accept the same silence | `tests/mcp/test_kernel_control.py` |
 | S6 | a Python child under `%%bash` streams its lines as they are printed | `tests/session/test_silence.py`, which fails without `PYTHONUNBUFFERED` |
-| S7 | without a written silence, a wait returns after ten quiet seconds | `tests/session/test_silence.py` |
+| S7 | what a call writes reaches the wait, and what it leaves out is the default; the clock itself is S1 to S3's | `tests/session/test_silence.py` |
 | S8 | `Kernel.run_cell` without arguments waits as the cell's header says | `tests/mcp/test_kernel_control.py` |

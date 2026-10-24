@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from loommux.cell_header import DEFAULT_SILENCE_SECONDS, DEFAULT_WAIT_SECONDS
 from loommux.notice import NOTICE_MIME
 from loommux.session import IPythonSession
 
@@ -63,17 +64,14 @@ def test_wait_counts_silence_from_its_own_start_on_a_quiet_stretch(session: IPyt
         stop(session, first["execution"])
 
 
-# Two ten-second silences in a row: past the suite's fifteen-second default.
-@pytest.mark.timeout(60)
-def test_without_a_written_silence_a_wait_returns_after_ten_quiet_seconds(session: IPythonSession) -> None:
-    # S7: a long --wait alone no longer holds the caller through a stall, on either panel.
-    first, elapsed = timed(lambda: session.run_cell("%%loommux --wait 30\nimport time\nprint('started')\ntime.sleep(60)"))
-    try:
-        assert first["status"] == "running" and 10 <= first["silent_seconds"] < 12 and elapsed < 12
-        again, elapsed = timed(lambda: session.wait(first["execution"], 30))
-        assert again["status"] == "running" and 10 <= again["silent_seconds"] and elapsed < 12
-    finally:
-        stop(session, first["execution"])
+def test_without_a_written_silence_both_waits_take_the_default(session: IPythonSession, monkeypatch: pytest.MonkeyPatch) -> None:
+    # S7: what a call writes reaches the wait and what it leaves out is the default. The clock
+    # itself is S1 to S3's, proved with one-second silences, so no test sits out a default.
+    seen: list[tuple[float, float]] = []
+    monkeypatch.setattr("loommux.session._await", lambda _record, timeout, silence, *, since: seen.append((timeout, silence)))
+    execution = session.run_cell("%%loommux --wait 30\npass")["execution"]
+    session.wait(execution)
+    assert seen == [(30.0, DEFAULT_SILENCE_SECONDS), (DEFAULT_WAIT_SECONDS, DEFAULT_SILENCE_SECONDS)]
 
 
 def test_a_redrawn_line_resets_the_clock_and_a_notice_does_not(session: IPythonSession) -> None:
