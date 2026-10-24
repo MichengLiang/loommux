@@ -109,9 +109,10 @@ def forward(daemon: Daemon, header: CellHeader, body: str, write: Callable[[str]
     (docs/kernel-control-surface-design.md section 6). The forwarding cell
     waits on the target in the foreground and ends as the forwarded one did:
     an error there raises here, and an interrupt here is passed down before it
-    is raised. What the
-    forwarded cell noticed is spoken again here, with the kernel's name, since
-    no MCP session works in a child kernel to receive it.
+    is raised. What the forwarded cell notices is spoken again here as it
+    arrives, with the kernel's name, since no MCP session works in a child
+    kernel to receive it; a result that returns before this cell ends carries
+    what was said so far.
 
     A name that resolves to this very kernel is one it was given elsewhere,
     for example by its main kernel through ``loommux.rename()``. Resolving
@@ -128,20 +129,29 @@ def forward(daemon: Daemon, header: CellHeader, body: str, write: Callable[[str]
         execution = target.run_cell(body, wait_seconds=0)["execution"]
     except DaemonError as exc:
         raise ForwardedCellError(header.kernel, exc.status or "DaemonError", str(exc)) from None
+
+    def speak(notice: str) -> None:
+        daemon.notify(f"{header.kernel} · {notice}")
+
     try:
-        last = _relay(target, execution, write, 0, deadline=None)
+        last = _relay(target, execution, write, speak, 0, deadline=None)
     except KeyboardInterrupt:
         raise ForwardedInterrupt(header.kernel) from None
     except DaemonError as exc:
         # The target was retired or restarted while its cell ran here.
         raise ForwardedCellError(header.kernel, exc.status or "DaemonError", str(exc)) from None
-    for notice in last.get("notices", ()):
-        daemon.notify(f"{header.kernel} · {notice}")
     _raise_for(header.kernel, last)
 
 
-def _relay(target: Kernel, execution: int, write: Callable[[str], object], offset: int, deadline: float | None) -> dict[str, Any]:
-    """Follow ``execution`` until it ends or ``deadline`` passes; its last state."""
+def _relay(
+    target: Kernel,
+    execution: int,
+    write: Callable[[str], object],
+    speak: Callable[[str], object],
+    offset: int,
+    deadline: float | None,
+) -> dict[str, Any]:
+    """Follow ``execution`` until it ends or ``deadline`` passes, writing its output and speaking its notices; its last state."""
     __tracebackhide__ = True
     state: dict[str, Any] = {}
     try:
@@ -149,6 +159,8 @@ def _relay(target: Kernel, execution: int, write: Callable[[str], object], offse
             state = target.follow(execution, offset)
             if state["text"]:
                 write(state["text"])
+            for notice in state.get("notices", ()):
+                speak(notice)
             offset = state["offset"]
             if state["status"] != "running":
                 break
@@ -156,7 +168,7 @@ def _relay(target: Kernel, execution: int, write: Callable[[str], object], offse
         if deadline is not None:
             raise
         target.interrupt()
-        _relay(target, execution, write, offset, deadline=time.monotonic() + INTERRUPT_RELAY_SECONDS)
+        _relay(target, execution, write, speak, offset, deadline=time.monotonic() + INTERRUPT_RELAY_SECONDS)
         raise
     return state
 

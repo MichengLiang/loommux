@@ -307,9 +307,11 @@ class Kernel:
     def follow(self, execution: int, offset: int, wait: float = 0.5) -> dict[str, Any]:
         """Combined output of ``execution`` after ``offset`` characters, with ``status`` and the next ``offset``.
 
-        Answers as soon as new text exists or the execution ends, within
-        ``wait`` seconds, so a loop of calls receives output as it arrives:
-        what a tool result does for an agent, for a program.
+        Answers as soon as new text or a notice exists or the execution ends,
+        within ``wait`` seconds, so a loop of calls receives output as it
+        arrives: what a tool result does for an agent, for a program.
+        ``notices`` holds what the cell said since the last answer that carried
+        any, each once; the count it did not keep comes after its end.
         """
         return self._session("GET", f"/executions/{execution}/combined", params={"since": str(offset), "wait": str(wait)})
 

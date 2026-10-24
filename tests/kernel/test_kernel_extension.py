@@ -164,6 +164,10 @@ class _Daemon:
     def __init__(self, job: _Execution | None = None, refusal: DaemonError | None = None, identity: KernelIdentity | None = None, target_id: str = "target-id") -> None:
         self.job, self.refusal, self.bodies = job, refusal, []
         self.identity, self.target_id = identity, target_id
+        self.spoken: list[str] = []
+
+    def notify(self, text: str) -> None:
+        self.spoken.append(text)
 
     def create(self, name: str) -> Any:
         daemon = self
@@ -191,8 +195,8 @@ class _Daemon:
         return Target()
 
 
-def state(status: str, text: str = "", offset: int = 0, error: dict[str, str] | None = None) -> dict[str, Any]:
-    return {"status": status, "text": text, "offset": offset, "error": error}
+def state(status: str, text: str = "", offset: int = 0, error: dict[str, str] | None = None, notices: tuple[str, ...] = ()) -> dict[str, Any]:
+    return {"status": status, "text": text, "offset": offset, "error": error, "notices": list(notices)}
 
 
 def run_forward(daemon: Any) -> str:
@@ -207,6 +211,23 @@ def test_forward_relays_output_until_the_target_completes() -> None:
 
     assert run_forward(daemon) == "a\nb\n"
     assert daemon.bodies == ["body"]
+
+
+def test_forward_speaks_each_notice_as_it_arrives_between_the_output() -> None:
+    job = _Execution([
+        state("running", "a\n", 2, notices=("memory is low",)),
+        state("running", "", 2, notices=("still low",)),
+        state("completed", "b\n", 4, notices=("and 1 more notice that was not kept",)),
+    ])
+    heard: list[str] = []
+
+    class Listening(_Daemon):
+        def notify(self, text: str) -> None:
+            heard.append(f"notice {text}")
+
+    forward(Listening(job), CellHeader(kernel="build"), "body", lambda text: heard.append(f"out {text}"))
+
+    assert heard == ["out a\n", "notice build · memory is low", "notice build · still low", "out b\n", "notice build · and 1 more notice that was not kept"]
 
 
 @pytest.mark.parametrize(
@@ -248,6 +269,16 @@ def test_an_interrupt_is_passed_to_the_target_and_its_last_output_relayed() -> N
     assert job.interrupted == 1
     assert raised.value._render_traceback_() == ["KeyboardInterrupt: passed on to build; its traceback is above"]
     assert type(raised.value).__name__ == "KeyboardInterrupt"
+
+
+def test_notices_that_arrive_while_draining_after_an_interrupt_are_spoken() -> None:
+    job = _Execution([state("running", "working\n", 8, notices=("before",)), KeyboardInterrupt(), state("interrupted", "", 8, notices=("after",))])
+    daemon = _Daemon(job)
+
+    with pytest.raises(ForwardedInterrupt):
+        run_forward(daemon)
+
+    assert daemon.spoken == ["build · before", "build · after"]
 
 
 def test_an_interrupt_while_draining_is_not_passed_twice(monkeypatch: pytest.MonkeyPatch) -> None:

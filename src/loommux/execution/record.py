@@ -65,10 +65,13 @@ class Execution:
     logs: ExecutionLogs = field(default_factory=ExecutionLogs, init=False)
     presentation: list[PresentationElement] = field(default_factory=list, init=False)
     # Notices are not output: no stream and no token limit sees them. They are
-    # kept apart until a result delivers them, once.
+    # kept apart until results hand them out, each once: a running cell's so far,
+    # the rest after its end.
     notices: list[str] = field(default_factory=list, init=False)
     notices_not_kept: int = field(default=0, init=False)
-    notices_delivered: bool = field(default=False, init=False)
+    notices_taken: int = field(default=0, init=False)
+    # The final hand-out, with how many were not kept, is done; nothing remains.
+    notices_finished: bool = field(default=False, init=False)
     # Kept as parts and joined on read: appending to one string attribute
     # copies all of it each time, which is quadratic for many displays.
     _result_parts: list[str] = field(default_factory=list, init=False, repr=False)
@@ -144,6 +147,30 @@ class Execution:
     def notice_texts(self) -> list[str]:
         """The kept notices, followed by how many were not kept, if any."""
         return [*self.notices, more_notices(self.notices_not_kept)] if self.notices_not_kept else list(self.notices)
+
+    @property
+    def has_untaken_notices(self) -> bool:
+        return len(self.notices) > self.notices_taken
+
+    def take_notices(self) -> list[str]:
+        """The notices no result has handed out yet, in the order spoken, each once.
+
+        While the cell runs, the kept ones spoken since the last hand-out. Once
+        it has ended, the rest and how many were not kept: that count can grow
+        until the end, so it is said once, then. After that, nothing.
+        """
+        if self.notices_finished:
+            return []
+        # Final first: a notice is display data on IOPub, ahead of the idle status
+        # on the same channel that ends a record, so a record read as ended
+        # already holds all of them.
+        final = not self.is_running
+        kept = self.notices[self.notices_taken :]
+        self.notices_taken += len(kept)
+        if not final:
+            return kept
+        self.notices_finished = True
+        return [*kept, more_notices(self.notices_not_kept)] if self.notices_not_kept else kept
 
     def append_display_data(self, data: object, metadata: object) -> None:
         """Record one rich display event after its text/plain projection.

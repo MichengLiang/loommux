@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
@@ -53,13 +54,29 @@ def test_a_post_run_cell_hook_speaks_for_every_cell(session: IPythonSession) -> 
     ]
 
 
-def test_a_running_cell_keeps_its_notices_until_it_ends(session: IPythonSession) -> None:
-    running = session.run_cell("%%loommux --wait 0.1\nimport time\nsay('started')\ntime.sleep(0.5)\nsay('finished')")
+def test_a_running_cell_hands_out_what_it_has_said_so_far_and_the_rest_after_its_end(session: IPythonSession) -> None:
+    # A result returned early, by --wait or --silence, is when the environment most needs to speak.
+    running = session.run_cell("%%loommux --wait 0.3\nimport time\nsay('started')\ntime.sleep(1)\nsay('finished')")
+    execution = running["execution"]
 
     assert running["status"] == "running"
+    assert session.take_notices() == [{"execution": execution, "text": "started"}]
     assert session.take_notices() == []
-    session.wait(running["execution"], timeout_seconds=3)
-    assert [notice["text"] for notice in session.take_notices()] == ["started", "finished"]
+    session.wait(execution, timeout_seconds=5)
+    assert session.take_notices() == [{"execution": execution, "text": "finished"}]
+    assert session.take_notices() == []
+
+
+def test_the_count_of_notices_not_kept_is_said_once_after_the_end(session: IPythonSession) -> None:
+    running = session.run_cell(
+        f"%%loommux --wait 0.3\nimport time\nfor n in range({NOTICES_PER_EXECUTION}):\n    say(f'n{{n}}')\ntime.sleep(1)\nsay('late')\nsay('later')"
+    )
+
+    assert [notice["text"] for notice in session.take_notices()] == [f"n{n}" for n in range(NOTICES_PER_EXECUTION)]
+    session.wait(running["execution"], timeout_seconds=5)
+    # The count grows until the cell ends, so it is not said before.
+    assert [notice["text"] for notice in session.take_notices()] == ["and 2 more notices that were not kept"]
+    assert session.take_notices() == []
 
 
 def test_notices_are_bounded_in_length_and_number(session: IPythonSession) -> None:
@@ -78,6 +95,22 @@ def test_a_follower_takes_one_execution_s_notices_with_its_final_state(session: 
     followed = session.output_since(spoken["execution"], 0)
 
     assert followed["notices"] == ["for the follower"]
+    assert session.take_notices() == []
+
+
+def test_a_follower_is_answered_as_soon_as_a_running_cell_speaks_and_hears_each_notice_once(session: IPythonSession) -> None:
+    running = session.run_cell("%%loommux --wait 0.05\nimport time\ntime.sleep(0.3)\nsay('midway')\ntime.sleep(1)\nsay('at the end')")
+    execution = running["execution"]
+
+    started = time.monotonic()
+    followed = session.output_since(execution, 0, wait_seconds=1.0)
+
+    # A notice waiting is news: the answer does not sit out the whole wait.
+    assert time.monotonic() - started < 0.9
+    assert (followed["status"], followed["notices"]) == ("running", ["midway"])
+    session.wait(execution, timeout_seconds=5)
+    assert session.output_since(execution, 0)["notices"] == ["at the end"]
+    assert session.output_since(execution, 0)["notices"] == []
     assert session.take_notices() == []
 
 

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from fastmcp import Client
+from fastmcp.client.client import CallToolResult
 from result_text import untimed
 from server_harness import reserve_port, running_server, wait_for_resource_count
 
@@ -57,6 +58,38 @@ def test_the_header_the_wait_tool_and_a_kernels_methods_share_one_silence(tmp_pa
     workspace.mkdir()
     with running_server(reserve_port(), workspace, lease_mode="connection") as origin:
         asyncio.run(scenario(origin))
+
+
+@pytest.mark.timeout(60)
+def test_a_result_returned_before_its_cell_ends_carries_what_it_said_so_far_from_a_child_too(tmp_path: Path) -> None:
+    async def scenario(origin: str) -> None:
+        async with LeaseAwareClient(f"{origin}/mcp", "agent") as agent:
+            own = await agent.call_tool("run_cell", {"freeform": "%%loommux --wait 1\nimport time\nloommux.notify('early')\ntime.sleep(3)\nloommux.notify('late')"})
+            own_end = await agent.call_tool("wait", {"timeout_seconds": 10})
+            forwarded = await agent.call_tool("run_cell", {"freeform": "%%loommux --kernel build --wait 3\nimport time\nloommux.notify('midway')\ntime.sleep(5)"})
+            forwarded_end = await agent.call_tool("wait", {"timeout_seconds": 15})
+
+        assert running(own) and said(own) == ["early"]
+        assert not running(own_end) and said(own_end) == ["late"]
+        # Through the forwarding cell, a child's notice reaches a result returned before either cell ended.
+        assert running(forwarded) and said(forwarded) == ["build · midway"]
+        assert not running(forwarded_end) and said(forwarded_end) == []
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    with running_server(reserve_port(), workspace, lease_mode="connection") as origin:
+        asyncio.run(scenario(origin))
+
+
+def running(result: CallToolResult) -> bool:
+    return "Running" in result.content[0].text
+
+
+def said(result: CallToolResult) -> list[str]:
+    """The notice lines of a result's envelope, without the daemon's own lines."""
+    envelope = next((block.text for block in result.content if block.text.startswith("\n<loommux-notice>")), "")
+    lines = envelope.removeprefix("\n<loommux-notice>\n").removesuffix("\n</loommux-notice>").splitlines()
+    return [line for line in lines if not line.startswith(("Kernel:", "Lease alert"))]
 
 
 @pytest.mark.timeout(60)

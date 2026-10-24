@@ -54,9 +54,9 @@ class IPythonSession:
         self.recent_execution: int | None = None
         self._kernel_restarting = False
         self._next_execution = 1
-        # Every record numbered up to here has had its notices taken or found
-        # none. Cells run one at a time, so only the newest record can still be
-        # running and everything before it is final.
+        # Every record numbered up to here has had all its notices taken, the
+        # final hand-out included. Cells run one at a time, so only the newest
+        # record can still be running and everything before it is final.
         self._noticed_through = 0
         # What the current kernel process's startup files said, until a result delivers it.
         self._startup_notices: list[str] = []
@@ -238,7 +238,8 @@ class IPythonSession:
             return {"ok": False, "status": "invalid_offset", "message": "offset must be a non-negative integer"}
         log = record.logs.combined
         deadline = time.monotonic() + min(max(wait_seconds, 0.0), MAX_FOLLOW_WAIT_SECONDS)
-        while log.character_count <= offset and record.is_running and (remaining := deadline - time.monotonic()) > 0:
+        # A notice waiting to be handed over is news too: a follower relays it at once.
+        while log.character_count <= offset and record.is_running and not record.has_untaken_notices and (remaining := deadline - time.monotonic()) > 0:
             record.done.wait(min(_FOLLOW_POLL_SECONDS, remaining))
         # Status before text: output ends before an execution is marked
         # finished, so text read after a terminal status is all of it, and text
@@ -248,10 +249,10 @@ class IPythonSession:
         status, error = record.status, record.error_summary
         text = log.text_since(offset)
         result = {"ok": True, "execution": record.execution, "status": status, "error": error, "text": text, "offset": offset + len(text)}
-        if status != "running":
-            # Handed to the follower with the final state: a forwarding cell
-            # speaks them again, since no MCP session works in a child kernel.
-            result["notices"] = self.take_notices_of(record.execution)
+        # What the cell has said since the last answer that carried notices: a
+        # forwarding cell speaks them again at once, since no MCP session works
+        # in a child kernel (kernel-environment-design 6.6).
+        result["notices"] = self.take_notices_of(record.execution)
         return result
 
     def interrupt(self) -> dict[str, Any]:
@@ -308,30 +309,30 @@ class IPythonSession:
     def take_notices(self) -> list[dict[str, Any]]:
         """The notices no result has delivered yet, each handed out exactly once.
 
-        A record's notices are final when it is: a cell still running may speak
-        again, so its notices wait for whichever result follows its end.
+        A cell still running hands out what it has said so far; what it says
+        later, and how many notices it did not keep, come with a later result
+        (kernel-environment-design 6.3).
         """
         taken: list[dict[str, Any]] = []
         with self._lock:
             taken.extend({"execution": None, "text": text} for text in self._startup_notices)
             self._startup_notices = []
             number = self._noticed_through + 1
-            while (record := self.executions.get(number)) is not None and not record.is_running:
-                if not record.notices_delivered:
-                    record.notices_delivered = True
-                    taken.extend({"execution": number, "text": text} for text in record.notice_texts())
+            while (record := self.executions.get(number)) is not None:
+                taken.extend({"execution": number, "text": text} for text in record.take_notices())
+                # Not is_running read again: a cell that ended after its notices
+                # were taken still owes its last ones.
+                if not record.notices_finished:
+                    break
                 self._noticed_through = number
                 number += 1
         return taken
 
     def take_notices_of(self, execution: int) -> list[str]:
-        """One final execution's notices, for a caller that followed that execution to its end."""
+        """One execution's notices not yet handed out, for a caller following it."""
         with self._lock:
             record = self.executions.get(execution)
-            if record is None or record.is_running or record.notices_delivered:
-                return []
-            record.notices_delivered = True
-            return record.notice_texts()
+            return [] if record is None else record.take_notices()
 
     def _forget_records_locked(self) -> None:
         """Begin the count again with the kernel process that is about to replace this one.

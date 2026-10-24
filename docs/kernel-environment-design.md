@@ -249,8 +249,25 @@ content, the omission message included, inside the envelope of section 6.4,
 before `Kernel:` and `Lease alert`. Structured results carry them as `notices`
 too.
 
-A cell still running when its call returns has spoken nothing final; its
-notices come with whichever result follows its end, a `wait` or any other call.
+A cell still running when its call returns hands over what it has said so far:
+a `run_cell` that `--wait` or `--silence` returned early, a `wait` that timed
+out, any other call. What it says later comes with a later result, and how many
+notices it did not keep (section 6.5) with the first result after its end,
+since that count can grow until then. Each notice still arrives once, in the
+order spoken.
+
+A result returned before its cell ended is when the environment most needs to
+speak: the agent took control back because the cell was slow or silent, and an
+alarm about memory or a stalled machine is what it would act on. On 10-25 the
+workbench's memory alarm spoke from a background thread in the middle of a
+cell; `--silence 5` handed control back at 6.7 s without it, and it arrived only
+with the result after the cell ended at 16.5 s. The rule then was that a running
+cell had "spoken nothing final", because it may still speak. That is true of
+the cell, not of a notice: once spoken, a notice is whole (section 6.5 bounds
+each one as it arrives), and handing it over says nothing about what comes
+next. So each execution counts how many of its kept notices results have
+handed out, and hands out the rest; only the count of those not kept waits for
+the end.
 
 ### 6.4 The envelope
 
@@ -303,11 +320,14 @@ a pointer to act on it; a report is something the agent asks for.
 ### 6.6 Child kernels
 
 No MCP session works in a child kernel, so its notices travel through the
-cell that forwarded to it: when the forwarded cell ends, the forwarding cell
-speaks each of its notices again, prefixed with the child's name, `build · `.
-The control plane's `combined` follow hands an execution's notices over once,
-with its final state. Notices of a child execution nobody followed stay with
-its record.
+cell that forwarded to it: as each arrives, the forwarding cell speaks it again,
+prefixed with the child's name, `build · `, so it reaches the agent by the same
+rule as the forwarding cell's own, a result returned early included. Each
+answer of the control plane's `combined` follow carries the notices said since
+the last answer that carried any, and a notice waiting to be handed over
+answers the follow at once, as new output does. After an interrupt the
+forwarding cell keeps relaying for a moment, notices included. Notices of a
+child execution nobody followed stay with its record.
 
 ### 6.7 Restart
 
@@ -363,6 +383,7 @@ retention decide a kernel's life.
 | Keep the environment variables as an override layer over the file | one value with two entrances; a test that needs other values writes its own directory |
 | Let IPython run the startup files through `exec_files` | their failures would have no owner and reach nobody (section 5.2) |
 | Keep notices as the last printed line | the 5,000-token limit omits them with the output they end |
+| Hold a running cell's notices until it ends | a result returned early by `--wait` or `--silence` is when an alarm is most needed, and a spoken notice is already whole; only the count of notices not kept waits for the end (section 6.3) |
 | Give each kind of environment line its own text block | the client joins blocks end to end, so nothing separates them from output that does not end with a newline (section 6.4) |
 | Fence the environment's lines in a Markdown code block | a fence marks quoted material, and output may hold fences (section 6.4) |
 | Wrap them in `<system-reminder>`, or label them `developer` | the voice of the host and of a message role, claimed by a tool (section 6.4) |
@@ -378,8 +399,8 @@ retention decide a kernel's life.
 | E2 | a missing or non-directory path, a raising file, an unknown name and an invalid value each stop the start with their status | `tests/test_config.py` |
 | E3 | without `--config`, the nearest `.loommux/` at or above the launch directory is used and none means defaults; `--config` overrides and the discovered one is not run; the start logs which | `tests/test_config.py`, `tests/mcp/test_entrypoints.py` |
 | E4 | IPython's count agrees with loommux's; after restart the next cell is `In [1]` and earlier records are gone | `tests/session/test_session.py` |
-| E5 | a notice arrives after omitted output, stays out of the output streams, is delivered once, labeled when it is another execution's, and is bounded | `tests/session/test_notices.py`, `tests/mcp/test_presentation.py` |
-| E6 | a forwarded cell relays its child's notices | `tests/mcp/test_kernel_control.py` |
+| E5 | a notice arrives after omitted output, stays out of the output streams, is delivered once, labeled when it is another execution's, and is bounded; a running cell hands over what it has said so far and the rest after its end, and the count not kept is said once, after the end | `tests/session/test_notices.py`, `tests/mcp/test_presentation.py` |
+| E6 | a forwarded cell relays its child's notices as they arrive, after an interrupt too; a follow is answered as soon as a notice waits | `tests/mcp/test_kernel_control.py`, `tests/kernel/test_kernel_extension.py`, `tests/session/test_notices.py` |
 | E7 | startup files run at open and restart, take no number, and a failing one becomes a notice while the next still runs | `tests/session/test_startup.py` |
 | E8 | `idle_since` is `null` while a cell runs and set after it | `tests/session/test_session.py` |
 | E9 | the notices, `Kernel:` and `Lease alert` of a result are one `<loommux-notice>` block that starts a line, after output that does not end with a newline too; a result with nothing to say has none | `tests/mcp/test_presentation.py`; end to end, joined as Claude Code joins it, `examples/kernel-environment/tour.py` step 3 |
