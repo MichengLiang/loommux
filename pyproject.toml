@@ -37,7 +37,7 @@ dependencies = [
     # Code sends no DELETE) had no idle timeout. 1.30.0 deregisters on DELETE
     # and reaps a session after 30 minutes with no request in flight, where an
     # open GET stream counts as in flight, so a connected client is never reaped.
-    "mcp>=1.30.0,<2",
+    "mcp>=1.30.0,<3",
     "pywin32>=312; sys_platform == 'win32'",
     "tiktoken>=0.14.0",
 ]
