@@ -145,6 +145,61 @@ header in charge (section 4.4).
 Structured results carry `silent_seconds` when the call returned for silence
 and `recent_lines` while the execution runs.
 
+### 4.6 Estimates, and the measured duration that corrects them
+
+Both numbers are estimates, and the agent writing them usually holds better ones
+than a round number: how many tests there are, how long the last run took, the
+slowest file, how many cores the machine has. Thirty, a hundred and twenty, six
+hundred are a person's shortcut; a round number keeps the order of magnitude and
+drops the rest of what the writer knows. Forecasters lose accuracy the same way:
+rounding their probabilities to coarser steps measurably hurts their scores
+(Friedman et al., "The Value of Precision in Probability Assessment", 2018). So an
+estimate is written as specific whole seconds, worked out from the run at hand:
+
+- `--wait` is the time past which the agent wants to look, a little above what
+  it expects. A run that finishes returns at once, so above costs little and
+  below costs a call.
+- `--silence` is the longest gap between lines in a healthy run: the slowest
+  test file under `pytest -q`, the slowest case of an e2e suite, the largest
+  crate of a build.
+
+An estimate improves only against what actually happened; calibration training
+works by showing the answer after every estimate (Hubbard, *How to Measure
+Anything*). So every `run_cell` and `wait` result says on its first line how long
+the execution has run:
+
+```text
+In [7] · 54.3 s:
+In [8] · 75.0 s:
+Running, silent for 12 s: use wait() for completion, …
+In [9] · 270 ms:
+```
+
+A finished execution shows its whole duration; a running one, the time since
+submission, not since this call, which is the number to hold against the
+estimate. The measurements stay in the context, so the next estimate starts
+from the last ones: a prior corrected by measurement, the shape of a Kalman
+filter, with the context as its state.
+
+The writer writes whole seconds, because an estimate is not finer than that.
+The result shows the measurement as finely as it is useful and no finer: below
+one second in whole milliseconds, from one second on in seconds with one
+decimal. Long runs stay in seconds rather than minutes, so `1263.4 s` reads
+directly against `--wait 1500`.
+
+The duration comes from the execution record, on the monotonic clock that
+silence measures with, from submission to the end. The record's wall-clock
+timestamps can jump when the system clock is corrected. A kernel hook timing
+`pre_run_cell` to `post_run_cell` would count again what the record already
+counts, could not speak for a cell still running when the call returns, and
+would exist only where an environment installed it.
+
+Every such result shows it, fast cells included. Shown only for slow ones it
+would be a mark, and the reader would ask what made this one different; on
+every result it is background, a few tokens each. A duration measured while the
+machine was under load is a weaker measurement, and the environment's own
+notices say when that was the case.
+
 ## 5. Output That Does Not Arrive
 
 Silence is only as true as the pipe. Measured on this machine, one line a
@@ -184,6 +239,9 @@ Go, cargo and the shell itself write as they go.
 | Silence off unless written, as first built | a long `--wait` without `--silence` held the agent through a stall; returning one call early costs less (section 4.4) |
 | Thirty seconds for the `wait` tool, ten for `--wait` | the same length on two panels; one number in one place (section 4.4) |
 | A program's arguments default to ten seconds | sent on every call, they overrode the header of a cell submitted from code (section 4.4) |
+| Time each cell with a `pre_run_cell` / `post_run_cell` hook | counts again what the record counts, is silent while the cell runs, and exists only where installed (section 4.6) |
+| Show minutes for long runs | the writer compares against `--wait` in seconds (section 4.6) |
+| Show the duration only for slow cells | a mark that asks why this one; always shown it is background (section 4.6) |
 
 ## 7. Verification
 
@@ -198,3 +256,5 @@ Go, cargo and the shell itself write as they go.
 | S7 | what a call writes reaches the wait, and what it leaves out is the default; the clock itself is S1 to S3's | `tests/session/test_silence.py` |
 | S8 | `Kernel.run_cell` without arguments waits as the cell's header says | `tests/mcp/test_kernel_control.py` |
 | S9 | when both timers expire together, the result says silent | `tests/session/test_silence.py` |
+| S10 | a finished execution's first line shows its duration, in milliseconds below a second and seconds with one decimal above | `tests/mcp/test_presentation.py` |
+| S11 | a running execution's first line shows the time since submission, on the monotonic clock | `tests/session/test_silence.py` |
