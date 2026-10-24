@@ -215,7 +215,7 @@ kernel is retired with the lease, since nobody comes back to a generated name.
 If a session
 calls tools without that stream, or keeps calling after it
 closed, the lease falls back to the activity window and raises an alert:
-every tool result of that session ends with a `Lease alert` block, and the
+every tool result of that session ends with a `Lease alert` line, and the
 console at `/` turns its lease-signal row red. For Claude Code over HTTP:
 
 ```bash
@@ -305,7 +305,21 @@ hook for instance, tells the agent something about this moment. A notice is
 not output: no output stream holds it and the 5,000-token limit never omits it.
 The next tool result ends with every notice no result has delivered, each
 once, labeled `In [N] · ` when another cell spoke it and `Startup · ` when a
-startup file did. A notice is cut at 500 characters and a cell keeps ten; a
+startup file did. They come in one envelope that starts a line, with the
+`Kernel:` line and the `Lease alert` when a result has them:
+
+```text
+In [7]:
+done
+<loommux-notice>
+⚠ 体征｜memory 2.1 GiB, past 2 GiB
+Kernel: report-cleanup (opened)
+</loommux-notice>
+```
+
+The tag is the boundary between what the cell produced and what the
+environment says; a client joins a result's text blocks end to end, so a
+block of its own would not be one. A notice is cut at 500 characters and a cell keeps ten; a
 cell forwarded with `--kernel build` speaks build's notices again as
 `build · …`. The `idle` column, and `idle_since` in each snapshot, say how long
 a kernel has run nothing.
@@ -525,8 +539,8 @@ df.head()
 
 Without `--create` a missing name returns `kernel_not_found`, listing the main
 kernels, and opens nothing. The call that changes the session's main kernel ends
-with one block such as `Kernel: report-cleanup (attached; 12 earlier
-executions)`, and `status` begins with the kernel's name. A kernel renames
+with a line such as `Kernel: report-cleanup (attached; 12 earlier
+executions)` in its `<loommux-notice>` envelope, and `status` begins with the kernel's name. A kernel renames
 itself with `loommux.rename(loommux.self, "new-name")`. The rules, and the terminal
 multiplexers and notebook servers they come from, are in
 [Main Kernel Binding Design](docs/kernel-binding-design.md).

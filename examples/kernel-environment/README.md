@@ -35,7 +35,7 @@ writes line by line.
 | 0 | starts loommux in `src/` | `loommux: configuration …/.loommux (found from the launch directory)`: the directory is found upward, as git finds `.git` |
 | 1 | `%%loommux --attach 巡览 --create` | `In [1]`, with the startup hooks already defined, and `Kernel: 巡览 (opened)` |
 | 2 | `%%loommux --kernel build` | the child kernel's output, relayed into this cell |
-| 3 | a cell that sleeps and prints 150,000 characters | the output omitted, and after it both notices: the cell ran long, and `build` runs nothing |
+| 3 | a cell that sleeps and prints 150,000 characters | the output omitted, and after it both notices in the `<loommux-notice>` envelope: the cell ran long, and `build` runs nothing |
 | 4 | `loommux.kernels()`, `loommux["build"].run_cell(…)`, `loommux.recycle("build")` | every kernel, `build`'s answer, and its retirement: the daemon's buttons and a kernel's |
 | 5 | a typo in a startup file, then `restart` | `Startup · 30-typo.py failed: SyntaxError …`, and the next cell is `In [1]` |
 

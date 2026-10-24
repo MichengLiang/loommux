@@ -287,8 +287,10 @@ Snapshots report a main kernel's remaining retention, which the console and
 
 ## 9. What The Agent Is Told
 
-A call that changes the session's main kernel ends with one text block naming
-the kernel and how it was reached, after any output and before a lease alert:
+A call that changes the session's main kernel ends with one line naming the
+kernel and how it was reached, in the result's `<loommux-notice>` envelope,
+after any notices and before a lease alert
+([Kernel Environment Design](kernel-environment-design.md) section 6.4):
 
 ```text
 Kernel: 主kernel绑定设计 (opened)
@@ -297,8 +299,8 @@ Kernel: 主kernel绑定设计 (attached; 12 earlier executions; let go of privat
 Kernel: private-1a2b3c4d (opened)
 ```
 
-It is a separate block so that the execution's own text, and every rule about
-it, stays exactly as before. It appears once, when the main kernel changes: the
+It stays outside the execution's own text, so that text, and every rule about
+it, is exactly as before. It appears once, when the main kernel changes: the
 agent needs the name at that moment, and repeating it in every result would add
 nothing to what it already read. `status` reports the current name on its first
 line, for an agent that has lost track of it after its context was compacted.

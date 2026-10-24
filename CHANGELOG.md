@@ -19,9 +19,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   from a later host. Inside a kernel, `--attach` naming another kernel is a
   `UsageError`; `--create` without `--attach` is a header error. `--kernel`
   still forwards one cell, on every call.
-- A call that changes the session's main kernel ends with one
+- A call that changes the session's main kernel ends with a
   `Kernel: NAME (opened)` or `Kernel: NAME (attached; N earlier executions)`
-  block, and structured results carry `binding`; `status` begins with the
+  line, and structured results carry `binding`; `status` begins with the
   kernel's name.
 - `Daemon.rename(kernel, name)` and `POST /api/resources/{id}/rename` rename a kernel
   and return the name it received, numbered when another main kernel, or a
@@ -57,6 +57,11 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   ten. A forwarded cell speaks its child kernel's notices again as
   `build · …`, and the control plane's combined follow hands an execution's
   notices over with its final state.
+- What the environment says in a tool result, the notices, the `Kernel:` line
+  and the `Lease alert`, is one text block that starts a line:
+  `<loommux-notice>`, its lines, `</loommux-notice>`. A client such as Claude
+  Code joins a result's blocks end to end, so separate blocks ran into output
+  that did not end with a newline, the omission message among it.
 - Snapshots report `idle_since`, when the kernel last became idle, `null`
   while a cell runs; the `Kernels` table shows it as its `idle` column.
 - `Daemon.kernels(timeout=)` bounds the wait for the daemon, so code that
@@ -64,6 +69,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Changed
 
+- The `Lease alert` is a line of the result's `<loommux-notice>` envelope, no
+  longer a block of its own.
 - A named main kernel whose connection-lease sessions all left is no longer
   retired about a minute later. The departed lease is still released when the
   reconnect grace ends, and the kernel then keeps itself for the named window

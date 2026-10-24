@@ -139,13 +139,15 @@ With both files in place, a cell that crosses both thresholds ends like this:
 
 ```text
 In [3]:
-
+<loommux-notice>
 ⏱ this cell ran 0:12:41
 build has run nothing since 2026-10-23T20:30:03.526315+00:00; loommux.recycle('build') if it is done
+</loommux-notice>
 ```
 
-The notices are their own block after the cell's output. They are not part of
-any output stream, so `read_output` never shows them, and a cell whose output
+The notices come after the cell's output in one `<loommux-notice>` envelope,
+which starts a line whatever the output ended with. They are not part of any
+output stream, so `read_output` never shows them, and a cell whose output
 passes the 5,000-token limit still ends with them, after the omission message.
 Each is delivered once.
 
@@ -156,8 +158,9 @@ happened:
 
 ```text
 Python kernel restarted.
-
+<loommux-notice>
 Startup · 30-typo.py failed: SyntaxError: invalid syntax (30-typo.py, line 1)
+</loommux-notice>
 ```
 
 The other files still ran. The directory is read each time a kernel starts, so

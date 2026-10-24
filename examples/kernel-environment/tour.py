@@ -45,7 +45,8 @@ async def tour(origin: str, project: Path) -> None:
 
         async def call(tool: str, **arguments: object) -> str:
             result = await agent.call_tool(tool, arguments)
-            text = "\n".join(block.text for block in result.content if hasattr(block, "text"))
+            # Joined end to end, as Claude Code hands a result to the model.
+            text = "".join(block.text for block in result.content if hasattr(block, "text"))
             show(text)
             return text
 
@@ -58,9 +59,9 @@ async def tour(origin: str, project: Path) -> None:
         seen = await call("run_cell", freeform="%%loommux --kernel build\nanswer = 6 * 7\nanswer")
         expect(seen, "Out[1]: 42")
 
-        step("3. A slow, loud cell: the output is omitted, the two notices are not")
+        step("3. A slow, loud cell: the output is omitted, the two notices are not; they come in the envelope")
         seen = await call("run_cell", freeform="import time\ntime.sleep(2.5)\nprint('word ' * 30000)")
-        expect(seen, "Output omitted", "⏱ this cell ran", "build has run nothing since")
+        expect(seen, "Output omitted", "\n<loommux-notice>\n⏱ this cell ran", "build has run nothing since", "\n</loommux-notice>")
 
         step("4. The daemon's buttons and a kernel's, from Python inside the main kernel")
         seen = await call(
