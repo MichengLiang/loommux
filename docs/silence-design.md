@@ -149,11 +149,11 @@ Go, cargo and the shell itself write as they go.
 
 ## 7. Verification
 
-| ID | Behavior |
-| --- | --- |
-| S1 | a cell that stops printing returns after `--silence` seconds, still running, with `silent_seconds` and its last lines |
-| S2 | a cell that keeps printing is not returned early, and one that finishes returns at once |
-| S3 | `wait` with `silence_seconds` measures from the later of its start and the last output |
-| S4 | output redrawn with `\r` resets the clock; a notice does not |
-| S5 | the header, the `wait` tool, `Kernel.run_cell` and `Kernel.wait` accept the same silence |
-| S6 | a Python child under `%%bash` streams its lines as they are printed |
+| ID | Behavior | Proved by |
+| --- | --- | --- |
+| S1 | a cell that stops printing returns after `--silence` seconds, still running, with `silent_seconds` and its last lines | `tests/session/test_silence.py` |
+| S2 | a cell that keeps printing is not returned early, and one that finishes returns at once | `tests/session/test_silence.py` |
+| S3 | `wait` with `silence_seconds` measures from the later of its start and the last output | `tests/session/test_silence.py` |
+| S4 | output redrawn with `\r` resets the clock; a notice does not | `tests/session/test_silence.py` |
+| S5 | the header, the `wait` tool, `Kernel.run_cell` and `Kernel.wait` accept the same silence | `tests/mcp/test_kernel_control.py` |
+| S6 | a Python child under `%%bash` streams its lines as they are printed | `tests/session/test_silence.py`, which fails without `PYTHONUNBUFFERED` |
