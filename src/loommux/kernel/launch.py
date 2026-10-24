@@ -16,6 +16,10 @@ _REMOVED_ENVIRONMENT_VARIABLES = ("IPYTHONDIR", "JUPYTER_CONFIG_DIR", "CLICOLOR"
 _CONTROLLED_ENVIRONMENT = {
     "NO_COLOR": "1",
     "PY_COLORS": "0",
+    # %%bash runs commands on plain pipes, where a Python child buffers by blocks and
+    # writes only when it exits: uv run pytest would look silent for its whole run and
+    # --silence would misread it (silence-design 5). `!` already runs on a pty.
+    "PYTHONUNBUFFERED": "1",
 }
 # ZMQInteractiveShell.init_environment enables child-process colours after
 # process launch, so enforce the server policy again after shell initialization.

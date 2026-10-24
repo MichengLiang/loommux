@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import time
 from pathlib import Path
 
@@ -87,6 +88,14 @@ def test_a_running_result_shows_its_last_lines_when_the_wait_runs_out_too(sessio
         assert len(result["recent_lines"][4]) == 200 and result["recent_lines"][4].endswith("…")
     finally:
         stop(session, result["execution"])
+
+
+def test_a_python_child_under_bash_streams_its_lines_as_they_are_printed(session: IPythonSession) -> None:
+    # S6: on plain pipes a Python child would buffer until it exits and look silent throughout.
+    loop = "import time\\nfor i in range(6):\\n    print(i)\\n    time.sleep(0.5)"
+    result = session.run_cell(f"%%bash\n{sys.executable} -c $'{loop}'", wait_seconds=20, silence_seconds=1.5)
+    assert result["status"] == "completed" and "silent_seconds" not in result
+    assert session.read_output(result["execution"])["text"].split() == ["0", "1", "2", "3", "4", "5"]
 
 
 @pytest.mark.parametrize("silence", [0, -1, float("nan"), "soon"])

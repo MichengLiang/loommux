@@ -60,9 +60,10 @@ def test_kernel_launch_builds_the_required_command_and_controlled_environment(tm
         assert launch.environment["LOOMMUX_TEST_PRESERVED"] == "preserved"
         for name in ("CLICOLOR", "CLICOLOR_FORCE", "FORCE_COLOR"):
             assert name not in launch.environment
-        assert {name: launch.environment[name] for name in ("NO_COLOR", "PY_COLORS")} == {
+        assert {name: launch.environment[name] for name in ("NO_COLOR", "PY_COLORS", "PYTHONUNBUFFERED")} == {
             "NO_COLOR": "1",
             "PY_COLORS": "0",
+            "PYTHONUNBUFFERED": "1",
         }
         assert not _is_within(launch.runtime_root, workspace)
     finally:
