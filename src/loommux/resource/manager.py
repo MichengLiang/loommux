@@ -831,11 +831,13 @@ class KernelResourceManager:
             key=lambda item: item.created_at,
         ):
             verdict = self._assess(resource, lease, now)
+            address = self.connections.presence(lease.client.client_id).client_address
             leases.append(
                 {
                     "lease_id": lease.lease_id,
                     "client_id": lease.client.client_id,
                     "client_name": lease.client.display_name,
+                    "client_address": None if address is None else list(address),
                     "mode": lease.policy.mode.value,
                     "policy_generation": lease.policy.generation,
                     "created_at": lease.created_at.isoformat(),

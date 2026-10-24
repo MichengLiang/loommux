@@ -261,6 +261,31 @@ def test_open_stream_holds_a_connection_lease_past_its_window_until_the_stream_d
     asyncio.run(scenario())
 
 
+def test_a_lease_snapshot_names_its_open_stream_address_and_nothing_once_it_closes(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        registry = ConnectionRegistry()
+        manager = connection_manager(tmp_path, registry)
+        client = make_client("streaming")
+        registry.stream_opened(client.client_id, client_address=("127.0.0.1", 45900))
+        policy = make_policy(mode=LeaseMode.CONNECTION, grace=60)
+        async with manager.operation(client, policy, request=make_request()):
+            pass
+
+        [snapshot] = await manager.snapshot()
+        assert snapshot["leases"][0]["client_address"] == ["127.0.0.1", 45900]
+
+        registry.stream_closed(client.client_id, client_address=("127.0.0.1", 45900))
+
+        [snapshot] = await manager.snapshot()
+        assert snapshot["leases"][0]["standing"] == "reconnecting"
+        assert snapshot["leases"][0]["client_address"] is None
+        await manager.stop()
+
+    asyncio.run(scenario())
+
+
 def test_a_departed_sessions_lease_goes_and_its_main_kernel_keeps_its_own_retention(
     tmp_path: Path,
 ) -> None:

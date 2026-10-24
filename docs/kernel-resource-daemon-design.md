@@ -208,8 +208,9 @@ on exit, and its stream closes within about a second of `/exit` or
 
 `ConnectionRegistry` (`resource/connections.py`) records the transport facts
 per session: when it was first seen, how many streams are open, when the
-count last fell to zero, and whether the session is bound to the process
-lifetime. `assess_lease()` turns them into one standing:
+count last fell to zero, whether the session is bound to the process
+lifetime, and where each open stream comes from. `assess_lease()` turns the
+first four into one standing:
 
 | Standing | Condition | Lease |
 | --- | --- | --- |
@@ -247,6 +248,27 @@ The registry forgets a session once it is disconnected and no lease refers
 to it. A forgotten session that later calls a tool is judged as never having
 opened a stream, which still alerts if no stream follows.
 
+Where a stream comes from is ASGI's `client`, the remote `[host, port]` of
+the connection the `GET` arrived on. Each lease in a resource snapshot
+carries its session's open stream address as `client_address`, and
+`null` when no stream is open: before the first stream, after the last one
+closed, and for stdio, which has no connection. Only the stream's address is
+kept. The stream holds one connection for as long as the client keeps it,
+while every `POST` may travel over any connection of the client's pool, so a
+`POST` address can name a connection that is already gone. A session
+normally has one stream, since a second concurrent `GET` is rejected; should
+two be open for a moment, the snapshot names the one opened last.
+
+loommux reports this address as a transport fact and does not interpret it.
+A process on the same machine can look the port up among the sockets of the
+processes it can see and so learn which process holds a kernel. Consider a
+tool that watches resources from inside a coding agent's kernel and wants to
+recognize the kernel opened by a sub-agent that the agent started itself.
+The sub-agent is a child process of the agent's kernel, but the kernel it
+opens is a child of the daemon, so the process tree breaks at the MCP
+connection; this address is the link across it. Naming the process stays
+with the observer, which keeps the snapshot the same on every platform.
+
 #### Transport observation
 
 `mcp/stream_presence.py` installs an ASGI middleware on every HTTP
@@ -256,8 +278,10 @@ streams identically. A request counts as a standalone stream when it is a
 `GET` carrying `Mcp-Session-Id` whose response starts with `200` and
 `text/event-stream`; it stays open until that response ends. A rejected
 `GET` (unknown session, a second concurrent stream) never reaches `200` and
-is not counted. The observation relies only on ASGI and on what the MCP
-Streamable HTTP specification defines, unlike the ping hook below.
+is not counted. The middleware records the request's `client` with the
+stream when it opens and removes it when the stream ends. The observation
+relies only on ASGI and on what the MCP Streamable HTTP specification
+defines, unlike the ping hook below.
 
 A tool call whose MCP request context carries no HTTP request comes from
 stdio or from an in-process client. Such a session lives exactly as long as

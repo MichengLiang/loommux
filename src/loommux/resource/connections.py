@@ -14,8 +14,11 @@ decision belongs to :mod:`loommux.resource.liveness`.
 from __future__ import annotations
 
 from collections.abc import Collection
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from time import monotonic
+
+# ASGI's ``client``: the remote host and port of the connection a request came in on.
+Address = tuple[str, int]
 
 
 @dataclass
@@ -24,16 +27,29 @@ class SessionPresence:
 
     ``closed_at`` is when the open-stream count last fell to zero, so it is
     ``None`` exactly when the session has never had a stream to lose.
+    ``open_addresses`` holds the remote address of each open stream, oldest
+    first; ASGI may report none, so it can be shorter than ``open_streams``.
     """
 
     first_seen_at: float
     open_streams: int = 0
     closed_at: float | None = None
     process_bound: bool = False
+    open_addresses: list[Address] = field(default_factory=list)
 
     @property
     def connected(self) -> bool:
         return self.process_bound or self.open_streams > 0
+
+    @property
+    def client_address(self) -> Address | None:
+        """Where the session's most recently opened stream comes from; ``None`` with no stream open.
+
+        A session normally holds one stream, since a second concurrent ``GET``
+        is rejected before it opens. Should two be open for a moment, this
+        names the one opened last.
+        """
+        return self.open_addresses[-1] if self.open_addresses else None
 
 
 class ConnectionRegistry:
@@ -54,15 +70,32 @@ class ConnectionRegistry:
             self._sessions[session_id] = record
         return record
 
-    def stream_opened(self, session_id: str, *, now: float | None = None) -> None:
+    def stream_opened(
+        self,
+        session_id: str,
+        *,
+        client_address: Address | None = None,
+        now: float | None = None,
+    ) -> None:
         record = self.presence(session_id, now=now)
         record.open_streams += 1
+        if client_address is not None:
+            record.open_addresses.append(client_address)
 
-    def stream_closed(self, session_id: str, *, now: float | None = None) -> None:
+    def stream_closed(
+        self,
+        session_id: str,
+        *,
+        client_address: Address | None = None,
+        now: float | None = None,
+    ) -> None:
         record = self.presence(session_id, now=now)
         record.open_streams = max(0, record.open_streams - 1)
+        if client_address in record.open_addresses:
+            record.open_addresses.remove(client_address)
         if record.open_streams == 0:
             record.closed_at = monotonic() if now is None else now
+            record.open_addresses.clear()
 
     def bind_to_process(self, session_id: str) -> None:
         self.presence(session_id).process_bound = True

@@ -19,6 +19,32 @@ def test_presence_counts_overlapping_streams_and_marks_only_the_last_close() -> 
     assert presence.closed_at == 4
 
 
+def test_presence_names_the_most_recently_opened_stream_and_forgets_it_with_the_last_close() -> None:
+    registry = ConnectionRegistry()
+    old, new = ("127.0.0.1", 45900), ("127.0.0.1", 48106)
+
+    registry.stream_opened("session", client_address=old)
+    registry.stream_opened("session", client_address=new)
+    registry.stream_closed("session", client_address=old)
+    presence = registry.presence("session")
+
+    assert presence.client_address == new
+
+    registry.stream_closed("session", client_address=new)
+
+    assert presence.client_address is None
+
+
+def test_a_stream_without_an_address_still_counts_and_names_nobody() -> None:
+    registry = ConnectionRegistry()
+
+    registry.stream_opened("session")
+    presence = registry.presence("session")
+
+    assert presence.connected
+    assert presence.client_address is None
+
+
 def test_presence_starts_once_and_process_binding_keeps_it_connected() -> None:
     registry = ConnectionRegistry()
 

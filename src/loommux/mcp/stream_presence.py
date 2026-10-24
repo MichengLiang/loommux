@@ -12,6 +12,7 @@ from __future__ import annotations
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from loommux.resource import ConnectionRegistry
+from loommux.resource.connections import Address
 
 SESSION_HEADER = b"mcp-session-id"
 
@@ -21,7 +22,9 @@ class StandaloneStreamPresence:
 
     A rejected ``GET`` (unknown session, a second concurrent stream) never
     reaches ``200``, so it is not counted. Every other request passes through
-    untouched.
+    untouched. The stream's remote address is recorded with it: a ``POST``
+    may arrive on any pooled connection, but the stream holds one connection
+    for as long as the client keeps it, so its address names that client.
     """
 
     def __init__(self, app: ASGIApp, connections: ConnectionRegistry) -> None:
@@ -35,19 +38,20 @@ class StandaloneStreamPresence:
             return
 
         opened = False
+        client_address = _client_address(scope)
 
         async def observed_send(message: Message) -> None:
             nonlocal opened
             if not opened and _opens_event_stream(message):
                 opened = True
-                self.connections.stream_opened(session_id)
+                self.connections.stream_opened(session_id, client_address=client_address)
             await send(message)
 
         try:
             await self.app(scope, receive, observed_send)
         finally:
             if opened:
-                self.connections.stream_closed(session_id)
+                self.connections.stream_closed(session_id, client_address=client_address)
 
 
 def _stream_session(scope: Scope) -> str | None:
@@ -57,6 +61,12 @@ def _stream_session(scope: Scope) -> str | None:
         if name == SESSION_HEADER:
             return value.decode("latin-1") or None
     return None
+
+
+def _client_address(scope: Scope) -> Address | None:
+    # ASGI gives [host, port] or None, for example behind a Unix socket.
+    client = scope.get("client")
+    return None if client is None else (str(client[0]), int(client[1]))
 
 
 def _opens_event_stream(message: Message) -> bool:
