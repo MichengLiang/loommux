@@ -533,11 +533,13 @@ def _await(record: Execution, timeout_seconds: float, silence_seconds: float, *,
     deadline = time.monotonic() + timeout_seconds
     while record.is_running:
         now = time.monotonic()
-        if now >= deadline:
-            return None
         quiet = now - max(since, record.last_output_monotonic)
+        # Silence first: when both timers expire together, as the wait tool's equal defaults
+        # always do on a quiet run, "silent for N s" tells stuck from slow and a bare expiry does not.
         if quiet >= silence_seconds:
             return quiet
+        if now >= deadline:
+            return None
         record.done.wait(min(deadline - now, silence_seconds - quiet, _SILENCE_POLL_SECONDS))
     return None
 

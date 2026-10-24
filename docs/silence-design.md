@@ -95,6 +95,10 @@ wasted. This is the read timeout's rule: the gap is measured while reading.
 
 The clock is checked every quarter second; silence is meant in seconds.
 
+When both timers expire together the result reports the silence. The `wait`
+tool's equal defaults always do on a quiet run, since both count from the call;
+"silent for 10 s" tells stuck from slow, and a bare expiry does not.
+
 ### 4.4 On by default, ten seconds each
 
 A default is not a convenience but the path every call that does not write the
@@ -193,3 +197,4 @@ Go, cargo and the shell itself write as they go.
 | S6 | a Python child under `%%bash` streams its lines as they are printed | `tests/session/test_silence.py`, which fails without `PYTHONUNBUFFERED` |
 | S7 | what a call writes reaches the wait, and what it leaves out is the default; the clock itself is S1 to S3's | `tests/session/test_silence.py` |
 | S8 | `Kernel.run_cell` without arguments waits as the cell's header says | `tests/mcp/test_kernel_control.py` |
+| S9 | when both timers expire together, the result says silent | `tests/session/test_silence.py` |

@@ -64,6 +64,16 @@ def test_wait_counts_silence_from_its_own_start_on_a_quiet_stretch(session: IPyt
         stop(session, first["execution"])
 
 
+def test_when_both_timers_expire_together_the_result_says_silent(session: IPythonSession) -> None:
+    # The cell has printed its one line and gone quiet before this wait starts.
+    first = session.run_cell("import time\nprint('started')\ntime.sleep(30)", wait_seconds=20, silence_seconds=1)
+    try:
+        again = session.wait(first["execution"], 1, silence_seconds=1)
+        assert again["status"] == "running" and again["silent_seconds"] >= 1
+    finally:
+        stop(session, first["execution"])
+
+
 def test_without_a_written_silence_both_waits_take_the_default(session: IPythonSession, monkeypatch: pytest.MonkeyPatch) -> None:
     # S7: what a call writes reaches the wait and what it leaves out is the default. The clock
     # itself is S1 to S3's, proved with one-second silences, so no test sits out a default.
