@@ -253,6 +253,7 @@ FORCE_COLOR
 ```text
 NO_COLOR=1
 PY_COLORS=0
+PYTHONUNBUFFERED=1
 PAGER=cat
 GIT_PAGER=cat
 SYSTEMD_PAGER=cat
@@ -260,6 +261,11 @@ SYSTEMD_PAGER=cat
 
 这些环境变量是减少上游 terminal formatting 与 pager 行为的手段。它们不替代
 第 7 节的文本规范化契约。
+
+`PAGER` 与 `GIT_PAGER` 由 IPython 的 `ZMQInteractiveShell.init_environment` 在 kernel
+启动后设置。`PYTHONUNBUFFERED=1` 由 loommux 设置：`%%bash` 经普通管道运行命令，Python
+子进程见到管道便按块缓冲、结束才写出，`--silence` 会把它误判为没有输出
+（[Waiting Until It Goes Quiet](silence-design.md) 第 5 节）。
 
 ## 7. Terminal Text 公共契约
 
