@@ -448,7 +448,7 @@ record, then the most recently accepted record. With neither, the tool returns
 | `execution_status(execution=None)` | Inspect lifecycle and diagnostic metadata without returning the full output body. |
 | `read_output(...)` | Read a selected execution stream, optionally by line range and with per-line clipping. |
 | `search_output(...)` | Search a selected output stream using literal text or regular expressions. |
-| `wait(execution=None, timeout_seconds=30)` | Wait for an execution without interrupting it. |
+| `wait(execution=None, timeout_seconds=30, silence_seconds=None)` | Wait for an execution without interrupting it; with `silence_seconds`, also return once it has printed nothing that long. |
 | `interrupt()` | Send an interrupt signal to the current running execution. |
 | `restart()` | Restart the kernel. |
 
@@ -480,6 +480,26 @@ interrupt the cell when time expires, modify later calls, or add a variable to
 the kernel. `--full-output` is described under
 [Requesting Complete Output](#requesting-complete-output). The options apply to
 that one cell; the next cell starts from the defaults again.
+
+`--silence SECONDS` is a second condition on the same wait: the call also
+returns once the cell has printed nothing for that long, still running, saying
+how long it has been silent and showing its last lines. Whichever comes first
+ends the call; neither interrupts the cell. Write both when you know about how
+long a run takes and how often it prints:
+
+```python
+%%loommux --wait 600 --silence 30
+%%bash
+pnpm exec playwright test
+```
+
+A healthy run returns when it finishes; one stuck at second 40 returns at
+second 70 instead of 600. The `wait` tool takes `silence_seconds`, counted from
+the later of the call and the last output, and so do `Kernel.run_cell` and
+`Kernel.wait`. Any running result shows its last few lines. Python processes a
+cell starts are unbuffered (`PYTHONUNBUFFERED=1`), so `uv run pytest` under
+`%%bash` streams its lines rather than holding them until it exits. See
+[Waiting Until It Goes Quiet](docs/silence-design.md).
 
 The header is IPython, not transport metadata. The daemon reads its options
 and submits the cell unchanged, and the kernel interprets the header itself, so

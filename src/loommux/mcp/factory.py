@@ -231,6 +231,8 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, confi
             build_report()
 
         ``--wait SECONDS``:覆盖本次调用的等待上限；
+        ``--silence SECONDS``:这个 cell 已有这么久没有输出时也交回控制权，cell 照常运行；与 ``--wait`` 谁先到按谁。
+        知道大概要跑多久、多久打一行日志时，两个都写，如 ``--wait 600 --silence 30``。
         ``--full-output``:让本次 execution 在终态时返回完整 combined 正文，突破默认 5,000-token 阈值限制；
         在明确需要完整阅读某些文件、资料时使用，避免反复阅读的开销。选项只作用于这一个 cell。
         loommux cell magic 的下一行可以接另一个 cell magic，例如 ``%%bash``。

@@ -9,6 +9,19 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- `%%loommux --silence SECONDS`: the `run_cell` call also returns once the cell
+  has printed nothing for that long, still running; whichever of `--wait` and
+  `--silence` comes first ends the call, and neither interrupts the cell. Any
+  output message counts, before normalization, so a progress bar redrawn with
+  `\r` is activity; a notice is not. The `wait` tool, `Kernel.run_cell`,
+  `Kernel.wait` and the control plane's two execution routes take
+  `silence_seconds`; for `wait` the silence counts from the later of the call
+  and the last output. A result that returned for silence says
+  `Running, silent for N s` and structured results carry `silent_seconds`.
+- A result of a running execution shows its last five non-blank lines, each cut
+  to 200 characters, and structured results carry `recent_lines`.
+- The kernel's environment sets `PYTHONUNBUFFERED=1`: under `%%bash`, on plain
+  pipes, a Python child held its output until it exited.
 - `%%loommux --attach NAME [--create]` chooses the main kernel an MCP session
   works in, on any call: NAME is found by name or id whoever else works in it,
   or opened with `--create`; without `--create` a missing name returns
@@ -141,6 +154,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- `Kernel.run_cell(code, wait_seconds=0)` returns at once, as documented; the
+  session rejected any wait that was not greater than zero.
 - Finding or opening a kernel by name answered 500 when the kernel it had resolved
   was retired before the route described it, for example a child kernel whose
   home had just been let go of; it now answers 404 as for a missing kernel,
