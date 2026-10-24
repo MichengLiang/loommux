@@ -165,10 +165,10 @@ def install_control_routes(
         body, error = await _json_object(request)
         if error is not None:
             return error
-        source, wait_seconds = body.get("source"), body.get("wait_seconds", 10)
-        if not isinstance(source, str) or isinstance(wait_seconds, bool) or not isinstance(wait_seconds, int | float):
-            return JSONResponse({"ok": False, "message": "source must be a string and wait_seconds a number"}, status_code=400)
-        return await _session_call(request, lambda session: session.run_cell(source, wait_seconds=float(wait_seconds)))
+        source, wait_seconds, silence = body.get("source"), body.get("wait_seconds", 10), body.get("silence_seconds")
+        if not isinstance(source, str) or not _is_number(wait_seconds) or not (silence is None or _is_number(silence)):
+            return JSONResponse({"ok": False, "message": "source must be a string, and wait_seconds and silence_seconds numbers"}, status_code=400)
+        return await _session_call(request, lambda session: session.run_cell(source, wait_seconds=float(wait_seconds), silence_seconds=None if silence is None else float(silence)))
 
     @mcp.custom_route("/api/resources/{resource_id}/rename", methods=["POST"])
     async def rename_resource(request: Request) -> Response:
@@ -203,14 +203,14 @@ def install_control_routes(
         body, error = await _json_object(request)
         if error is not None:
             return error
-        timeout = body.get("timeout_seconds", 30)
+        timeout, silence = body.get("timeout_seconds", 30), body.get("silence_seconds")
         try:
             execution = _execution(request)
-            if isinstance(timeout, bool) or not isinstance(timeout, int | float):
-                raise ValueError("timeout_seconds must be a number")
+            if not _is_number(timeout) or not (silence is None or _is_number(silence)):
+                raise ValueError("timeout_seconds and silence_seconds must be numbers")
         except ValueError as exc:
             return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
-        return await _session_call(request, lambda session: session.wait(execution, float(timeout)))
+        return await _session_call(request, lambda session: session.wait(execution, float(timeout), None if silence is None else float(silence)))
 
     @mcp.custom_route("/api/resources/{resource_id}/executions/{execution}/output", methods=["GET"])
     async def read_output(request: Request) -> Response:
@@ -383,6 +383,10 @@ def _optional_int(query: Any, name: str) -> int | None:  # noqa: ANN401
         return int(value)
     except ValueError:
         raise ValueError(f"{name} must be an integer") from None
+
+
+def _is_number(value: object) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
 
 
 def _number(

@@ -406,7 +406,7 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, confi
         return await call("search_output", ctx, lambda session: session.search_output(query, execution, stream, query_mode, context_before, context_after, ignore_case, max_chars))
 
     @mcp.tool(output_schema=None, meta=_FULL_BODY_TOOL_META)
-    async def wait(ctx: Context, execution: int | None = None, timeout_seconds: float = 30) -> ToolResult:
+    async def wait(ctx: Context, execution: int | None = None, timeout_seconds: float = 30, silence_seconds: float | None = None) -> ToolResult:
         """等待一个 execution 结束，或在指定时限到达时返回其当前状态。
 
         选择与等待
@@ -427,12 +427,14 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, confi
             execution: 要等待的正整数执行编号。省略时使用当前记录，随后
                 使用最近记录。
             timeout_seconds: 本次调用最多等待的正数秒数；默认 30 秒。
+            silence_seconds: 给出时，这次等待中 execution 已有这么久没有新输出也返回，
+                cell 照常运行；与 ``timeout_seconds`` 谁先到按谁。
 
         Returns:
             选中 execution 的当前状态和可返回的输出表面。未找到记录或
             非正等待时长返回对应错误。
         """
-        return await call("wait", ctx, lambda session: session.wait(execution, timeout_seconds))
+        return await call("wait", ctx, lambda session: session.wait(execution, timeout_seconds, silence_seconds))
 
     @mcp.tool(output_schema=None)
     async def interrupt(ctx: Context) -> ToolResult:

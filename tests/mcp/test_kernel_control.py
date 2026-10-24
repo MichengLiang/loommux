@@ -21,6 +21,37 @@ async def output(client: LeaseAwareClient | Client, source: str) -> str:
 
 
 @pytest.mark.timeout(60)
+def test_the_header_the_wait_tool_and_a_kernels_methods_share_one_silence(tmp_path: Path) -> None:
+    # S5: one meaning of silence on both panels.
+    async def scenario(origin: str) -> None:
+        async with LeaseAwareClient(f"{origin}/mcp", "agent") as agent:
+            first = await agent.call_tool("run_cell", {"freeform": "%%loommux --wait 20 --silence 1\nimport time\nprint('compiled')\ntime.sleep(30)"})
+            assert first.content[0].text.startswith("In [1]:\nRunning, silent for 1 s: ")
+            assert first.content[0].text.endswith("Last lines:\n  compiled")
+            started = asyncio.get_running_loop().time()
+            again = await agent.call_tool("wait", {"timeout_seconds": 20, "silence_seconds": 1})
+            assert again.content[0].text.startswith("In [1]:\nRunning, silent for 1 s: ")
+            assert asyncio.get_running_loop().time() - started >= 0.9
+            await agent.call_tool("interrupt", {})
+            await agent.call_tool("wait", {"timeout_seconds": 10})
+
+            seen = await output(
+                agent,
+                "build = loommux.create('build')\n"
+                "r = build.run_cell(\"import time\\nprint('a')\\ntime.sleep(30)\", wait_seconds=20, silence_seconds=1)\n"
+                "w = build.wait(r['execution'], 20, silence_seconds=1)\n"
+                "build.interrupt()\n"
+                "print(r['status'], r['silent_seconds'] >= 1, r['recent_lines'], w['status'], w['silent_seconds'] >= 1)",
+            )
+            assert seen == "running True ['a'] running True\n"
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    with running_server(reserve_port(), workspace, lease_mode="connection") as origin:
+        asyncio.run(scenario(origin))
+
+
+@pytest.mark.timeout(60)
 def test_a_kernel_knows_itself_and_manages_other_kernels_through_its_daemon(tmp_path: Path) -> None:
     async def scenario(origin: str) -> None:
         async with (

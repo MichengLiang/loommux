@@ -249,15 +249,17 @@ class Kernel:
         self.daemon._learn(resource)
         return resource
 
-    def run_cell(self, freeform: str, *, wait_seconds: float = 10.0) -> dict[str, Any]:
+    def run_cell(self, freeform: str, *, wait_seconds: float = 10.0, silence_seconds: float | None = None) -> dict[str, Any]:
         """Submit ``freeform`` as one cell and wait up to ``wait_seconds``; its state either way.
 
         The result's ``execution`` is the number the other operations take.
         ``wait_seconds=0`` returns at once and leaves the cell running. A
         kernel already running a cell refuses with ``DaemonError`` whose
-        ``status`` is ``busy``: cells are never queued.
+        ``status`` is ``busy``: cells are never queued. ``silence_seconds``
+        also returns once the cell has printed nothing that long, as ``--silence``.
         """
-        return self._session("POST", "/executions", json={"source": freeform, "wait_seconds": wait_seconds}, timeout=wait_seconds + _CONTROL_TIMEOUT_SECONDS)
+        body = {"source": freeform, "wait_seconds": wait_seconds} | _silence(silence_seconds)
+        return self._session("POST", "/executions", json=body, timeout=wait_seconds + _CONTROL_TIMEOUT_SECONDS)
 
     def execution_status(self, execution: int | None = None) -> dict[str, Any]:
         """As the ``execution_status`` tool, for this kernel."""
@@ -284,9 +286,10 @@ class Kernel:
         params |= {"ignore_case": "true"} if ignore_case else {}
         return self._session("GET", f"/executions/{_selected(execution)}/search", params=params | _present(max_chars=max_chars))
 
-    def wait(self, execution: int | None = None, timeout_seconds: float = 30) -> dict[str, Any]:
-        """As the ``wait`` tool, for this kernel: running out of time ends this call, never the cell."""
-        return self._session("POST", f"/executions/{_selected(execution)}/wait", json={"timeout_seconds": timeout_seconds}, timeout=timeout_seconds + _CONTROL_TIMEOUT_SECONDS)
+    def wait(self, execution: int | None = None, timeout_seconds: float = 30, silence_seconds: float | None = None) -> dict[str, Any]:
+        """As the ``wait`` tool, for this kernel: running out of time or into silence ends this call, never the cell."""
+        body = {"timeout_seconds": timeout_seconds} | _silence(silence_seconds)
+        return self._session("POST", f"/executions/{_selected(execution)}/wait", json=body, timeout=timeout_seconds + _CONTROL_TIMEOUT_SECONDS)
 
     def interrupt(self) -> dict[str, Any]:
         """As the ``interrupt`` tool, for this kernel: the cell it is running now."""
@@ -359,3 +362,8 @@ def _selected(execution: int | None) -> str:
 
 def _present(**values: object) -> dict[str, str]:
     return {name: str(value) for name, value in values.items() if value is not None}
+
+
+def _silence(silence_seconds: float | None) -> dict[str, float]:
+    # A JSON body keeps the number a number; _present is for query strings.
+    return {} if silence_seconds is None else {"silence_seconds": silence_seconds}

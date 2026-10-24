@@ -25,6 +25,8 @@ from loommux.session import IPythonSession
         ("%%loommux --kernel 'my lab'\nmake()", CellHeader(kernel="my lab")),
         ("%%loommux --attach 主kernel绑定设计 --wait 30\nmake()", CellHeader(30.0, attach="主kernel绑定设计")),
         ("%%loommux --attach 主kernel绑定设计 --create\nmake()", CellHeader(attach="主kernel绑定设计", create=True)),
+        ("%%loommux --wait 600 --silence 30\n%%bash\nuv run pytest", CellHeader(wait_seconds=600.0, silence_seconds=30.0)),
+        ("%%loommux --kernel build --silence 2.5\nmake()", CellHeader(kernel="build", silence_seconds=2.5)),
     ],
 )
 def test_header_on_the_first_line_resolves_the_observation_policy(source: str, header: CellHeader) -> None:
@@ -73,6 +75,8 @@ def test_header_arguments_recognize_the_magic_name_as_a_whole_word(line: str, ar
     [
         ("%%loommux --wait\npass", "expected one argument"),
         ("%%loommux --wait 0\npass", "got '0'"),
+        ("%%loommux --silence 0\npass", "got '0'"),
+        ("%%loommux --silence soon\npass", "got 'soon'"),
         ("%%loommux --wait -1\npass", "got '-1'"),
         ("%%loommux --wait=-1\npass", "got '-1'"),
         ("%%loommux --wait inf\npass", "got 'inf'"),

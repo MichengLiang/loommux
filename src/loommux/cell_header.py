@@ -2,8 +2,9 @@
 
 The header is ordinary IPython cell-magic syntax and has two readers. The
 daemon answers the submitting ``run_cell`` call before the kernel finishes, so
-it reads ``--wait`` and ``--full-output`` here; the kernel extension interprets
-the cell. Both use this one parser, so they cannot disagree about the grammar.
+it reads ``--wait``, ``--silence`` and ``--full-output`` here; the kernel
+extension interprets the cell. Both use this one parser, so they cannot disagree
+about the grammar.
 """
 
 from __future__ import annotations
@@ -86,6 +87,9 @@ _TARGET.add_argument("--attach", type=_kernel_name, metavar="NAME")
 # hide that the one the agent meant is gone.
 _PARSER.add_argument("--create", action="store_true")
 _PARSER.add_argument("--wait", type=_positive_seconds, default=DEFAULT_INITIAL_WAIT_SECONDS, metavar="SECONDS")
+# A second condition on the same wait, never a switch that changes --wait: a cell
+# printing forever never goes quiet, and the call would lose its bound.
+_PARSER.add_argument("--silence", type=_positive_seconds, default=None, metavar="SECONDS")
 _PARSER.add_argument("--full-output", action="store_true")
 
 
@@ -111,7 +115,7 @@ def parse_header_arguments(arguments: str) -> CellHeader:
     options = _PARSER.parse_args(tokens)
     if options.create and options.attach is None:
         raise CellHeaderError("--create applies only to --attach NAME")
-    return CellHeader(wait_seconds=options.wait, full_output=options.full_output, kernel=options.kernel, attach=options.attach, create=options.create)
+    return CellHeader(wait_seconds=options.wait, full_output=options.full_output, kernel=options.kernel, attach=options.attach, create=options.create, silence_seconds=options.silence)
 
 
 def first_cell_line(lines: Sequence[str]) -> str | None:
@@ -135,7 +139,7 @@ HEADER_HELP = f"""Declare which kernel interprets this cell and how it is observ
 
 Write it as the first line of a cell:
 
-    {_HEADER_PREFIX} [--kernel NAME | --attach NAME [--create]] [--wait SECONDS] [--full-output]
+    {_HEADER_PREFIX} [--kernel NAME | --attach NAME [--create]] [--wait SECONDS] [--silence SECONDS] [--full-output]
 
 --kernel NAME    run the rest of the cell in the kernel with this name or id,
                  a child kernel of this home opened on first use; its output
@@ -146,6 +150,9 @@ Write it as the first line of a cell:
 --create         with --attach, open NAME when no main kernel has that name
 --wait SECONDS   wait up to SECONDS for this cell before run_cell returns
                  (default {DEFAULT_INITIAL_WAIT_SECONDS:g}); an expired wait leaves the cell running
+--silence SECONDS
+                 also return once the cell has printed nothing for SECONDS,
+                 leaving it running; whichever of the two comes first
 --full-output    deliver the complete combined output when the cell ends
 
 The options describe this one cell only, except that --attach moves the
