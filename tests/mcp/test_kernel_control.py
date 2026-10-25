@@ -223,7 +223,9 @@ def drive_from_outside(daemon: Daemon, build_id: str) -> None:
     assert build.read_output(n, "result")["text"].endswith("'done'")
     assert build.search_output("OUTSIDE", n, ignore_case=True, context_after=1)["matched_lines"] == 1
 
-    sleeper = build.run_cell("import time; time.sleep(30)", wait_seconds=0)["execution"]
+    # Short sleeps: a signal that lands just as a blocking call begins reaches Python
+    # only when the call returns. That delay is CPython's, not what this checks.
+    sleeper = build.run_cell("import time\nfor _ in range(300):\n    time.sleep(0.1)", wait_seconds=0)["execution"]
     assert build.interrupt()["status"] == "interrupt_sent"
     assert build.wait(sleeper, timeout_seconds=10)["status"] == "interrupted"
     assert build.restart()["status"] == "restarted"

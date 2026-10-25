@@ -518,7 +518,7 @@ def _reply(msg_id: str, *payloads: dict) -> dict:
     return {"parent_header": {"msg_id": msg_id}, "content": {"status": "ok", "payload": list(payloads)}}
 
 
-def test_reply_pages_take_page_payloads_of_this_execution_only(tmp_path: Path) -> None:
+def test_a_reply_gives_the_page_payloads_of_this_execution_only(tmp_path: Path) -> None:
     kernel = KernelSession(tmp_path, Path(sys.executable), lambda _execution: None, lambda _execution, _code: None)
     execution = Execution(execution=1, kernel_pid=1, msg_id="mine")
     kernel.client = _ShellReplies(
@@ -528,17 +528,67 @@ def test_reply_pages_take_page_payloads_of_this_execution_only(tmp_path: Path) -
         ]
     )
 
-    assert kernel._reply_pages(execution) == "Signature: f()\nmore\n"
+    assert kernel._read_reply(execution) == "Signature: f()\nmore\n"
 
 
-def test_reply_pages_give_up_quietly_when_the_channel_fails_or_stays_silent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_no_reply_when_the_channel_fails_or_stays_silent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     kernel = KernelSession(tmp_path, Path(sys.executable), lambda _execution: None, lambda _execution, _code: None)
     execution = Execution(execution=1, kernel_pid=1, msg_id="mine")
     kernel.client = _ShellReplies([TimeoutError()])
-    assert kernel._reply_pages(execution) == ""
+    assert kernel._read_reply(execution) is None
 
     monkeypatch.setattr("loommux.kernel.session.REPLY_WAIT_SECONDS", 0.0)
     kernel.client = _ShellReplies([])
-    assert kernel._reply_pages(execution) == ""
+    assert kernel._read_reply(execution) is None
+
+
+def _message(msg_type: str, msg_id: str = "mine", **content: object) -> dict:
+    return {"msg_type": msg_type, "parent_header": {"msg_id": msg_id}, "content": content}
+
+
+def _kernel_with_a_cell(tmp_path: Path) -> tuple[KernelSession, Execution, list[str]]:
+    """A kernel session whose current cell is ``mine``, with no reply coming and signals counted."""
+    kernel = KernelSession(tmp_path, Path(sys.executable), lambda _execution: None, lambda _execution, _code: None)
+    signals: list[str] = []
+    kernel.runtime.interrupt = lambda: signals.append("SIGINT")  # type: ignore[method-assign]
+    kernel.client = _ShellReplies([TimeoutError()])
+    execution = Execution(execution=1, kernel_pid=1, msg_id="mine", interrupt_requested=True)
+    kernel.current_execution = execution
+    return kernel, execution, signals
+
+
+def test_an_interrupt_before_the_cell_starts_is_sent_as_it_starts(tmp_path: Path) -> None:
+    kernel, _execution, signals = _kernel_with_a_cell(tmp_path)
+
+    kernel.interrupt()
+    kernel._handle_message(_message("status", execution_state="busy"))
+    assert signals == []
+    kernel._handle_message(_message("execute_input", msg_id="someone-else"))
+    assert signals == []
+    kernel._handle_message(_message("execute_input"))
+    assert signals == ["SIGINT"]
+    kernel.interrupt()
+    assert signals == ["SIGINT", "SIGINT"]
+
+
+def test_an_interrupted_cell_that_gets_no_reply_was_interrupted_before_its_code_ran(tmp_path: Path) -> None:
+    kernel, execution, signals = _kernel_with_a_cell(tmp_path)
+
+    kernel.interrupt()
+    kernel._handle_message(_message("execute_input"))
+    kernel._handle_message(_message("status", execution_state="idle"))
+
+    assert signals == ["SIGINT"]
+    assert execution.status == "interrupted"
+    assert execution.error == {"ename": "KeyboardInterrupt", "evalue": "interrupted before its code ran", "traceback": ["KeyboardInterrupt: interrupted before its code ran"]}
+
+
+def test_a_cell_without_a_reply_that_nobody_interrupted_still_completes(tmp_path: Path) -> None:
+    kernel, execution, _signals = _kernel_with_a_cell(tmp_path)
+
+    kernel._handle_message(_message("execute_input"))
+    kernel._handle_message(_message("status", execution_state="idle"))
+
+    assert execution.status == "completed" and execution.error is None
 
 

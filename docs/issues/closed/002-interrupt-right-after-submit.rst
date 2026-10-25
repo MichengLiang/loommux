@@ -37,3 +37,21 @@
 ## 验收
 
 上述测试单独循环 100 次不失败；另写一条直接针对"提交后立刻中断"的测试。
+
+## 解决
+
+:提交: 工作包 30.1（git log --grep "Work-Package: 30.1"）
+
+中断交给的是这一格，不是此刻的进程。``KernelSession.interrupt()`` 遇到还没出现 ``execute_input`` 的一格时先挂起，
+collector 收到这一格的 ``execute_input`` 时再发 SIGINT：ipykernel 只在 handler 开始时装 ``default_int_handler``
+（``kernelapp.py:605`` 平时是 ``SIG_IGN``），``execute_input`` 在 handler 里发出。发过中断、没有 ``execute_reply``、
+也没有 error 的一格记为 ``KeyboardInterrupt: interrupted before its code ran``，状态 ``interrupted``——这就是记录里
+"30 秒的 sleep 在 10 秒内完成"那种症状：信号落在 handler 里、代码之前，被 ``kernelbase.py:481`` 吞掉且不发 reply。
+
+修复前新进程直接驱动 ``IPythonSession``：6/6 落空；修复后分段 sleep 200 轮 0 次落空。剩下的是 CPython 的推迟：
+信号正好落在阻塞调用（单次 ``time.sleep(30)``）进入系统调用之前时，要等调用返回才抛出，仍落在这一格上，只是晚到；
+不补发信号，因为转发 cell 接住第一次后还要收尾，见 ``docs/kernel-resource-daemon-design.md`` 第 4 节。
+
+新增测试：``tests/session/test_session.py::test_an_interrupt_right_after_submission_interrupts_that_cell``（旧代码上为红），
+``tests/kernel/test_kernel.py`` 三条消息驱动的测试（开始时才发、无 reply 记为中断、没中断的无 reply 仍是完成）；
+原测试与 ``test_silence`` 的同类 cell 改为分段 sleep。

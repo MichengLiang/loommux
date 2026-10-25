@@ -24,6 +24,8 @@ from loommux.notice import NOTICE_MIME
 # ipykernel sends execute_reply before it publishes idle, so at idle the reply
 # is already on its way; this only bounds a kernel that never sends one.
 REPLY_WAIT_SECONDS = 2.0
+# What an interrupted cell whose code never ran says (see _handle_message).
+INTERRUPTED_BEFORE_START = "interrupted before its code ran"
 
 
 class KernelSession:
@@ -50,6 +52,16 @@ class KernelSession:
         self.runtime = KernelRuntime(workspace, python_path, identity)
         self.client: BlockingKernelClient | None = None
         self.current_execution: Execution | None = None
+        # Interrupt state of current_execution, reset by each submit. ipykernel
+        # ignores SIGINT outside a request's handler and installs
+        # default_int_handler only as the handler starts; the execute_request
+        # handler then publishes execute_input (ipykernel 7.3, kernelapp.py:605,
+        # kernelbase.py:499, :812). A signal sent while the request still waits
+        # is lost and the cell runs on, so an interrupt is given to the cell:
+        # held until its execute_input arrives, then sent.
+        self._started = False
+        self._interrupt_on_start = False
+        self._interrupt_sent = False
         self._lock = threading.RLock()
         self._stop_collector = threading.Event()
         self._collector: threading.Thread | None = None
@@ -79,8 +91,16 @@ class KernelSession:
                 raise RuntimeError("kernel client is not started")
             execution.msg_id = self.client.execute(source, store_history=store_history)
             self.current_execution = execution
+            self._started = self._interrupt_on_start = self._interrupt_sent = False
 
     def interrupt(self) -> None:
+        """Interrupt the current cell; one the kernel has not started yet is interrupted as it starts."""
+        with self._lock:
+            if self.current_execution is not None:
+                if not self._started:
+                    self._interrupt_on_start = True
+                    return
+                self._interrupt_sent = True
         self.runtime.interrupt()
 
     def shutdown(self, *, mark_execution_killed: bool = True) -> None:
@@ -141,11 +161,16 @@ class KernelSession:
         content = message.get("content", {})
         parent_msg_id = message.get("parent_header", {}).get("msg_id")
         finished: Execution | None = None
+        deliver_interrupt = False
         with self._lock:
             execution = self.current_execution
             if execution is None or parent_msg_id != execution.msg_id:
                 return
-            if msg_type == "stream":
+            if msg_type == "execute_input":
+                self._started = True
+                deliver_interrupt, self._interrupt_on_start = self._interrupt_on_start, False
+                self._interrupt_sent = self._interrupt_sent or deliver_interrupt
+            elif msg_type == "stream":
                 text = str(content.get("text", ""))
                 if content.get("name") == "stdout":
                     execution.append_stdout(text)
@@ -171,27 +196,38 @@ class KernelSession:
                 )
             elif msg_type == "status" and content.get("execution_state") == "idle":
                 finished = execution
+            interrupt_sent = self._interrupt_sent
+        if deliver_interrupt:
+            # Outside the lock: a signal to the process group is a system call.
+            self.runtime.interrupt()
         if finished is None:
             return
         # Outside the lock: reading the reply may wait, and shutdown needs it.
-        page = self._reply_pages(finished)
+        page = self._read_reply(finished)
         with self._lock:
             if self.current_execution is not finished:
                 # A shutdown during the reply wait already killed and released it.
                 return
             if page:
                 finished.append_stdout(page)
+            if page is None and interrupt_sent and finished.error is None:
+                # The interrupt landed in the handler before IPython ran the code:
+                # ipykernel catches that KeyboardInterrupt itself and sends no
+                # execute_reply (ipykernel 7.3, kernelbase.py:481), so the cell
+                # would look completed although its code never ran.
+                finished.record_error({"ename": "KeyboardInterrupt", "evalue": INTERRUPTED_BEFORE_START, "traceback": [f"KeyboardInterrupt: {INTERRUPTED_BEFORE_START}"]})
             finished.finish()
             self.current_execution = None
         self._on_idle(finished)
 
-    def _reply_pages(self, execution: Execution) -> str:
-        """Text that the execute_reply asks a frontend to show in its pager.
+    def _read_reply(self, execution: Execution) -> str | None:
+        """Read this execution's execute_reply: the text it asks a frontend to page, or None when none came.
 
         IPython answers ``obj?``, ``obj??``, and ``%%magic?`` this way rather
         than on iopub, so without it every help request printed nothing.
         Reading each reply also keeps replies from piling up unread in the
-        shell channel.
+        shell channel. A reply that never comes means the kernel's handler
+        ended without one, which is how an interrupt before the code ran ends.
         """
         client = self.client
         deadline = time.monotonic() + REPLY_WAIT_SECONDS
@@ -202,7 +238,7 @@ class KernelSession:
                 # queue.Empty when no reply arrives in time; a shutdown closing
                 # the channel meanwhile raises whatever the channel raises, and
                 # either way the execution still has to finish.
-                return ""
+                return None
             if reply.get("parent_header", {}).get("msg_id") != execution.msg_id:
                 continue
             pages = [
@@ -211,4 +247,4 @@ class KernelSession:
                 if payload.get("source") == "page"
             ]
             return "".join(page if page.endswith("\n") else f"{page}\n" for page in pages if page)
-        return ""
+        return None

@@ -137,9 +137,11 @@ def test_silence_must_be_a_positive_number_of_seconds(session: IPythonSession, s
 
 def test_a_program_waiting_zero_seconds_submits_and_returns_at_once(session: IPythonSession) -> None:
     # Kernel.run_cell(code, wait_seconds=0) is documented as submit-and-return.
-    result, elapsed = timed(lambda: session.run_cell("import time\ntime.sleep(3)", wait_seconds=0))
+    # Short sleeps, as in test_an_interrupt_right_after_submission_interrupts_that_cell:
+    # a signal that lands as a blocking call begins waits for the call to return.
+    result, elapsed = timed(lambda: session.run_cell("import time\nfor _ in range(30):\n    time.sleep(0.1)", wait_seconds=0))
     assert result["status"] == "running" and elapsed < 1
-    # An interrupt this early can reach the kernel before the cell starts, so let it end.
-    assert session.wait(result["execution"], 10)["status"] == "completed"
+    session.interrupt()
+    assert session.wait(result["execution"], 10)["status"] == "interrupted"
     assert session.run_cell("1", wait_seconds=-1)["status"] == "invalid_timeout"
     assert session.wait(None, 0)["status"] == "invalid_timeout"

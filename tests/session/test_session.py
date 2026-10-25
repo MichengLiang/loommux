@@ -177,6 +177,17 @@ def test_interrupts_a_running_kernel_cell_through_the_managed_runtime(session: I
     assert completed["error"] == {"ename": "KeyboardInterrupt", "evalue": ""}
 
 
+def test_an_interrupt_right_after_submission_interrupts_that_cell(session: IPythonSession) -> None:
+    # loommux#002: sent before the kernel started the cell, the signal was ignored and the cell ran on.
+    # Short sleeps, not one long one: a signal that lands just as a blocking call begins
+    # reaches Python only when that call returns, which no interrupt can avoid.
+    for _ in range(5):
+        execution = session.run_cell("import time\nfor _ in range(300):\n    time.sleep(0.1)\nprint('slept')", wait_seconds=0)["execution"]
+        assert session.interrupt()["status"] == "interrupt_sent"
+        assert session.wait(execution, 10)["status"] == "interrupted"
+        assert session.read_output(execution, "stdout")["text"] == ""
+
+
 def test_full_output_header_returns_complete_long_combined_output(session: IPythonSession) -> None:
     response = session.run_cell("%%loommux --full-output\nprint(('abcdefghij ' * 20 + '\\n') * 301, end='')")
 

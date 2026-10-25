@@ -132,6 +132,32 @@ If a kernel exits unexpectedly, its running execution is finished as `killed`
 with a `KernelProcessExited` diagnostic. The resource becomes recoverable and
 the next operation restarts the `IPythonSession` under the same resource ID.
 
+An interrupt is given to the running execution, not to the process at the
+moment it is asked for. ipykernel ignores SIGINT outside a request's handler
+and installs Python's `default_int_handler` only as the handler begins; the
+`execute_request` handler then publishes `execute_input` (ipykernel 7.3,
+`kernelapp.py`, `kernelbase.py` `pre_handler_hook` and `execute_request`). A
+signal sent between `run_cell` accepting a cell and the kernel starting it
+therefore reached a process that ignored it, and the cell ran on. So an
+interrupt that finds its execution not yet started is held, and the kernel
+session sends it when that execution's `execute_input` arrives: from then on
+the handler is installed. A signal that lands after `execute_input` but before
+IPython runs the code raises in ipykernel's own code, which catches the
+`KeyboardInterrupt` and sends no `execute_reply`; an execution that was sent
+an interrupt, ends without a reply, and recorded no error is therefore
+finished as interrupted, with `KeyboardInterrupt: interrupted before its code
+ran`, not as completed.
+
+One delay remains, and it is CPython's: Python runs signal handlers between
+bytecodes, so a signal that arrives just as the main thread enters a blocking
+call, such as `time.sleep(30)`, is taken only when that call returns. The
+interrupt still reaches that execution, late. Holding the signal until
+`execute_input` aims it at the instant a cell starts, which makes this window
+likelier for a cell whose first statement blocks; measured on such a cell it
+was a few deliveries in a hundred. Sending the signal again would close it but
+would also interrupt a cell that caught the first one and is cleaning up, as a
+forwarding cell does while it drains its target, so loommux sends once.
+
 Jupyter's local provisioner starts Unix kernels in a new session and signals
 their process group during termination. Windows uses the loommux Job Object
 containment. Tests require restart to terminate descendants on both supported

@@ -186,6 +186,13 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   was retired before the route described it, for example a child kernel whose
   home had just been let go of; it now answers 404 as for a missing kernel,
   and so does the rename route.
+- An interrupt sent right after a cell was submitted, before the kernel
+  started it, was lost and the cell ran on: ipykernel ignores SIGINT until a
+  request's handler begins. The interrupt is now held until the cell's
+  `execute_input` arrives and sent then. A cell interrupted before its code ran,
+  which ipykernel ends without an `execute_reply`, is reported `interrupted`
+  with `KeyboardInterrupt: interrupted before its code ran` rather than
+  `completed` (loommux#002).
 
 ## [0.3.0] - 2026-10-22
 
