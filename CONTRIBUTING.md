@@ -10,6 +10,15 @@ cd loommux
 uv sync --locked --group dev
 ```
 
+## Feature freeze until the rebuild
+
+loommux takes no new features until the rebuild described in
+[`docs/rebuild-brief.md`](docs/rebuild-brief.md) is done; section 1 there says
+why. Defects are still fixed, each with a behavior test, because the tests are
+what carries a rule into the new skeleton. A new requirement goes into the
+brief's waiting-model or open-questions section, or into an issue
+(`docs/issues/`), instead of into the current code.
+
 ## Before opening a pull request
 
 Keep changes scoped to one user-visible behavior or maintenance concern. Add

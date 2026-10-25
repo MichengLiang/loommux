@@ -56,7 +56,7 @@ That shape rests on four facts neither spike 01 nor spike 02 measured:
 | 2a | Can each watch's output name the watch? | Yes: setting the parent header inside the watch's task separates two watches of one cell, prints and displays alike, flushed or buffered |
 | 2b | Does `shell.set_parent` do it cleanly? | **No.** It also moves each publisher's process-wide fallback, so a plain thread of the cell printed as the watch's output |
 | 2c | Setting only the ContextVars? | Clean: the thread stays the cell's, the next cell's thread is the next cell's |
-| 2d | Comm as the "watch done" channel? | Not without more: a comm message names the cell that created the comm whatever the watch sets; a display does name the watch |
+| 2d | Comm as the "watch done" channel? | Not without more: a comm message sent from a watch names the cell that created the watch's task, whatever the watch sets; a display does name the watch |
 | 3 | Does an abandoned `wait` let go? | **No, at HEAD.** Three abandoned `wait(20)` calls left 3 server threads in `_await` until the cell ended (spike 01 §3.3's starvation, reproduced) |
 | 4a | Who does the kernel interrupt? | Its whole process group: `LocalProvisioner.send_signal` calls `os.killpg`; the Agent SDK starts `claude` with a plain `anyio.open_process`, so a buddy is in that group |
 | 4b | Does `setsid` spare a child? | Yes: `anyio.open_process(["setsid", ...])` keeps the pid and takes its own group; `killpg(SIGINT)` killed the plain child (returncode −2) and left the other running |
@@ -195,7 +195,7 @@ the parent holds stays the agent's pid. shellwork's jobs already start with
    cells keep their own output (3.2). These are ipykernel's private attributes
    (`_parent_header`); the design must name them and the version it relies on.
 3. **"This watch is done" is a display with loommux's own MIME type under the
-   watch's parent**, as notices are; not a comm, whose parent is the creating
+   watch's parent**, as notices are; not a comm, whose parent is the task's creating
    cell's (3.2).
 4. **One iopub reader per kernel dispatches by parent `msg_id`**: a cell's
    messages to its execution, a watch's to the watch's record (output, silence

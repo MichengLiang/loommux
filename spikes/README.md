@@ -5,6 +5,8 @@ commits to them: its probes, and a `REPORT.md` with the questions, method,
 numbers, and what they mean for the design. Reports are evidence for the
 design documents in `docs/`, which cite them; probes are kept runnable so a
 number can be measured again when a dependency changes.
+The three reports' conclusions are gathered in
+[`docs/rebuild-brief.md`](../docs/rebuild-brief.md).
 
 | Spike | Question | Outcome |
 |---|---|---|

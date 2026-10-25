@@ -37,15 +37,16 @@ detour. Three examples from the last two days:
 
 - **loommux#002** (an interrupt sent before the kernel started the cell was
   lost, `docs/issues/closed/002-interrupt-right-after-submit.rst`) was fixed
-  with three flags under the session lock in `kernel/session.py`. In an async
+  with three flags under `KernelSession`'s lock in `kernel/session.py`. In an async
   adapter "this cell has started" is an event to await (spike 03 §4.7).
 - **An abandoned `wait` keeps its server thread** until the cell ends: spike 01
   §3.3 measured the starvation this leads to (the 33rd waiter stalls every
   other call for about 55 s), and spike 03 §3.3 reproduced the held threads at
   HEAD.
-- **Notices delivered while a cell runs** (round 29) and **`--silence`**
-  (rounds 23, 24) are both further conditions in `session._await`, a loop that
-  polls every 0.25 s on a worker thread.
+- **`--silence`** (rounds 23, 24) is a further condition in `session._await`,
+  a loop that polls every 0.25 s on a worker thread, and **notices delivered
+  while a cell runs** (round 29) are one more in `output_since`'s follow loop,
+  which polls every 0.05 s.
 
 The watches and the grown `wait` of section 5 would cross the bridge again
 (from a background task, through the collector thread, through `to_thread`),
@@ -119,8 +120,9 @@ The outer form does not change: the eight tools, the HTTP control plane, the
 may.
 
 The tests are the rail for that. Since round 15 they assert behavior, not
-wording (CONTRIBUTING, "What tests assert"), and most enter through an MCP
-client or the HTTP control plane against a real kernel. They are what Michael
+wording (CONTRIBUTING, "What tests assert"). The scenario tests enter through
+an MCP client or the HTTP control plane against a real kernel; the others drive
+the session, the kernel adapter or one module directly. They are what Michael
 Feathers calls characterization tests (*Working Effectively with Legacy Code*,
 2004): tests that pin down what the system does now, so a change of its inside
 shows where behavior moved. Fowler's Strangler Fig Application (2004) grows a

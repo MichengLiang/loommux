@@ -710,7 +710,8 @@ loommux/
     cell_header.py
         Parses the %%loommux cell header for the daemon and the kernel.
     config.py
-        Reads the --config directory: settings, resolve_workspace, startup/.
+        Finds the nearest .loommux/ at or above the launch directory, or the one
+        --config names, and reads its settings, resolve_workspace, startup/.
     workspace_resolver.py
         Resolves the kernel workspace before tools are exposed.
     notice.py
@@ -746,6 +747,10 @@ Focused references cover the [cell header](docs/cell-header-design.md),
 [complete-output control](docs/ipython-mcp-full-output-directive-design.md),
 [workspace configuration](docs/workspace-configuration.md), and the
 [changelog](CHANGELOG.md).
+
+Features are frozen until the rebuild onto jupyter_client's async API, AnyIO
+and Hypermorph live objects; [Rebuild Brief](docs/rebuild-brief.md) is its
+inventory, and [spikes](spikes/README.md) holds the experiments it stands on.
 
 ## Development And Release Checks
 
