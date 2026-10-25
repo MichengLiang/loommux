@@ -102,6 +102,13 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Changed
 
+- The console groups each main kernel's child kernels inside its card and
+  replaces the 回收空闲 and 强制回收全部 buttons with selection: every kernel
+  has a checkbox, the rules 已断开, 空闲 and 全部 tick boxes for review, and a
+  floating bar force-recycles what is ticked. 已断开 ticks main kernels no
+  session is at: every lease reconnecting or departed, or only retention
+  keeping the kernel, whatever grace or retention remains. The
+  `recycle-idle` and `recycle-all` routes are unchanged.
 - The `wait` tool waits 10 seconds by default, as `--wait` does, instead of 30;
   both defaults are defined once in `loommux.cell_header`.
 - `Kernel.run_cell` sends `wait_seconds` and `silence_seconds` only when given,

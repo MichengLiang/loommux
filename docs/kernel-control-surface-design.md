@@ -79,16 +79,24 @@ build.interrupt()
 | `create(path)` | `POST /api/resources` | |
 | `rename(kernel, name)` | `POST /api/resources/{id}/rename` | |
 | `recycle(kernel, force=False)` | `POST /api/resources/{id}/recycle` | each row's recycle and force |
-| `recycle_idle()`, `recycle_all()` | `POST /api/resources/recycle-idle`, `recycle-all` | the buttons at the top |
+| `recycle_idle()`, `recycle_all()` | `POST /api/resources/recycle-idle`, `recycle-all` | the 空闲 and 全部 selection rules, then 回收所选 |
 | `self` | | |
 
 `kernel` is a path, an id, or a handle. The console places recycle on each row
 as a file manager places delete beside each file: the button is in the row, the
 act is the registry's.
 
+Many kernels are retired the way a file manager deletes many files: select,
+look, then act. A selection rule (已断开, 空闲, 全部) only ticks boxes, and
+the owner sees exactly what will go before 回收所选 force-recycles it, one
+`recycle` per kernel. 已断开 has no Python counterpart: it is the owner's
+question, "which kernels has every session left", answered from the lease
+standings in the snapshot.
+
 `kernels()` lists every kernel, as the console does. Names do not collide in
 the listing, because a child kernel's row carries its `home`, the name of its
-main kernel; scoping names never needed scoping the view. `timeout` is how long
+main kernel, and the console nests that row in its main kernel's card; scoping
+names never needed scoping the view. `timeout` is how long
 to wait for the daemon before `DaemonError`, for code that asks on every cell.
 
 `self` is the kernel this process is, or was started from. `notify` is on the

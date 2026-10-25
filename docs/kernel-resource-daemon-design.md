@@ -434,6 +434,31 @@ in place instead of pushing the resource cards down between two polls. Each
 lease shows its standing next to its mode, and its remaining time as a
 renewal countdown, a grace countdown, or "held by connection".
 
+Each main kernel is one card, and its child kernels are rows inside it, since
+they live and are retired with it; a child kernel whose main kernel is already
+gone gets a card of its own until the sweep takes it. Every card and row has a
+checkbox. Ticking a main kernel ticks its child kernels too, locked, because
+recycling it retires them anyway. The selection rules above the list tick
+boxes and do nothing else:
+
+| Rule | Ticks |
+| --- | --- |
+| 已断开 | main kernels whose every lease is `reconnecting` or `disconnected`, or that no lease holds and only retention keeps; strays |
+| 空闲 | every kernel not running a cell, connected or not |
+| 全部 | every main kernel, and strays |
+
+已断开 deliberately ignores the reconnect grace and the retention: they wait on
+behalf of a session that may come back, and the owner has decided it will not.
+`awaiting_stream`, the two alert standings and renewable leases count as present:
+a session arriving, a client still calling tools, and a lease whose departure
+cannot be observed (kernel-binding-design.md section 7).
+
+A floating bar appears while anything is ticked, counting the kernels and how
+many of them run a cell. 回收所选 refreshes first, so the confirmation names
+what is true at the click (running cells to be stopped, main kernels a session
+has attached to since), then force-recycles each one. Selection and keyboard
+focus survive the two-second refresh.
+
 ## 8. Client lifecycle
 
 `loommux.client.LeaseAwareClient` owns policy discovery, header pinning, MCP

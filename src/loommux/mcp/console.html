@@ -8,32 +8,48 @@
     /* --muted and --green were darkened just enough to pass WCAG AA: muted on the page measured 4.35:1, the green badge 4.43:1. Green means only "connected", red only "alert". */
     :root{color-scheme:light;--page:#f4f6f8;--card:#fff;--ink:#17202a;--muted:#606d7a;--line:#dfe5e9;--navy:#17324d;--blue:#356f9f;--green:#2a7259;--red:#ad3f4b;--tint:#eef2f5;--ok-tint:#e8f5ef;--alert-tint:#fbecee}
     *{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--ink);font:14px/1.55 Inter,"Noto Sans CJK SC",sans-serif}
-    main{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:34px 0 60px}
+    /* The bottom padding leaves room for the floating selection bar, so it never covers the last card. */
+    main{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:34px 0 112px}
     header,.toolbar,.resource-head,.actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
     header{margin-bottom:24px}h1{margin:0;color:var(--navy);font-size:32px}.subtitle{color:var(--muted);margin:6px 0 0}
     .panel,.resource{border:1px solid var(--line);border-radius:16px;background:var(--card);box-shadow:0 14px 40px rgba(23,50,77,.06)}
     .panel{padding:18px;margin-bottom:16px}.policy{display:grid;grid-template-columns:repeat(6,1fr);gap:9px;margin-top:12px}
-    label{display:grid;gap:5px;color:var(--muted);font-size:14px}input,select{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px;background:#fafcfd;color:var(--navy)}
+    .policy label{display:grid;gap:5px;color:var(--muted);font-size:14px}.policy input,select{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px;background:#fafcfd;color:var(--navy)}
     button{border:1px solid var(--line);border-radius:9px;padding:8px 11px;background:#fff;color:var(--navy);font-weight:700;cursor:pointer}
     button.danger{color:var(--red)}button:hover{background:#f7fafc}.resources{display:grid;gap:12px}
+    /* One focus ring everywhere. Blue has one meaning on this page: selected; red one: destroys. */
+    :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+    input[type=checkbox]{width:16px;height:16px;margin:0;flex:none;accent-color:var(--blue);cursor:pointer}input[type=checkbox]:disabled{cursor:default}
+    button.destroy{background:var(--red);border-color:var(--red);color:#fff}button.destroy:hover{background:#97343f}
+    .selectbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.selectbar .label{color:var(--muted);margin-right:4px}
+    .count{font-variant-numeric:tabular-nums;color:var(--muted);font-weight:600}
+    /* Selected is a persistent state, drawn as shape (a spine and a blue edge), never as a fill that hover could be mistaken for. */
+    .resource.selected{border-color:var(--blue);box-shadow:inset 4px 0 0 var(--blue),0 14px 40px rgba(23,50,77,.06)}
+    .pick,.head-left{display:flex;align-items:center;gap:12px}.pick{cursor:pointer}.head-left{flex-wrap:wrap}.chips{display:flex;gap:4px;flex-wrap:wrap}
+    .children{display:grid;gap:4px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}.children-title{font-size:12px;font-weight:700;margin-bottom:4px}
+    .child{display:grid;grid-template-columns:minmax(0,2fr) repeat(3,minmax(0,1fr)) auto;gap:12px;align-items:center;padding:8px 12px;border-radius:10px;background:#f8fafb}
+    .child.selected{box-shadow:inset 3px 0 0 var(--blue)}.child .name{font-size:14px}.k{color:var(--muted);margin-right:4px}
+    .stray{color:var(--muted);margin:4px 0 0}
+    .selection-bar{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);display:flex;align-items:center;gap:12px;padding:8px 8px 8px 16px;border:1px solid var(--line);border-radius:14px;background:#fff;box-shadow:0 12px 32px rgba(23,50,77,.18)}
+    .selection-bar{max-width:calc(100% - 32px);flex-wrap:wrap}.selection-bar[hidden]{display:none}.selection-bar .note{color:var(--muted)}
     /* Small text is demoted one step only: hex IDs are 12px metadata and stay muted; metric labels are 12px in the ink color. */
     .resource{padding:17px}.name{font-size:16px;font-weight:800;color:var(--navy)}.mono{font:12px ui-monospace,monospace;color:var(--muted)}
-    .metrics{display:grid;grid-template-columns:repeat(8,1fr);gap:10px;margin:14px 0}.metric{background:#f8fafb;border-radius:10px;padding:10px}
+    .metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:14px 0}.metric{background:#f8fafb;border-radius:10px;padding:10px}
     .metric span{display:block;color:var(--ink);font-size:12px}.metric strong{color:var(--navy);overflow-wrap:anywhere}
-    .leases{display:grid;gap:6px}.lease{display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:9px;border-top:1px solid var(--line);padding-top:8px}
+    .leases{display:grid;gap:6px}.leases:empty{display:none}.lease{display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:9px;border-top:1px solid var(--line);padding-top:8px}
     .badge{display:inline-block;border-radius:99px;padding:2px 8px;margin-right:4px;background:var(--tint);color:var(--navy);font-size:12px;font-weight:800}
     .badge.ok{background:var(--ok-tint);color:var(--green)}.badge.alert{background:var(--alert-tint);color:var(--red)}
     /* The signal row is always rendered so an alert recolors it in place instead of pushing every resource card down between two polls. */
     .signal{border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:16px;background:var(--card);color:var(--muted)}
     .signal.alert{border-color:var(--red);background:var(--alert-tint);color:var(--ink)}.signal.alert strong{color:var(--red)}
     .empty{text-align:center;color:var(--muted);padding:50px}.message{min-height:22px;color:var(--green)}
-    @media(max-width:800px){.policy,.metrics{grid-template-columns:1fr 1fr}.lease{grid-template-columns:1fr 1fr}}
+    @media(max-width:800px){.policy,.metrics{grid-template-columns:1fr 1fr}.lease,.child{grid-template-columns:1fr 1fr}}
   </style>
 </head>
 <body>
 <main>
   <header><div><h1>Loommux Kernel Resources</h1><div class="subtitle">MCP 会话持有租约，逻辑资源持有 execution 历史，kernel 进程可以被替换。</div></div>
-    <div class="actions"><button id="refresh">刷新</button><button id="idle">回收空闲</button><button class="danger" id="all">强制回收全部</button></div>
+    <div class="actions"><button id="refresh">刷新</button></div>
   </header>
   <section class="signal" id="signal">租约信号：等待第一次刷新</section>
   <section class="panel">
@@ -48,27 +64,66 @@
     </div>
     <div class="toolbar" style="margin-top:12px"><div class="message" id="message"></div><button id="save">保存新策略代</button></div>
   </section>
+  <section class="selectbar" id="rules"><span class="label">按规则选择</span>
+    <button data-rule="departed" title="主 kernel 上没有会话连着：没有租约，或租约都在重连宽限里、已离开">已断开 <span class="count"></span></button>
+    <button data-rule="idle" title="没有在跑 cell 的 kernel，连着的也算">空闲 <span class="count"></span></button>
+    <button data-rule="all">全部 <span class="count"></span></button>
+    <span class="message" id="listMessage"></span>
+  </section>
   <section class="resources" id="resources"></section>
+  <div class="selection-bar" id="bar" hidden><span id="barText"></span><button id="clear">清空</button><button class="destroy" id="recycleSelected">回收所选</button></div>
 </main>
 <script>
 const q=s=>document.querySelector(s), esc=v=>String(v).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
-let policy=null,policyDirty=false;
+let policy=null,policyDirty=false,view={mains:[],strays:[],byId:new Map()};
+// Ids the owner ticked. A ticked main kernel implies its child kernels (they are retired with it), so they are not stored here.
+const selected=new Set();
 function message(text,error=false){q("#message").textContent=text;q("#message").style.color=error?"var(--red)":"var(--green)"}
+function listMessage(text,error=false){q("#listMessage").textContent=text;q("#listMessage").style.color=error?"var(--red)":"var(--green)"}
 async function json(url,options={}){const r=await fetch(url,{headers:{"Content-Type":"application/json"},...options});const data=await r.json();if(!r.ok||data.ok===false)throw new Error(data.message||`HTTP ${r.status}`);return data}
 function renderPolicy(p,force=false){policy=p;q("#generation").textContent=`generation ${p.generation}`;if(policyDirty&&!force)return;q("#mode").value=p.mode;q("#private").value=p.private_activity_timeout_seconds;q("#named").value=p.named_activity_timeout_seconds;q("#interval").value=p.heartbeat_interval_seconds;q("#timeout").value=p.heartbeat_timeout_seconds;q("#grace").value=p.connection_grace_seconds;policyDirty=false}
 // renewable leases (activity, heartbeat) carry no standing badge: their mode badge and countdown already say everything.
 const STANDING={connected:["已连接","ok"],awaiting_stream:["等待 GET 流",""],reconnecting:["重连中",""],disconnected:["已离开",""],unbound:["⚠ unbound · 从未打开 GET 流","alert"],stream_lost:["⚠ stream_lost · GET 流断开后仍在调用","alert"]};
+// A main kernel no session is at: every lease's stream is gone, whether still inside the reconnect grace or past it, or no lease is left and only retention keeps it.
+// awaiting_stream is a session arriving, the two alerts are clients still calling tools, and a renewable lease cannot observe departure at all (kernel-binding-design.md section 7), so all of them count as present.
+const GONE=new Set(["reconnecting","disconnected"]);
+const departed=r=>r.leases.every(l=>GONE.has(l.standing));
 function duration(s){return s>=3600?`${(s/3600).toFixed(1)} 小时`:s>=60?`${(s/60).toFixed(1)} 分钟`:`${s} 秒`}
 function kept(r){return r.retention_remaining_seconds!==null?`还剩 ${duration(r.retention_remaining_seconds)}`:"—"}
 function standing(l){const s=STANDING[l.standing];return s?`<span class="badge ${s[1]}" title="${esc(l.standing)}">${esc(s[0])}</span>`:""}
 function remaining(l){if(l.remaining_seconds!==null)return `${l.remaining_seconds}s / ${l.timeout_seconds}s${l.alert?" · activity 兜底":""}`;if(l.grace_remaining_seconds!==null)return `宽限剩 ${l.grace_remaining_seconds}s`;return "连接持有，不过期"}
 function lease(l){return `<div class="lease"><div><strong>${esc(l.client_name)}</strong><div class="mono">${esc(l.client_id)}</div></div><div><span class="badge">${esc(l.mode)}</span>${standing(l)}</div><div>G${l.policy_generation} · active ${l.active_operations}</div><div>${remaining(l)}</div></div>`}
 function renderSignal(resources){const alerted=resources.flatMap(r=>r.leases.filter(l=>l.alert).map(l=>`${esc(r.name)} / ${esc(l.client_name)}（${esc(l.standing)}）`));const box=q("#signal");box.className=alerted.length?"signal alert":"signal";box.innerHTML=alerted.length?`<strong>⚠ ${alerted.length} 份 connection 租约失去了 GET 长流信号</strong>，已按 activity 窗口兜底：${alerted.join("、")}。MCP 客户端的传输行为可能变了。`:"租约信号正常：没有租约警报。"}
-function resource(r){return `<article class="resource"><div class="resource-head"><div><div class="name">${esc(r.name)}</div><div class="mono">${esc(r.resource_id)}</div></div><div class="actions"><button onclick="act('${r.resource_id}','health')">health</button><button onclick="act('${r.resource_id}','interrupt')">interrupt</button><button onclick="act('${r.resource_id}','restart')">restart</button><button class="danger" onclick="recycle('${r.resource_id}',false)">recycle</button><button class="danger" onclick="recycle('${r.resource_id}',true)">force</button></div></div><div class="metrics"><div class="metric"><span>scope</span><strong>${esc(r.scope)}</strong></div><div class="metric"><span>lifecycle</span><strong>${esc(r.lifecycle)}</strong></div><div class="metric"><span>kernel PID</span><strong>${r.kernel_pid??(r.kernel_state==="restarting"?"restarting":"not running")}</strong></div><div class="metric"><span>current execution</span><strong>${r.current_execution??"—"}</strong></div><div class="metric"><span>executions</span><strong>${r.execution_count}</strong></div><div class="metric"><span>leases</span><strong>${r.lease_count}</strong></div><div class="metric"><span>保留</span><strong>${kept(r)}</strong></div><div class="metric"><span>home</span><strong>${r.home?esc(r.home):"—"}</strong></div></div><div class="leases">${r.leases.map(lease).join("")}</div></article>`}
-async function refresh(){try{const d=await json("/api/resources");renderPolicy(d.policy);renderSignal(d.resources);q("#resources").innerHTML=d.resources.length?d.resources.map(resource).join(""):'<div class="panel empty">当前没有受管 kernel resource。</div>'}catch(e){message(e.message,true)}}
-async function act(id,action){try{await json(`/api/resources/${id}/${action}`,{method:"POST",body:"{}"});message(`${action} 已发送`)}catch(e){message(e.message,true)}await refresh()}
-async function recycle(id,force){if(!confirm(force?"确定强制回收？":"确定回收？"))return;try{await json(`/api/resources/${id}/recycle`,{method:"POST",body:JSON.stringify({force})});message("资源已回收")}catch(e){message(e.message,true)}await refresh()}
-q("#refresh").onclick=refresh;q("#idle").onclick=async()=>{await json("/api/resources/recycle-idle",{method:"POST",body:"{}"});await refresh()};q("#all").onclick=async()=>{if(confirm("确定强制回收全部资源？")){await json("/api/resources/recycle-all",{method:"POST",body:"{}"});await refresh()}};
+// The snapshot names a child kernel's home by name, which is unique among main kernels. A child whose home is gone (null) is a stray the next sweep retires.
+function group(resources){const mains=resources.filter(r=>r.scope==="main").map(main=>({main,children:[]}));const byName=new Map(mains.map(g=>[g.main.name,g]));const strays=[];for(const r of resources)if(r.scope==="child")(byName.get(r.home)?.children??strays).push(r);return {mains,strays,byId:new Map(resources.map(r=>[r.resource_id,r]))}}
+// What a set of ticked ids retires: each ticked kernel, plus the child kernels of every ticked main kernel.
+function effective(ids){const out=new Set();for(const {main,children} of view.mains){if(ids.has(main.resource_id)){out.add(main.resource_id);children.forEach(c=>out.add(c.resource_id))}else children.forEach(c=>ids.has(c.resource_id)&&out.add(c.resource_id))}view.strays.forEach(s=>ids.has(s.resource_id)&&out.add(s.resource_id));return out}
+const RULES={departed:v=>[...v.mains.filter(g=>departed(g.main)).map(g=>g.main),...v.strays],idle:v=>[...v.byId.values()].filter(r=>!r.busy),all:v=>[...v.mains.map(g=>g.main),...v.strays]};
+const pickIds=rule=>new Set(RULES[rule](view).map(r=>r.resource_id));
+const busyChip=r=>r.busy?`<span class="badge" title="正在跑 cell">运行中${r.current_execution!=null?` #${r.current_execution}`:""}</span>`:"";
+const actions=id=>`<div class="actions">${["health","interrupt","restart"].map(a=>`<button data-key="${id}:${a}" data-act="${a}" data-id="${id}">${a}</button>`).join("")}<button class="danger" data-key="${id}:recycle" data-recycle="false" data-id="${id}">recycle</button><button class="danger" data-key="${id}:force" data-recycle="true" data-id="${id}">force</button></div>`;
+function pick(r,{checked,implied}){return `<label class="pick"><input type="checkbox" data-key="${r.resource_id}:select" data-select="${r.resource_id}"${checked?" checked":""}${implied?' disabled title="随主 kernel 一起回收"':""}><span><span class="name">${esc(r.name)}</span><div class="mono">${esc(r.resource_id)}</div></span></label>`}
+function child(r,implied){const checked=implied||selected.has(r.resource_id);return `<div class="child${checked?" selected":""}">${pick(r,{checked,implied})}<div><span class="k">PID</span>${r.kernel_pid??(r.kernel_state==="restarting"?"restarting":"not running")}</div><div><span class="k">执行</span>${r.execution_count}</div><div class="chips">${busyChip(r)}</div>${actions(r.resource_id)}</div>`}
+function card({main,children}){const checked=selected.has(main.resource_id);const gone=departed(main)?'<span class="badge" title="没有会话连着">已断开</span>':"";return `<article class="resource${checked?" selected":""}"><div class="resource-head"><div class="head-left">${pick(main,{checked})}<div class="chips">${gone}${busyChip(main)}</div></div>${actions(main.resource_id)}</div><div class="metrics"><div class="metric"><span>lifecycle</span><strong>${esc(main.lifecycle)}</strong></div><div class="metric"><span>kernel PID</span><strong>${main.kernel_pid??(main.kernel_state==="restarting"?"restarting":"not running")}</strong></div><div class="metric"><span>current execution</span><strong>${main.current_execution??"—"}</strong></div><div class="metric"><span>executions</span><strong>${main.execution_count}</strong></div><div class="metric"><span>保留</span><strong>${kept(main)}</strong></div></div><div class="leases">${main.leases.map(lease).join("")}</div>${children.length?`<div class="children"><div class="children-title">子 kernel · ${children.length}</div>${children.map(c=>child(c,checked)).join("")}</div>`:""}</article>`}
+function stray(r){const checked=selected.has(r.resource_id);return `<article class="resource${checked?" selected":""}"><div class="resource-head"><div class="head-left">${pick(r,{checked})}<div class="chips">${busyChip(r)}</div></div>${actions(r.resource_id)}</div><p class="stray">子 kernel，它的主 kernel 已回收；下一次 sweep 会回收它。</p></article>`}
+function renderSelection(){const ids=effective(selected),busy=[...ids].filter(id=>view.byId.get(id)?.busy).length;q("#bar").hidden=!ids.size;q("#barText").innerHTML=`已选 <strong>${ids.size}</strong> 个 kernel${busy?`<span class="note"> · 其中 ${busy} 个在跑 cell</span>`:""}`;for(const b of document.querySelectorAll("[data-rule]"))b.querySelector(".count").textContent=effective(pickIds(b.dataset.rule)).size}
+// The list is rebuilt every poll; the focused control is found again by its data-key so keyboard work survives the refresh.
+function renderResources(){const key=document.activeElement?.dataset?.key;q("#resources").innerHTML=view.byId.size?[...view.mains.map(card),...view.strays.map(stray)].join(""):'<div class="panel empty">当前没有受管 kernel resource。</div>';if(key)document.querySelector(`[data-key="${CSS.escape(key)}"]`)?.focus();renderSelection()}
+function apply(d){renderPolicy(d.policy);renderSignal(d.resources);view=group(d.resources);for(const id of selected)if(!view.byId.has(id))selected.delete(id);renderResources()}
+async function refresh(){try{apply(await json("/api/resources"))}catch(e){listMessage(e.message,true)}}
+async function act(id,action){try{await json(`/api/resources/${id}/${action}`,{method:"POST",body:"{}"});listMessage(`${action} 已发送`)}catch(e){listMessage(e.message,true)}await refresh()}
+async function recycle(id,force){if(!confirm(force?"确定强制回收？":"确定回收？"))return;try{await json(`/api/resources/${id}/recycle`,{method:"POST",body:JSON.stringify({force})});listMessage("资源已回收")}catch(e){listMessage(e.message,true)}await refresh()}
+// The confirmation is judged on a snapshot taken at the click, not the one the owner reviewed up to two seconds earlier: a session may have attached meanwhile.
+async function recycleSelected(){await refresh();const ids=[...effective(selected)];if(!ids.length)return;const rs=ids.map(id=>view.byId.get(id));const busy=rs.filter(r=>r.busy).length,live=rs.filter(r=>r.scope==="main"&&!departed(r)).length;
+  if(!confirm([`回收 ${ids.length} 个 kernel？它们的变量与执行历史都不保留。`,busy?`其中 ${busy} 个正在跑 cell，会被强制中止。`:"",live?`其中 ${live} 个主 kernel 仍有会话连着。`:""].filter(Boolean).join("\n")))return;
+  // force: the owner saw the running ones in the bar and the dialog. A 404 is a kernel already retired, e.g. a child its main kernel's sweep took first.
+  const results=await Promise.allSettled(ids.map(id=>json(`/api/resources/${id}/recycle`,{method:"POST",body:JSON.stringify({force:true})})));
+  const failed=results.flatMap((r,i)=>r.status==="rejected"&&!/not found/.test(r.reason.message)?[`${rs[i].name}：${r.reason.message}`]:[]);
+  selected.clear();listMessage(failed.length?`回收了 ${ids.length-failed.length} 个；失败 ${failed.join("、")}`:`回收了 ${ids.length} 个 kernel`,failed.length>0);await refresh()}
+q("#resources").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;if(b.dataset.act)act(b.dataset.id,b.dataset.act);else if(b.dataset.recycle)recycle(b.dataset.id,b.dataset.recycle==="true")});
+q("#resources").addEventListener("change",e=>{const id=e.target.dataset.select;if(!id)return;e.target.checked?selected.add(id):selected.delete(id);renderResources()});
+for(const b of document.querySelectorAll("[data-rule]"))b.onclick=()=>{selected.clear();pickIds(b.dataset.rule).forEach(id=>selected.add(id));listMessage("");renderResources()};
+q("#clear").onclick=()=>{selected.clear();renderResources()};q("#recycleSelected").onclick=recycleSelected;q("#refresh").onclick=refresh;
 ["#mode","#private","#named","#interval","#timeout","#grace"].forEach(selector=>q(selector).addEventListener("input",()=>{policyDirty=true;message("策略草稿尚未保存")}));
 q("#save").onclick=async()=>{try{const d=await json("/api/lease-policy",{method:"PUT",body:JSON.stringify({mode:q("#mode").value,private_activity_timeout_seconds:Number(q("#private").value),named_activity_timeout_seconds:Number(q("#named").value),heartbeat_interval_seconds:Number(q("#interval").value),heartbeat_timeout_seconds:Number(q("#timeout").value),connection_grace_seconds:Number(q("#grace").value)})});renderPolicy(d.policy,true);message(d.changed?"新策略代已保存":"配置没有变化")}catch(e){message(e.message,true)}};
 refresh();setInterval(refresh,2000);

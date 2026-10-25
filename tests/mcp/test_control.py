@@ -84,7 +84,8 @@ def test_console_reads_the_connection_lease_contract() -> None:
 
     assert '<option value="connection">connection</option>' in console
     assert 'id="grace"' in console
-    for field in ("connection_grace_seconds", "l.standing", "l.alert", "l.grace_remaining_seconds", "r.kernel_state", "r.home", 'id="signal"'):
+    # r.scope, r.busy and r.leases also decide what the selection rules tick.
+    for field in ("connection_grace_seconds", "l.standing", "l.alert", "l.grace_remaining_seconds", "r.kernel_state", "r.home", "r.scope", "r.busy", "r.leases", 'id="signal"'):
         assert field in console
 
 
