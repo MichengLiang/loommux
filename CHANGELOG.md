@@ -7,38 +7,10 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-26
+
 ### Added
 
-- Each lease in a resource snapshot carries `client_address`, the remote
-  `[host, port]` of its session's open standalone `GET` stream as ASGI reports
-  it, and `null` while no stream is open and under stdio. It is a transport
-  fact: a process on the same machine can look the port up among the sockets it
-  can see and learn which process holds a kernel, for example a kernel opened by
-  a sub-agent that an agent started from its own kernel, where the process tree
-  breaks at the MCP connection. Only the stream's address is kept, since a
-  `POST` may arrive on any pooled connection.
-- Every `run_cell` and `wait` result says on its first line how long the
-  execution has run, from submission to its end or to now, on the monotonic
-  clock: `In [7] · 54.3 s:`, whole milliseconds below a second. Structured
-  results and `execution_status` carry `elapsed_seconds`. The tool descriptions
-  ask for waits estimated as whole seconds from the run at hand, with this
-  measurement as the correction.
-- `%%loommux --silence SECONDS`: the `run_cell` call also returns once the cell
-  has printed nothing for that long, still running; whichever of `--wait` and
-  `--silence` comes first ends the call, and neither interrupts the cell. It is
-  on by default at 10 seconds, the same as `--wait`, so a cell without a header
-  waits as before and one that writes only a long `--wait` returns at a ten-second
-  stall; when both expire together the result says it went silent. Any
-  output message counts, before normalization, so a progress bar redrawn with
-  `\r` is activity; a notice is not. The `wait` tool, `Kernel.run_cell`,
-  `Kernel.wait` and the control plane's two execution routes take
-  `silence_seconds`; for `wait` the silence counts from the later of the call
-  and the last output. A result that returned for silence says
-  `Running, silent for N s` and structured results carry `silent_seconds`.
-- A result of a running execution shows its last five non-blank lines, each cut
-  to 200 characters, and structured results carry `recent_lines`.
-- The kernel's environment sets `PYTHONUNBUFFERED=1`: under `%%bash`, on plain
-  pipes, a Python child held its output until it exited.
 - `%%loommux --attach NAME [--create]` chooses the main kernel an MCP session
   works in, on any call: NAME is found by name or id whoever else works in it,
   or opened with `--create`; without `--create` a missing name returns
@@ -95,42 +67,57 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   `<loommux-notice>`, its lines, `</loommux-notice>`. A client such as Claude
   Code joins a result's blocks end to end, so separate blocks ran into output
   that did not end with a newline, the omission message among it.
+- `%%loommux --silence SECONDS`: the `run_cell` call also returns once the cell
+  has printed nothing for that long, still running; whichever of `--wait` and
+  `--silence` comes first ends the call, and neither interrupts the cell. It is
+  on by default at 10 seconds, the same as `--wait`, so a cell without a header
+  waits as before and one that writes only a long `--wait` returns at a ten-second
+  stall; when both expire together the result says it went silent. Any
+  output message counts, before normalization, so a progress bar redrawn with
+  `\r` is activity; a notice is not. The `wait` tool, `Kernel.run_cell`,
+  `Kernel.wait` and the control plane's two execution routes take
+  `silence_seconds`; for `wait` the silence counts from the later of the call
+  and the last output. A result that returned for silence says
+  `Running, silent for N s` and structured results carry `silent_seconds`.
+- Every `run_cell` and `wait` result says on its first line how long the
+  execution has run, from submission to its end or to now, on the monotonic
+  clock: `In [7] · 54.3 s:`, whole milliseconds below a second. Structured
+  results and `execution_status` carry `elapsed_seconds`. The tool descriptions
+  ask for waits estimated as whole seconds from the run at hand, with this
+  measurement as the correction.
+- A result of a running execution shows its last five non-blank lines, each cut
+  to 200 characters, and structured results carry `recent_lines`.
+- The kernel's environment sets `PYTHONUNBUFFERED=1`: under `%%bash`, on plain
+  pipes, a Python child held its output until it exited.
 - Snapshots report `idle_since`, when the kernel last became idle, `null`
   while a cell runs; the `Kernels` table shows it as its `idle` column.
+- Each lease in a resource snapshot carries `client_address`, the remote
+  `[host, port]` of its session's open standalone `GET` stream as ASGI reports
+  it, and `null` while no stream is open and under stdio. It is a transport
+  fact: a process on the same machine can look the port up among the sockets it
+  can see and learn which process holds a kernel, for example a kernel opened by
+  a sub-agent that an agent started from its own kernel, where the process tree
+  breaks at the MCP connection. Only the stream's address is kept, since a
+  `POST` may arrive on any pooled connection.
 - `Daemon.kernels(timeout=)` bounds the wait for the daemon, so code that
   asks on every cell can give up quickly on a stuck daemon.
+- [Kernel Environment Tutorial](docs/kernel-environment-tutorial.md) builds a
+  small environment from scratch, and `examples/kernel-environment/` is one to
+  run: `tour.py` copies it to a temporary directory, starts loommux below its
+  `.loommux/`, drives the tools as an MCP host would, and checks every step
+  (the configuration found from the launch directory, startup files taking no
+  execution number, a child kernel, notices beside omitted output, both
+  panels, a broken startup file after `restart`).
 
 ### Changed
 
-- The console groups each main kernel's child kernels inside its card and
-  replaces the 回收空闲 and 强制回收全部 buttons with selection: every kernel
-  has a checkbox, the rules 已断开, 空闲 and 全部 tick boxes for review, and a
-  floating bar force-recycles what is ticked. 已断开 ticks main kernels no
-  session is at: every lease reconnecting or departed, or only retention
-  keeping the kernel, whatever grace or retention remains. The
-  `recycle-idle` and `recycle-all` routes are unchanged.
-- The `wait` tool waits 10 seconds by default, as `--wait` does, instead of 30;
-  both defaults are defined once in `loommux.cell_header`.
-- `Kernel.run_cell` sends `wait_seconds` and `silence_seconds` only when given,
-  and the control plane's submit route reads an absent one as the cell header's:
-  a cell submitted from code with `%%loommux --wait 60` now waits sixty seconds
-  instead of the client's ten.
-- The `Lease alert` is a line of the result's `<loommux-notice>` envelope, no
-  longer a block of its own.
-- A named main kernel whose connection-lease sessions all left is no longer
-  retired about a minute later. The departed lease is still released when the
-  reconnect grace ends, and the kernel then keeps itself for the named window
-  (`named_activity_timeout_seconds`, 24 hours) after that lease's last renewal; it
-  is retired when the window ends, busy or not (a running cell gets the orphan
-  grace). Switching away with `--attach` clears it. An unnamed
-  `private-<session>` kernel is retired with its lease as before; renaming it
-  makes it named. Activity and heartbeat leases are unchanged.
 - **Breaking:** a kernel opened by name from a kernel is a child kernel of
   that kernel's main kernel, its home, instead of a globally named kernel held
   by every kernel that opened it. Names resolve inside the asking kernel's
   home, so two sessions that both open `build` get two kernels, and a child
   kernel opening a kernel opens it in the same home. A child kernel lives
-  exactly as long as its main kernel holds a client lease.
+  exactly as long as its main kernel is kept, by a client lease or by its own
+  retention.
 - **Breaking:** the client has two panels
   ([Kernel Control Surface Design](docs/kernel-control-surface-design.md)).
   The daemon keeps the registry: `kernels()` lists every kernel, inside a
@@ -154,9 +141,6 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - **Breaking:** resource snapshots report `scope` (`main` or `child`), `home`,
   and `named` instead of `key`, `shared`, and `held_by`; the console shows the
   home, and the `Kernels` table its scope and home columns.
-- A session works in the main kernel that holds its lease, so the lease is
-  its binding. A generated `private-<session>` name that another session's
-  kernel already has is numbered instead of shared.
 - **Breaking:** a loommux execution number is the number IPython gives the
   same cell, so `In [N]` in a result is `In[N]` and `_iN` inside the kernel.
   `restart` therefore clears the execution records and the next cell is
@@ -165,6 +149,37 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - **Breaking:** `ResourceServerSettings.from_environ()` is replaced by
   `from_values()`, which reads `config.py` names, and `create_mcp()` takes a
   `LoommuxConfig`; a `ServerFactory` receives it as its third argument.
+- A session works in the main kernel that holds its lease, so the lease is
+  its binding. A generated `private-<session>` name that another session's
+  kernel already has is numbered instead of shared.
+- A named main kernel whose connection-lease sessions all left is no longer
+  retired about a minute later. The departed lease is still released when the
+  reconnect grace ends, and the kernel then keeps itself for the named window
+  (`named_activity_timeout_seconds`, 24 hours) after that lease's last renewal; it
+  is retired when the window ends, busy or not (a running cell gets the orphan
+  grace). Switching away with `--attach` clears it. An unnamed
+  `private-<session>` kernel is retired with its lease as before; renaming it
+  makes it named. Activity and heartbeat leases are unchanged.
+- The `wait` tool waits 10 seconds by default, as `--wait` does, instead of 30;
+  both defaults are defined once in `loommux.cell_header`.
+- A wait a program gives may be 0, submit and return:
+  `Kernel.run_cell(code, wait_seconds=0)` and the control plane's submit route
+  return at once with the execution running. In 0.3.0 `Kernel.run(code,
+  wait=0)` reached the session through that route, and the session refused
+  every wait not greater than zero with `invalid_timeout`.
+- `Kernel.run_cell` sends `wait_seconds` and `silence_seconds` only when given,
+  and the control plane's submit route reads an absent one as the cell header's:
+  a cell submitted from code with `%%loommux --wait 60` now waits sixty seconds
+  instead of the client's ten.
+- The `Lease alert` is a line of the result's `<loommux-notice>` envelope, no
+  longer a block of its own.
+- The console groups each main kernel's child kernels inside its card and
+  replaces the 回收空闲 and 强制回收全部 buttons with selection: every kernel
+  has a checkbox, the rules 已断开, 空闲 and 全部 tick boxes for review, and a
+  floating bar force-recycles what is ticked. 已断开 ticks main kernels no
+  session is at: every lease reconnecting or departed, or only retention
+  keeping the kernel, whatever grace or retention remains. The
+  `recycle-idle` and `recycle-all` routes are unchanged.
 
 ### Removed
 
@@ -187,12 +202,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
-- `Kernel.run_cell(code, wait_seconds=0)` returns at once, as documented; the
-  session rejected any wait that was not greater than zero.
 - Finding or opening a kernel by name answered 500 when the kernel it had resolved
   was retired before the route described it, for example a child kernel whose
-  home had just been let go of; it now answers 404 as for a missing kernel,
-  and so does the rename route.
+  home had just been let go of; it now answers 404 as for a missing kernel.
 - An interrupt sent right after a cell was submitted, before the kernel
   started it, was lost and the cell ran on: ipykernel ignores SIGINT until a
   request's handler begins. The interrupt is now held until the cell's
@@ -504,7 +516,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Declared Pillow as a development dependency so rich presentation tests run
   in a clean CI environment.
 
-[Unreleased]: https://github.com/MichengLiang/loommux/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/MichengLiang/loommux/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/MichengLiang/loommux/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/MichengLiang/loommux/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MichengLiang/loommux/compare/v0.1.15...v0.2.0
 [0.1.15]: https://github.com/MichengLiang/loommux/compare/v0.1.14...v0.1.15

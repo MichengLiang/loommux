@@ -1,6 +1,6 @@
 [project]
 name = "loommux"
-version = "0.3.0"
+version = "0.4.0"
 description = "Persistent IPython MCP server with inspectable execution output"
 readme = "README.md"
 requires-python = ">=3.13"
