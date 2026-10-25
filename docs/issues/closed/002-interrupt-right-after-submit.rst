@@ -4,6 +4,7 @@
 :代码版本: ``1a49e21``，写下时项目里有未提交的改动，行号可能与这个提交对不上
 :影响: agent 或程序在提交后立刻中断（例如提交错了马上撤），中断可能落空、cell 照跑；相关测试约两成概率失败
 :涉及: ``src/loommux/session.py:258``、``src/loommux/kernel/session.py:83``、``tests/mcp/test_kernel_control.py:226``
+:复测: ``c655ad6`` 上c655ad6 上：test_a_kernel_opens_runs_and_holds_kernels_that_leave_with_it 单独循环 100 次（-p no:randomly -o addopts= -x）100 通过，修复前 6/30 失败；120 秒压测 5560 次调用 0 错误，结束后 kernel 进程 0、描述符回到 7
 
 ## 现象与复现
 
