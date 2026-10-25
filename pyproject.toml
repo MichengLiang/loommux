@@ -20,7 +20,7 @@ classifiers = [
     "Topic :: Software Development :: Interpreters",
 ]
 dependencies = [
-    "fastmcp>=3.4.7,<4",
+    "fastmcp>=3.4.7,<5",
     "httpx>=0.28.1",
     "ipykernel>=7.3.0",
     # The cell header is located with IPython's own cleanup transforms, so the
