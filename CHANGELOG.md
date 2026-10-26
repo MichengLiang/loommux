@@ -7,6 +7,25 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Fixed
+
+- `read_output` presents `:` as the way to read a whole stream: in the tool
+  description and the README, in the omission notice, and in the
+  `invalid_line_range` message. The description had called that "omit
+  `line_range`", which a caller whose tool schema requires the parameter cannot
+  do; `:` is the same `start:stop` syntax read to both boundaries, so it needs
+  no second rule. Omission and JSON `null` still read the whole stream, but they
+  are no longer what the description recommends. The description also names the
+  one place its coordinates part company with a Python slice: a negative end
+  counts line numbers from the tail and stays inclusive, so `:-3` stops at the
+  third-from-last line instead of dropping the last three. The omission notice
+  gives the call where the need appears, `read_output(line_range=":")`, and no
+  longer repeats the pointer in a fourth line; it is prepended to every omitted
+  result, so a line there is paid on every call. `invalid_line_range` echoes the
+  value it received — `line_range 'null'` is what a caller sends when its
+  transport turns a JSON null into text — and states both accepted forms
+  instead of the untrue "must use start:stop".
+
 ## [0.4.0] - 2026-10-26
 
 ### Added
