@@ -607,20 +607,22 @@ the recovery paths, and the caller reads or searches the retained text through
 automatic delivery policy; if the `o200k_base` tokenizer cannot be loaded, the
 call fails instead of silently changing to another limit.
 
-`read_output` uses `start:stop` inclusive line coordinates. Positive
-endpoints are 1-indexed, endpoints may be omitted, and negative endpoints
-count from the end of the selected stream:
+`read_output` takes `start:stop` coordinates shaped like a slice: both endpoints
+are line numbers, both are inside the range, and either may be omitted, which
+leaves that end at the boundary. So `:` is the whole stream:
 
 ```text
+:      the whole stream
 :10    first 10 lines
 -10:   final 10 lines
 20:40  lines 20 through 40
 3:3    only line 3
 ```
 
-When the caller has determined that the selected stream must be consumed in
-full, omit `line_range`. `read_output` returns all of its lines in one
-response, so there is no need to divide the read into consecutive small ranges.
+Negative endpoints count line numbers from the end and stay inclusive, so `:-3`
+stops at the third-from-last line; it does not drop the last three. Every
+selected line comes back in one response, so there is no need to divide the
+read into consecutive small ranges.
 
 `max_chars` clips each returned line without changing stored text or line
 coordinates. `search_output` supports `literal`, `regex`, and `auto`
