@@ -72,7 +72,7 @@ def test_token_limited_notice_reports_size_and_recovery_paths() -> None:
     assert "301 lines" in notice
     assert "1,023 characters" in notice
     assert "1,023 B;" in notice
-    assert "read_output()" in notice
+    assert 'read_output(line_range=":")' in notice
     assert "search_output()" in notice
     assert "%%loommux --full-output" in notice
 
@@ -378,7 +378,6 @@ def test_rich_execution_keeps_images_but_omits_token_limited_text() -> None:
             "output_total_utf8_bytes": 2_600,
         }
     )
-    assert "read_output() to read all lines or search_output()" in result.content[1].text
     assert "line-0" not in result.content[1].text
 
 

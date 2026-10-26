@@ -270,7 +270,7 @@ async def test_token_limited_result_reports_one_human_readable_size_and_exact_st
     assert notice.startswith("In [1]:\nOutput omitted: 301 lines")
     assert f"{len(TOKEN_HEAVY_MANY_LINES):,} characters" in notice
     assert "64.96 KiB" in notice
-    assert "read_output()" in notice
+    assert 'read_output(line_range=":")' in notice
     assert "search_output()" in notice
     assert "%%loommux --full-output" in notice
     assert structured.structured_content is not None

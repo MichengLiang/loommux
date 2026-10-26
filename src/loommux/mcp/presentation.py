@@ -74,10 +74,9 @@ def format_output_token_limit_notice(status: Mapping[str, Any]) -> str:
     total_bytes = _number(status.get("output_total_utf8_bytes"))
     return "\n".join(
         (
-            f"Output omitted: {total_lines:,} lines, {total_characters:,} characters, {_format_binary_size(total_bytes)}; exceeds the 5,000-token limit. Use read_output() to read all lines or search_output() to locate text.",
+            f'Output omitted: {total_lines:,} lines, {total_characters:,} characters, {_format_binary_size(total_bytes)}; exceeds the 5,000-token limit. Read all of it with read_output(line_range=":"), or search_output() to locate text.',
             "如果对于这些信息你已经明确知道需要完整阅读，那么请在 cell 第一行写上 ``%%loommux --full-output``",
             "如果你不知道是否需要完整阅读，你可以利用``Search text``更精细地了解所需信息的更精确的位置，再完整获取与阅读。",
-            "如果你本次忘记了``%%loommux --full-output``那么你可以通过read_output()获取全文",
         )
     )
 

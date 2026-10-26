@@ -191,13 +191,15 @@ def _resolve_line_range(line_range: str | None, total_lines: int) -> ResolvedLin
     if line_range is None:
         return ResolvedLineRange(1, total_lines)
     if ":" not in line_range:
-        return {"ok": False, "status": "invalid_line_range", "message": "line_range must use start:stop"}
+        # The received value stays in the message: a caller that sent the string
+        # "null" cannot otherwise tell it apart from the JSON null it meant.
+        return {"ok": False, "status": "invalid_line_range", "message": f"line_range {line_range!r}: use ':' for the whole stream, or start:stop such as ':10'"}
     start_raw, stop_raw = line_range.split(":", 1)
     try:
         start = _resolve_endpoint(start_raw, total_lines, default=1)
         stop = _resolve_endpoint(stop_raw, total_lines, default=total_lines)
     except ValueError:
-        return {"ok": False, "status": "invalid_line_range", "message": "line_range endpoints must be integers"}
+        return {"ok": False, "status": "invalid_line_range", "message": f"line_range {line_range!r}: endpoints must be integers"}
     return ResolvedLineRange(max(1, min(start, total_lines + 1)), max(0, min(stop, total_lines)))
 
 

@@ -26,6 +26,23 @@ def test_line_log_reads_ranges_and_clipping() -> None:
     assert log.utf8_byte_count == len("alpha\nbeta\ngamma\nA中🙂\n".encode())
 
 
+def test_line_log_reads_slice_shaped_coordinates() -> None:
+    """The five forms the tool description shows, plus the negative end it warns about."""
+    log = LineLog()
+    log.append("".join(f"line {number}\n" for number in range(1, 6)))
+
+    assert log.read(":")["text"] == "line 1\nline 2\nline 3\nline 4\nline 5"
+    assert log.read(":2")["text"] == "line 1\nline 2"
+    assert log.read("-2:")["text"] == "line 4\nline 5"
+    assert log.read("2:4")["text"] == "line 2\nline 3\nline 4"
+    assert log.read("3:3")["text"] == "line 3"
+    # A negative end counts line numbers from the tail and stays inclusive, unlike
+    # a Python slice: ``:-3`` stops at the third-from-last line instead of dropping
+    # the last three, and a wrong reading of it over-delivers without an error.
+    assert log.read(":-3")["text"] == "line 1\nline 2\nline 3"
+    assert log.read(":-1")["text"] == "line 1\nline 2\nline 3\nline 4\nline 5"
+
+
 def test_line_log_appends_in_linear_time() -> None:
     log = LineLog()
     chunk = "x" * 1023 + "\n"
