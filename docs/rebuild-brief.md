@@ -229,7 +229,7 @@ blocking foreground cell holding every watch.
 ## 7. Reading plan for the design document
 
 Read in full before the first proposal, as always:
-`.aktant/wbs_ipython/docs/一隅三反录.md`.
+`.aktant/hora/docs/notes/一隅三反录.md`.
 
 Before deciding the skeleton (the evidence):
 the three spike reports; in Hypermorph, `docs/reference/runtime.rst`,
