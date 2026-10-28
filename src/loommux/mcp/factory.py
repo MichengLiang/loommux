@@ -287,6 +287,11 @@ def create_mcp(result_mode: ResultMode, *, control_url: str | None = None, confi
         ``--attach 名字`` 可重新切换会曾命名到的持久资源。
         任务变了，在任意 cell 里顺手写 ``loommux.rename(loommux.self, "新名字")``。
 
+        如果想更换新的Kernel，那么请重启即可。
+        如果想让Kernel的名字与当前任务对齐，那么重命名即可。
+        如果想使用不同隔离的Kernel，那么使用子Kernel即可。
+        如果你已经有了主Kernel，此时再attach创建新的，那么你旧的这个主Kernel将会被回收，包括旧的主Kernel以及它所有的子Kernel将会全部被回收哟。
+
         图像展示
         --------
 
