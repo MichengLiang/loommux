@@ -225,6 +225,16 @@ blocking foreground cell holding every watch.
   display publisher, display hook and shell) that a watch sets: the design
   must name them and the ipykernel version it relies on (spike 03 §4.2).
 - **The console and the inspector** (section 3, `mcp/console.html`).
+- **The stable identity held by one MCP participant**: the kernel-desk
+  integration confirmed this interleaving against a private HTTP daemon:
+  MCP binds the participant to A under a name; A is renamed and B takes
+  that name; a subsequent name lookup returns B although the participant's
+  lease is still on A. `LeaseAwareClient` needs a public, authoritative way
+  to hand the integration its actual binding, not a guess from the current
+  name. The control snapshots already carry lease client IDs, but the lease
+  wrapper does not expose the correlation needed to use them. The rebuild
+  must settle the handoff, including name reuse during attachment, without
+  parsing content-only presentation or inventing a second binding registry.
 
 ## 7. Reading plan for the design document
 
