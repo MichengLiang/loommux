@@ -7,6 +7,13 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- A copy button beside each main and child kernel name in the resource
+  console copies the exact name without changing the recycle selection.
+  Success feedback survives list refreshes; clipboard failures are reported
+  without claiming success.
+
 ### Fixed
 
 - `read_output` presents `:` as the way to read a whole stream: in the tool

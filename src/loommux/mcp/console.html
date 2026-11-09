@@ -26,6 +26,9 @@
     /* Selected is a persistent state, drawn as shape (a spine and a blue edge), never as a fill that hover could be mistaken for. */
     .resource.selected{border-color:var(--blue);box-shadow:inset 4px 0 0 var(--blue),0 14px 40px rgba(23,50,77,.06)}
     .pick,.head-left{display:flex;align-items:center;gap:12px}.pick{cursor:pointer}.head-left{flex-wrap:wrap}.chips{display:flex;gap:4px;flex-wrap:wrap}
+    .pick,.identity{min-width:0}.name-row{display:flex;align-items:center;gap:6px}.name-row .name{min-width:0;overflow-wrap:anywhere;cursor:pointer}.kernel-id{display:block;overflow-wrap:anywhere;cursor:pointer}
+    .copy-name{display:inline-flex;align-items:center;justify-content:center;flex:none;width:28px;height:28px;padding:5px;border-color:transparent;background:transparent;color:var(--muted)}
+    .copy-name svg{width:16px;height:16px}.copy-name.copied{color:var(--green)}
     .children{display:grid;gap:4px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}.children-title{font-size:12px;font-weight:700;margin-bottom:4px}
     .child{display:grid;grid-template-columns:minmax(0,2fr) repeat(3,minmax(0,1fr)) auto;gap:12px;align-items:center;padding:8px 12px;border-radius:10px;background:#f8fafb}
     .child.selected{box-shadow:inset 3px 0 0 var(--blue)}.child .name{font-size:14px}.k{color:var(--muted);margin-right:4px}
@@ -68,7 +71,7 @@
     <button data-rule="departed" title="主 kernel 上没有会话连着：没有租约，或租约都在重连宽限里、已离开">已断开 <span class="count"></span></button>
     <button data-rule="idle" title="没有在跑 cell 的 kernel，连着的也算">空闲 <span class="count"></span></button>
     <button data-rule="all">全部 <span class="count"></span></button>
-    <span class="message" id="listMessage"></span>
+    <span class="message" id="listMessage" role="status"></span>
   </section>
   <section class="resources" id="resources"></section>
   <div class="selection-bar" id="bar" hidden><span id="barText"></span><button id="clear">清空</button><button class="destroy" id="recycleSelected">回收所选</button></div>
@@ -78,8 +81,11 @@ const q=s=>document.querySelector(s), esc=v=>String(v).replaceAll("&","&amp;").r
 let policy=null,policyDirty=false,view={mains:[],strays:[],byId:new Map()};
 // Ids the owner ticked. A ticked main kernel implies its child kernels (they are retired with it), so they are not stored here.
 const selected=new Set();
+// Polls replace the buttons, so success feedback lives outside the rendered DOM.
+const copied=new Map();
 function message(text,error=false){q("#message").textContent=text;q("#message").style.color=error?"var(--red)":"var(--green)"}
 function listMessage(text,error=false){q("#listMessage").textContent=text;q("#listMessage").style.color=error?"var(--red)":"var(--green)"}
+async function copyName(id){try{await navigator.clipboard.writeText(view.byId.get(id).name);clearTimeout(copied.get(id));copied.set(id,setTimeout(()=>{copied.delete(id);renderResources()},1500));listMessage("已复制 kernel 名字");renderResources()}catch{clearTimeout(copied.get(id));copied.delete(id);renderResources();listMessage("复制失败，请手动复制 kernel 名字",true)}}
 async function json(url,options={}){const r=await fetch(url,{headers:{"Content-Type":"application/json"},...options});const data=await r.json();if(!r.ok||data.ok===false)throw new Error(data.message||`HTTP ${r.status}`);return data}
 function renderPolicy(p,force=false){policy=p;q("#generation").textContent=`generation ${p.generation}`;if(policyDirty&&!force)return;q("#mode").value=p.mode;q("#private").value=p.private_activity_timeout_seconds;q("#named").value=p.named_activity_timeout_seconds;q("#interval").value=p.heartbeat_interval_seconds;q("#timeout").value=p.heartbeat_timeout_seconds;q("#grace").value=p.connection_grace_seconds;policyDirty=false}
 // renewable leases (activity, heartbeat) carry no standing badge: their mode badge and countdown already say everything.
@@ -102,7 +108,7 @@ const RULES={departed:v=>[...v.mains.filter(g=>departed(g.main)).map(g=>g.main),
 const pickIds=rule=>new Set(RULES[rule](view).map(r=>r.resource_id));
 const busyChip=r=>r.busy?`<span class="badge" title="正在跑 cell">运行中${r.current_execution!=null?` #${r.current_execution}`:""}</span>`:"";
 const actions=id=>`<div class="actions">${["health","interrupt","restart"].map(a=>`<button data-key="${id}:${a}" data-act="${a}" data-id="${id}">${a}</button>`).join("")}<button class="danger" data-key="${id}:recycle" data-recycle="false" data-id="${id}">recycle</button><button class="danger" data-key="${id}:force" data-recycle="true" data-id="${id}">force</button></div>`;
-function pick(r,{checked,implied}){return `<label class="pick"><input type="checkbox" data-key="${r.resource_id}:select" data-select="${r.resource_id}"${checked?" checked":""}${implied?' disabled title="随主 kernel 一起回收"':""}><span><span class="name">${esc(r.name)}</span><div class="mono">${esc(r.resource_id)}</div></span></label>`}
+function pick(r,{checked,implied}){const id=r.resource_id,done=copied.has(id);return `<div class="pick"><input type="checkbox" id="select-${id}" data-key="${id}:select" data-select="${id}"${checked?" checked":""}${implied?' disabled title="随主 kernel 一起回收"':""}><div class="identity"><div class="name-row"><label class="name" for="select-${id}">${esc(r.name)}</label><button type="button" class="copy-name${done?" copied":""}" data-key="${id}:copy" data-copy="${id}" title="${done?"已复制":"复制 kernel 名字"}" aria-label="复制 kernel 名字"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${done?'<path d="m5 12 4 4L19 6"/>':'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/>'}</svg></button></div><label class="mono kernel-id" for="select-${id}">${esc(id)}</label></div></div>`}
 function child(r,implied){const checked=implied||selected.has(r.resource_id);return `<div class="child${checked?" selected":""}">${pick(r,{checked,implied})}<div><span class="k">PID</span>${r.kernel_pid??(r.kernel_state==="restarting"?"restarting":"not running")}</div><div><span class="k">执行</span>${r.execution_count}</div><div class="chips">${busyChip(r)}</div>${actions(r.resource_id)}</div>`}
 function card({main,children}){const checked=selected.has(main.resource_id);const gone=departed(main)?'<span class="badge" title="没有会话连着">已断开</span>':"";return `<article class="resource${checked?" selected":""}"><div class="resource-head"><div class="head-left">${pick(main,{checked})}<div class="chips">${gone}${busyChip(main)}</div></div>${actions(main.resource_id)}</div><div class="metrics"><div class="metric"><span>lifecycle</span><strong>${esc(main.lifecycle)}</strong></div><div class="metric"><span>kernel PID</span><strong>${main.kernel_pid??(main.kernel_state==="restarting"?"restarting":"not running")}</strong></div><div class="metric"><span>current execution</span><strong>${main.current_execution??"—"}</strong></div><div class="metric"><span>executions</span><strong>${main.execution_count}</strong></div><div class="metric"><span>保留</span><strong>${kept(main)}</strong></div></div><div class="leases">${main.leases.map(lease).join("")}</div>${children.length?`<div class="children"><div class="children-title">子 kernel · ${children.length}</div>${children.map(c=>child(c,checked)).join("")}</div>`:""}</article>`}
 function stray(r){const checked=selected.has(r.resource_id);return `<article class="resource${checked?" selected":""}"><div class="resource-head"><div class="head-left">${pick(r,{checked})}<div class="chips">${busyChip(r)}</div></div>${actions(r.resource_id)}</div><p class="stray">子 kernel，它的主 kernel 已回收；下一次 sweep 会回收它。</p></article>`}
@@ -120,7 +126,7 @@ async function recycleSelected(){await refresh();const ids=[...effective(selecte
   const results=await Promise.allSettled(ids.map(id=>json(`/api/resources/${id}/recycle`,{method:"POST",body:JSON.stringify({force:true})})));
   const failed=results.flatMap((r,i)=>r.status==="rejected"&&!/not found/.test(r.reason.message)?[`${rs[i].name}：${r.reason.message}`]:[]);
   selected.clear();listMessage(failed.length?`回收了 ${ids.length-failed.length} 个；失败 ${failed.join("、")}`:`回收了 ${ids.length} 个 kernel`,failed.length>0);await refresh()}
-q("#resources").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;if(b.dataset.act)act(b.dataset.id,b.dataset.act);else if(b.dataset.recycle)recycle(b.dataset.id,b.dataset.recycle==="true")});
+q("#resources").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;if(b.dataset.copy)copyName(b.dataset.copy);else if(b.dataset.act)act(b.dataset.id,b.dataset.act);else if(b.dataset.recycle)recycle(b.dataset.id,b.dataset.recycle==="true")});
 q("#resources").addEventListener("change",e=>{const id=e.target.dataset.select;if(!id)return;e.target.checked?selected.add(id):selected.delete(id);renderResources()});
 for(const b of document.querySelectorAll("[data-rule]"))b.onclick=()=>{selected.clear();pickIds(b.dataset.rule).forEach(id=>selected.add(id));listMessage("");renderResources()};
 q("#clear").onclick=()=>{selected.clear();renderResources()};q("#recycleSelected").onclick=recycleSelected;q("#refresh").onclick=refresh;

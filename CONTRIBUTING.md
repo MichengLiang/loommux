@@ -47,6 +47,16 @@ fails if the console stops answering, and then requires every kernel and file
 descriptor to be released. Unit tests cannot show either failure: both
 appeared only after minutes of mixed load.
 
+The console's name-copy behavior has a browser check. With Node.js,
+Playwright and its Chromium browser installed, run:
+
+```bash
+node tests/mcp/test_console_copy.mjs
+```
+
+The check serves the current HTML with isolated resource snapshots and never
+sends management actions to a running daemon.
+
 ## What tests assert
 
 Tests assert behavior: what a tool accepts and returns, which kernel a call

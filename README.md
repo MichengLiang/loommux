@@ -172,7 +172,9 @@ HTTP is a deployment boundary, not a different execution model: the
 tools, resource-local execution sequences, output streams, workspace
 resolution, and presentation rules are the same as the stdio server. The HTTP
 application also serves a resource console at `/` and operational JSON APIs
-under `/api`. Binding it beyond the local machine exposes arbitrary Python
+under `/api`. The copy button beside each main or child kernel name copies
+only its name, without changing the recycle selection.
+Binding it beyond the local machine exposes arbitrary Python
 execution and requires network controls and authentication outside loommux.
 
 If a server stops answering (the console, new connections, and Ctrl+C all go
